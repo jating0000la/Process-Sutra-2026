@@ -142,7 +142,7 @@ export async function getLocationInfo(): Promise<LocationInfo> {
     }
   } catch (error) {
     // Silently handle location fetch errors - this is not critical functionality
-    if (error.name !== 'AbortError') {
+    if (error instanceof Error && error.name !== 'AbortError') {
       console.warn('Could not fetch location information:', error);
     }
   }
@@ -154,7 +154,8 @@ export async function getLocationInfo(): Promise<LocationInfo> {
 export async function trackLogin(userId: string) {
   try {
     const deviceInfo = getDeviceInfo();
-    const locationInfo = await getLocationInfo();
+    // Temporarily disable location fetching to prevent errors
+    const locationInfo = {}; // await getLocationInfo();
     
     // Register/update device
     await fetch('/api/devices', {
