@@ -183,10 +183,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Task workflow operations
-  app.post("/api/tasks/:id/complete", isAuthenticated, async (req, res) => {
+  app.post("/api/tasks/:id/complete", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const { id } = req.params;
       const { status: completionStatus } = req.body;
+      const user = req.currentUser;
       
       if (!completionStatus) {
         return res.status(400).json({ message: "Completion status is required" });
@@ -197,14 +198,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Task not found" });
       }
 
+      // Verify task belongs to user's organization
+      if (task.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied to this task" });
+      }
+
       // Mark current task as completed
       const completedTask = await storage.updateTask(id, {
         status: "completed",
         actualCompletionTime: new Date(),
       });
 
-      // Find ALL next tasks in workflow based on completion status (multiple tasks can depend on same previous task)
-      const flowRules = await storage.getFlowRules(task.system);
+      // Find ALL next tasks in workflow based on completion status - organization-specific
+      const flowRules = await storage.getFlowRulesByOrganization(user.organizationId, task.system);
       const nextRules = flowRules.filter(
         rule => rule.currentTask === task.taskName && rule.status === completionStatus
       );
@@ -231,6 +237,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             doerEmail: nextRule.email,
             status: "pending",
             formId: nextRule.formId,
+            organizationId: user.organizationId, // Include organization ID for new tasks
             // Include flow context and previous form data
             flowInitiatedBy: task.flowInitiatedBy,
             flowInitiatedAt: task.flowInitiatedAt,
@@ -310,6 +317,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             doerEmail: nextRule.email,
             status: "pending",
             formId: nextRule.formId,
+            organizationId: user.organizationId, // Include organization ID for new tasks
             // Include flow context and previous form data
             flowInitiatedBy: task.flowInitiatedBy,
             flowInitiatedAt: task.flowInitiatedAt,
@@ -343,8 +351,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Task not found" });
       }
 
-      // Check if task is transferable (get flow rule)
-      const flowRules = await storage.getFlowRules(task.system);
+      // Check if task is transferable (get flow rule) - organization-specific
+      const user = await storage.getUser((req.user as any)?.claims?.sub);
+      const flowRules = await storage.getFlowRulesByOrganization(user?.organizationId!, task.system);
       const currentRule = flowRules.find(rule => rule.nextTask === task.taskName);
       
       if (!currentRule?.transferable) {
@@ -367,10 +376,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/flows/start", isAuthenticated, async (req, res) => {
+  app.post("/api/flows/start", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const { system, orderNumber, description, initialFormData } = req.body;
-      const userId = (req.user as any)?.claims?.sub;
+      const user = req.currentUser;
+      const userId = user.id;
       
       if (!system) {
         return res.status(400).json({ message: "System is required" });
@@ -384,8 +394,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Flow description is required" });
       }
       
-      // Find the starting rule (currentTask is empty)
-      const flowRules = await storage.getFlowRules(system);
+      // Find the starting rule (currentTask is empty) - organization-specific
+      const flowRules = await storage.getFlowRulesByOrganization(user.organizationId, system);
       const startRule = flowRules.find(rule => rule.currentTask === "");
       
       if (!startRule) {
@@ -421,6 +431,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         doerEmail: startRule.email,
         status: "pending",
         formId: startRule.formId,
+        organizationId: user.organizationId, // Include organization ID
         // Flow context - WHO, WHAT, WHEN, HOW
         flowInitiatedBy: userId,
         flowInitiatedAt: flowStartTime,
