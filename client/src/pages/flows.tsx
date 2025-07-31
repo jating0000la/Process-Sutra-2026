@@ -62,6 +62,10 @@ export default function Flows() {
     enabled: isAuthenticated,
   });
 
+  // Get unique systems and tasks from existing rules for dropdowns
+  const availableSystems = Array.from(new Set((flowRules as any[])?.map(rule => rule.system) || []));
+  const availableTasks = Array.from(new Set((flowRules as any[])?.map(rule => rule.nextTask).filter(Boolean) || []));
+
   const ruleForm = useForm({
     resolver: zodResolver(flowRuleSchema),
     defaultValues: {
@@ -284,8 +288,6 @@ export default function Flows() {
     }
   };
 
-  const systems = Array.from(new Set((flowRules as any[])?.map((rule: any) => rule.system) || []));
-
   if (isLoading) {
     return (
       <div className="flex h-screen bg-neutral">
@@ -350,7 +352,7 @@ export default function Flows() {
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                {systems.map((system) => (
+                                {availableSystems.map((system: string) => (
                                   <SelectItem key={system} value={system}>
                                     {system}
                                   </SelectItem>
@@ -412,9 +414,28 @@ export default function Flows() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>System</FormLabel>
-                              <FormControl>
-                                <Input {...field} placeholder="e.g., CRM Onboarding" />
-                              </FormControl>
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select existing or type new" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {availableSystems.map((system) => (
+                                    <SelectItem key={system} value={system}>
+                                      {system}
+                                    </SelectItem>
+                                  ))}
+                                  <SelectItem value="__custom__">Type Custom System...</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {field.value === "__custom__" && (
+                                <Input 
+                                  onChange={(e) => field.onChange(e.target.value)}
+                                  placeholder="Enter new system name"
+                                  className="mt-2"
+                                />
+                              )}
                               <FormMessage />
                             </FormItem>
                           )}
@@ -425,9 +446,29 @@ export default function Flows() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>Current Task (empty for start)</FormLabel>
-                              <FormControl>
-                                <Input {...field} placeholder="Leave empty for start rule" />
-                              </FormControl>
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select task or leave empty for start" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="">-- Start Rule (No Previous Task) --</SelectItem>
+                                  {availableTasks.map((task) => (
+                                    <SelectItem key={task} value={task}>
+                                      {task}
+                                    </SelectItem>
+                                  ))}
+                                  <SelectItem value="__custom__">Type Custom Task...</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {field.value === "__custom__" && (
+                                <Input 
+                                  onChange={(e) => field.onChange(e.target.value)}
+                                  placeholder="Enter task name"
+                                  className="mt-2"
+                                />
+                              )}
                               <FormMessage />
                             </FormItem>
                           )}
@@ -580,7 +621,7 @@ export default function Flows() {
                 </CardContent>
               </Card>
             ) : (
-              systems.map((system) => (
+              availableSystems.map((system: string) => (
                 <Card key={system}>
                   <CardHeader>
                     <CardTitle className="flex items-center">
