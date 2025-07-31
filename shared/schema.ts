@@ -8,6 +8,7 @@ import {
   text,
   integer,
   boolean,
+  boolean,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -164,6 +165,23 @@ export const insertFormTemplateSchema = createInsertSchema(formTemplates).omit({
 export const insertFormResponseSchema = createInsertSchema(formResponses).omit({
   id: true,
   timestamp: true,
+});
+
+// TAT Configuration table
+export const tatConfig = pgTable("tat_config", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  officeStartHour: integer("office_start_hour").default(9),
+  officeEndHour: integer("office_end_hour").default(18),
+  timezone: varchar("timezone").default("Asia/Kolkata"),
+  skipWeekends: boolean("skip_weekends").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertTATConfigSchema = createInsertSchema(tatConfig).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
 });
 
 // Types

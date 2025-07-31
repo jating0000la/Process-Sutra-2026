@@ -9,6 +9,7 @@ import {
   insertFormResponseSchema,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { calculateTAT, TATConfig } from "./tatCalculator";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
@@ -174,13 +175,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       if (nextRule) {
-        // Create next task
-        const plannedTime = new Date();
-        if (nextRule.tatType === "Day") {
-          plannedTime.setDate(plannedTime.getDate() + nextRule.tat);
-        } else if (nextRule.tatType === "Hour") {
-          plannedTime.setHours(plannedTime.getHours() + nextRule.tat);
-        }
+        // Get TAT configuration for enhanced calculations
+        const tatConfiguration = await storage.getTATConfig();
+        const config = tatConfiguration || { officeStartHour: 9, officeEndHour: 18 };
+        
+        // Create next task using enhanced TAT calculation
+        const plannedTime = calculateTAT(new Date(), nextRule.tat, nextRule.tatType, config);
 
         await storage.createTask({
           system: task.system,
@@ -243,13 +243,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       
       if (nextRule) {
-        // Create next task based on current task status
-        const plannedTime = new Date();
-        if (nextRule.tatType === "Day") {
-          plannedTime.setDate(plannedTime.getDate() + nextRule.tat);
-        } else if (nextRule.tatType === "Hour") {
-          plannedTime.setHours(plannedTime.getHours() + nextRule.tat);
-        }
+        // Get TAT configuration for enhanced calculations
+        const tatConfiguration = await storage.getTATConfig();
+        const config = tatConfiguration || { officeStartHour: 9, officeEndHour: 18 };
+        
+        // Create next task based on current task status using enhanced TAT calculation
+        const plannedTime = calculateTAT(new Date(), nextRule.tat, nextRule.tatType, config);
 
         await storage.createTask({
           system: task.system,
@@ -283,13 +282,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const flowId = randomUUID();
-      const plannedTime = new Date();
+      // Get TAT configuration for enhanced calculations
+      const tatConfiguration = await storage.getTATConfig();
+      const config = tatConfiguration || { officeStartHour: 9, officeEndHour: 18 };
       
-      if (startRule.tatType === "Day") {
-        plannedTime.setDate(plannedTime.getDate() + startRule.tat);
-      } else if (startRule.tatType === "Hour") {
-        plannedTime.setHours(plannedTime.getHours() + startRule.tat);
-      }
+      const plannedTime = calculateTAT(new Date(), startRule.tat, startRule.tatType, config);
 
       const task = await storage.createTask({
         system,
@@ -430,6 +427,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching flow performance:", error);
       res.status(500).json({ message: "Failed to fetch flow performance" });
+    }
+  });
+
+  // TAT Configuration API
+  app.get("/api/tat-config", isAuthenticated, async (req, res) => {
+    try {
+      const config = await storage.getTATConfig();
+      res.json(config || {
+        officeStartHour: 9,
+        officeEndHour: 18,
+        timezone: "Asia/Kolkata",
+        skipWeekends: true
+      });
+    } catch (error) {
+      console.error("Error fetching TAT config:", error);
+      res.status(500).json({ message: "Failed to fetch TAT configuration" });
+    }
+  });
+
+  app.post("/api/tat-config", isAuthenticated, async (req, res) => {
+    try {
+      const { officeStartHour, officeEndHour, timezone, skipWeekends } = req.body;
+      const config = await storage.upsertTATConfig({
+        officeStartHour,
+        officeEndHour,
+        timezone,
+        skipWeekends
+      });
+      res.json(config);
+    } catch (error) {
+      console.error("Error updating TAT config:", error);
+      res.status(500).json({ message: "Failed to update TAT configuration" });
     }
   });
 

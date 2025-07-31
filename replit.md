@@ -128,3 +128,8 @@ Preferred communication style: Simple, everyday language.
 - ✓ Enhanced workflow engine to support status-dependent task progression
 - ✓ Next tasks now automatically generated based on current task status changes
 - ✓ All major system components operational with live user testing
+- ✓ Added bulk import functionality for complex workflow rules with "Import Order Tracker" button
+- ✓ Enhanced TAT calculation system with sophisticated business logic (office hours, weekend handling)
+- ✓ Implemented configurable TAT settings with new TAT Configuration page
+- ✓ Added support for multiple TAT calculation methods (hourtat, daytat, beforetat, specifytat)
+- ✓ System now handles timezone-aware calculations and office hour constraints

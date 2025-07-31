@@ -45,6 +45,12 @@ const navigationItems = [
     badge: null,
   },
   {
+    name: "TAT Config",
+    href: "/tat-config",
+    icon: Settings,
+    badge: null,
+  },
+  {
     name: "Reports",
     href: "/reports",
     icon: FileBarChart,

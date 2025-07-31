@@ -4,6 +4,7 @@ import {
   tasks,
   formTemplates,
   formResponses,
+  tatConfig,
   type User,
   type UpsertUser,
   type FlowRule,
@@ -47,6 +48,10 @@ export interface IStorage {
   getFormResponses(flowId?: string, taskId?: string): Promise<FormResponse[]>;
   createFormResponse(response: InsertFormResponse): Promise<FormResponse>;
   getFormResponsesByFlowId(flowId: string): Promise<FormResponse[]>;
+
+  // TAT Configuration operations
+  getTATConfig(): Promise<any>;
+  upsertTATConfig(config: any): Promise<any>;
 
   // Analytics operations
   getTaskMetrics(): Promise<{
@@ -282,6 +287,33 @@ export class DatabaseStorage implements IStorage {
       avgCompletionTime: Math.round(result.avgTime * 10) / 10,
       onTimeRate: Math.round((result.onTimeCount / result.totalCompleted) * 100),
     }));
+  }
+
+  async getTATConfig(): Promise<any> {
+    const [config] = await db.select().from(tatConfig).limit(1);
+    return config;
+  }
+
+  async upsertTATConfig(configData: any): Promise<any> {
+    const existing = await this.getTATConfig();
+    
+    if (existing) {
+      const [updated] = await db
+        .update(tatConfig)
+        .set({
+          ...configData,
+          updatedAt: new Date(),
+        })
+        .where(eq(tatConfig.id, existing.id))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db
+        .insert(tatConfig)
+        .values(configData)
+        .returning();
+      return created;
+    }
   }
 }
 
