@@ -10,7 +10,8 @@ import {
   FileBarChart, 
   Users, 
   Settings,
-  Bell
+  Bell,
+  Activity
 } from "lucide-react";
 
 const navigationItems = [
@@ -57,9 +58,9 @@ const navigationItems = [
     badge: null,
   },
   {
-    name: "Reports",
-    href: "/reports",
-    icon: FileBarChart,
+    name: "Flow Simulator",
+    href: "/flow-simulator",
+    icon: Activity,
     badge: null,
   },
 ];
