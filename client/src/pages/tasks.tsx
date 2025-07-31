@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CheckCircle, Clock, AlertTriangle, Eye, Edit, Plus } from "lucide-react";
+import { CheckCircle, Clock, AlertTriangle, Eye, Edit, Plus, Database } from "lucide-react";
 import FormRenderer from "@/components/form-renderer";
 
 export default function Tasks() {
@@ -28,6 +28,8 @@ export default function Tasks() {
   const [taskToComplete, setTaskToComplete] = useState<any>(null);
   const [completionStatus, setCompletionStatus] = useState("");
   const [formTemplate, setFormTemplate] = useState<any>(null);
+  const [isFlowDataDialogOpen, setIsFlowDataDialogOpen] = useState(false);
+  const [flowDataForTask, setFlowDataForTask] = useState<any>(null);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -52,6 +54,12 @@ export default function Tasks() {
   // Fetch form template
   const { data: formTemplates } = useQuery({
     queryKey: ["/api/form-templates"],
+    enabled: isAuthenticated,
+  });
+
+  // Fetch form responses for flow data viewer
+  const { data: formResponses } = useQuery({
+    queryKey: ["/api/form-responses"],
     enabled: isAuthenticated,
   });
 
@@ -144,6 +152,42 @@ export default function Tasks() {
       completeTaskMutation.mutate({ 
         taskId: taskToComplete.id, 
         status: completionStatus 
+      });
+    }
+  };
+
+  const handleViewFlowData = async (task: any) => {
+    try {
+      // Get all tasks for this flow
+      const allTasks = (tasks as any[])?.filter((t: any) => t.flowId === task.flowId) || [];
+      
+      // Get all form responses for tasks in this flow
+      const flowFormResponses = (formResponses as any[])?.filter((response: any) => {
+        return allTasks.some((t: any) => t.id === response.taskId);
+      }) || [];
+
+      // Add task names to form responses
+      const enrichedResponses = flowFormResponses.map((response: any) => {
+        const responseTask = allTasks.find((t: any) => t.id === response.taskId);
+        return {
+          ...response,
+          taskName: responseTask?.taskName || "Unknown Task"
+        };
+      });
+
+      setFlowDataForTask({
+        flowId: task.flowId,
+        orderNumber: task.orderNumber,
+        system: task.system,
+        tasks: allTasks,
+        formResponses: enrichedResponses
+      });
+      setIsFlowDataDialogOpen(true);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to load flow data",
+        variant: "destructive",
       });
     }
   };
@@ -458,22 +502,133 @@ export default function Tasks() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex justify-end space-x-3">
+            <div className="flex justify-between">
               <Button 
                 variant="outline" 
-                onClick={() => setIsCompleteDialogOpen(false)}
+                onClick={() => handleViewFlowData(taskToComplete)}
               >
-                Cancel
+                <Database className="w-4 h-4 mr-2" />
+                View Flow Data
               </Button>
-              <Button 
-                onClick={handleCompleteConfirm}
-                disabled={!completionStatus || completeTaskMutation.isPending}
-              >
-                <CheckCircle className="w-4 h-4 mr-2" />
-                Complete Task
-              </Button>
+              <div className="flex space-x-3">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setIsCompleteDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleCompleteConfirm}
+                  disabled={!completionStatus || completeTaskMutation.isPending}
+                >
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Complete Task
+                </Button>
+              </div>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Flow Data Dialog */}
+      <Dialog open={isFlowDataDialogOpen} onOpenChange={setIsFlowDataDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Flow Data - {flowDataForTask?.orderNumber || flowDataForTask?.flowId}</DialogTitle>
+          </DialogHeader>
+          {flowDataForTask && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                <div>
+                  <Label className="text-sm font-medium text-gray-600">Flow ID</Label>
+                  <p className="text-sm">{flowDataForTask.flowId}</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-gray-600">System</Label>
+                  <p className="text-sm">{flowDataForTask.system}</p>
+                </div>
+                {flowDataForTask.orderNumber && (
+                  <div>
+                    <Label className="text-sm font-medium text-gray-600">Order Number</Label>
+                    <p className="text-sm">{flowDataForTask.orderNumber}</p>
+                  </div>
+                )}
+                <div>
+                  <Label className="text-sm font-medium text-gray-600">Total Tasks</Label>
+                  <p className="text-sm">{flowDataForTask.tasks?.length || 0}</p>
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Tasks */}
+                <div>
+                  <h3 className="font-semibold mb-3">Tasks ({flowDataForTask.tasks?.length || 0})</h3>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {flowDataForTask.tasks?.map((task: any) => (
+                      <div key={task.id} className="border rounded p-3 bg-white">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium text-sm">{task.taskName}</span>
+                          <Badge variant={
+                            task.status === 'completed' ? 'default' :
+                            task.status === 'in_progress' ? 'secondary' :
+                            task.status === 'overdue' ? 'destructive' : 'outline'
+                          }>
+                            {task.status}
+                          </Badge>
+                        </div>
+                        <div className="text-xs text-gray-600">
+                          <p>Assigned: {task.doer}</p>
+                          <p>Created: {new Date(task.createdAt).toLocaleString()}</p>
+                          {task.completedAt && (
+                            <p>Completed: {new Date(task.completedAt).toLocaleString()}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Form Responses */}
+                <div>
+                  <h3 className="font-semibold mb-3">Form Data ({flowDataForTask.formResponses?.length || 0})</h3>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {flowDataForTask.formResponses?.length === 0 ? (
+                      <p className="text-gray-500 text-sm">No form data available</p>
+                    ) : (
+                      flowDataForTask.formResponses?.map((response: any) => (
+                        <div key={response.id} className="border rounded p-3 bg-white">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-medium text-sm">{response.taskName}</span>
+                            <span className="text-xs text-gray-500">
+                              {new Date(response.submittedAt).toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="text-xs space-y-1">
+                            {Object.entries(response.data || {}).map(([key, value]) => (
+                              <div key={key} className="flex">
+                                <span className="font-medium text-gray-600 mr-2 min-w-0 flex-shrink-0">
+                                  {key}:
+                                </span>
+                                <span className="text-gray-800 break-words">
+                                  {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button onClick={() => setIsFlowDataDialogOpen(false)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
