@@ -658,101 +658,144 @@ export default function Tasks() {
                               </div>
                             </div>
                             
-                            {/* Data View Button and Initial Form Data */}
-                            {task.flowInitialFormData && (
-                              <div className="pt-2 border-t border-blue-200 dark:border-blue-700">
-                                {/* Data View Button */}
-                                <div className="flex justify-between items-center mb-2">
-                                  <div className="font-medium text-blue-700 dark:text-blue-300 text-xs">📄 Initial Data</div>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => {
-                                      const newExpanded = new Set(expandedDataTasks);
-                                      if (newExpanded.has(task.id)) {
-                                        newExpanded.delete(task.id);
-                                      } else {
-                                        newExpanded.add(task.id);
+                            {/* Data View Button and Flow Data */}
+                            <div className="pt-2 border-t border-blue-200 dark:border-blue-700">
+                              {/* Data View Button */}
+                              <div className="flex justify-between items-center mb-2">
+                                <div className="font-medium text-blue-700 dark:text-blue-300 text-xs">📄 Flow Data</div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    const newExpanded = new Set(expandedDataTasks);
+                                    if (newExpanded.has(task.id)) {
+                                      newExpanded.delete(task.id);
+                                    } else {
+                                      newExpanded.add(task.id);
+                                    }
+                                    setExpandedDataTasks(newExpanded);
+                                  }}
+                                  className="h-6 px-2 text-xs"
+                                >
+                                  <Database className="h-3 w-3 mr-1" />
+                                  {expandedDataTasks.has(task.id) ? 'Hide Data' : 'View Data'}
+                                </Button>
+                              </div>
+                              
+                              {/* Expandable Data Section */}
+                              {expandedDataTasks.has(task.id) && (
+                                <div className="bg-white dark:bg-gray-800 rounded p-2 text-xs border border-gray-200 dark:border-gray-600 shadow-sm max-h-60 overflow-y-auto">
+                                  {(() => {
+                                    // Get all tasks from the same flow, sorted by creation date
+                                    const flowTasks = (tasks as any[])?.filter(t => t.flowId === task.flowId && t.status === 'completed')
+                                      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) || [];
+                                    
+                                    // Get all form responses for this flow
+                                    const flowResponses = (formResponses as any[])?.filter(fr => 
+                                      flowTasks.some(ft => ft.id === fr.taskId)
+                                    ) || [];
+                                    
+                                    const allFormData: { formName: string, data: any, taskName: string, order: number }[] = [];
+                                    
+                                    // Add initial form data if available
+                                    if (task.flowInitialFormData) {
+                                      allFormData.push({
+                                        formName: task.formId || 'Initial Form',
+                                        data: task.flowInitialFormData,
+                                        taskName: 'Initial Task',
+                                        order: 0
+                                      });
+                                    }
+                                    
+                                    // Add completed task responses
+                                    flowTasks.forEach((flowTask, index) => {
+                                      const taskResponse = flowResponses.find(fr => fr.taskId === flowTask.id);
+                                      if (taskResponse && taskResponse.formData) {
+                                        allFormData.push({
+                                          formName: flowTask.formId || `Task ${index + 1} Form`,
+                                          data: taskResponse.formData,
+                                          taskName: flowTask.taskName || `Task ${index + 1}`,
+                                          order: index + 1
+                                        });
                                       }
-                                      setExpandedDataTasks(newExpanded);
-                                    }}
-                                    className="h-6 px-2 text-xs"
-                                  >
-                                    <Database className="h-3 w-3 mr-1" />
-                                    {expandedDataTasks.has(task.id) ? 'Hide Data' : 'View Data'}
-                                  </Button>
-                                </div>
-                                
-                                {/* Expandable Data Section */}
-                                {expandedDataTasks.has(task.id) && (
-                                  <>
-                                    {/* Form Name Section */}
-                                    <div className="mb-2 p-2 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded border border-green-200 dark:border-green-800">
-                                      <div className="flex items-center space-x-2">
-                                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                                        <div className="font-semibold text-green-800 dark:text-green-200 text-xs">
-                                          Form: {task.formId || 'Unknown Form'}
+                                    });
+                                    
+                                    return allFormData.map((formItem, formIndex) => (
+                                      <div key={formIndex} className="mb-3 border-b border-gray-200 dark:border-gray-600 last:border-b-0 pb-3 last:pb-0">
+                                        {/* Form Name Section */}
+                                        <div className="mb-2 p-2 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded border border-green-200 dark:border-green-800">
+                                          <div className="flex items-center justify-between">
+                                            <div className="flex items-center space-x-2">
+                                              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                              <div className="font-semibold text-green-800 dark:text-green-200 text-xs">
+                                                Form: {formItem.formName}
+                                              </div>
+                                            </div>
+                                            <div className="text-xs text-green-700 dark:text-green-300">
+                                              {formItem.taskName}
+                                            </div>
+                                          </div>
+                                        </div>
+                                        
+                                        {/* Form Data Section */}
+                                        <div className="space-y-2">
+                                          {Object.entries(formItem.data).map(([key, value]) => {
+                                            // Get the original form template to determine if this is a table field
+                                            const template = (formTemplates as any[])?.find((t: any) => t.formId === formItem.formName);
+                                            const field = template?.questions?.find((f: any) => f.id === key);
+                                            const label = field?.label || key;
+                                            
+                                            return (
+                                              <div key={key} className="mb-2 p-1 bg-gray-50 dark:bg-gray-700 rounded">
+                                                <div className="font-semibold text-gray-800 dark:text-gray-200 mb-1 text-xs bg-blue-100 dark:bg-blue-900 px-2 py-0.5 rounded">
+                                                  {label}
+                                                </div>
+                                                
+                                                {/* Check if this is table data */}
+                                                {Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' ? (
+                                                  <div className="overflow-x-auto">
+                                                    <table className="w-full text-xs border-collapse border border-gray-300 dark:border-gray-600">
+                                                      <thead>
+                                                        <tr className="bg-gray-200 dark:bg-gray-600">
+                                                          {Object.keys(value[0]).map((colKey) => {
+                                                            const column = field?.tableColumns?.find((col: any) => col.id === colKey);
+                                                            const colLabel = column?.label || colKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
+                                                            return (
+                                                              <th key={colKey} className="border border-gray-300 dark:border-gray-600 px-2 py-1 text-left font-medium text-gray-700 dark:text-gray-300">
+                                                                {colLabel}
+                                                              </th>
+                                                            );
+                                                          })}
+                                                        </tr>
+                                                      </thead>
+                                                      <tbody>
+                                                        {value.map((row: any, rowIndex: number) => (
+                                                          <tr key={rowIndex} className="hover:bg-gray-100 dark:hover:bg-gray-600">
+                                                            {Object.entries(row).map(([colKey, colValue]) => (
+                                                              <td key={colKey} className="border border-gray-300 dark:border-gray-600 px-2 py-1 text-gray-900 dark:text-gray-100">
+                                                                {String(colValue)}
+                                                              </td>
+                                                            ))}
+                                                          </tr>
+                                                        ))}
+                                                      </tbody>
+                                                    </table>
+                                                  </div>
+                                                ) : (
+                                                  <div className="text-gray-900 dark:text-gray-100 text-xs pl-1">
+                                                    {Array.isArray(value) ? value.join(', ') : String(value)}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
                                         </div>
                                       </div>
-                                    </div>
-                                    
-                                    {/* Form Data Section */}
-                                    <div className="bg-white dark:bg-gray-800 rounded p-2 text-xs border border-gray-200 dark:border-gray-600 shadow-sm max-h-40 overflow-y-auto">
-                                      {Object.entries(task.flowInitialFormData).map(([key, value]) => {
-                                        // Get the original form template to determine if this is a table field
-                                        const template = (formTemplates as any[])?.find((t: any) => t.formId === task.formId);
-                                        const field = template?.questions?.find((f: any) => f.id === key);
-                                        const label = field?.label || key;
-                                        
-                                        return (
-                                          <div key={key} className="mb-2 p-1 bg-gray-50 dark:bg-gray-700 rounded">
-                                            <div className="font-semibold text-gray-800 dark:text-gray-200 mb-1 text-xs bg-blue-100 dark:bg-blue-900 px-2 py-0.5 rounded">
-                                              {label}
-                                            </div>
-                                            
-                                            {/* Check if this is table data */}
-                                            {Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' ? (
-                                              <div className="overflow-x-auto">
-                                                <table className="w-full text-xs border-collapse border border-gray-300 dark:border-gray-600">
-                                                  <thead>
-                                                    <tr className="bg-gray-200 dark:bg-gray-600">
-                                                      {Object.keys(value[0]).map((colKey) => {
-                                                        const column = field?.tableColumns?.find((col: any) => col.id === colKey);
-                                                        const colLabel = column?.label || colKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
-                                                        return (
-                                                          <th key={colKey} className="border border-gray-300 dark:border-gray-600 px-2 py-1 text-left font-medium text-gray-700 dark:text-gray-300">
-                                                            {colLabel}
-                                                          </th>
-                                                        );
-                                                      })}
-                                                    </tr>
-                                                  </thead>
-                                                  <tbody>
-                                                    {value.map((row: any, rowIndex: number) => (
-                                                      <tr key={rowIndex} className="hover:bg-gray-100 dark:hover:bg-gray-600">
-                                                        {Object.entries(row).map(([colKey, colValue]) => (
-                                                          <td key={colKey} className="border border-gray-300 dark:border-gray-600 px-2 py-1 text-gray-900 dark:text-gray-100">
-                                                            {String(colValue)}
-                                                          </td>
-                                                        ))}
-                                                      </tr>
-                                                    ))}
-                                                  </tbody>
-                                                </table>
-                                              </div>
-                                            ) : (
-                                              <div className="text-gray-900 dark:text-gray-100 text-xs pl-1">
-                                                {Array.isArray(value) ? value.join(', ') : String(value)}
-                                              </div>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  </>
-                                )}
-                              </div>
-                            )}
+                                    ));
+                                  })()}
+                                </div>
+                              )}
+                            </div>
                           </div>
                           
                           {/* Time Tracking Information */}
