@@ -234,13 +234,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllTasks(status?: string): Promise<Task[]> {
-    let query = db.select().from(tasks);
-    
     if (status) {
-      query = query.where(eq(tasks.status, status));
+      return await db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.status, status))
+        .orderBy(desc(tasks.createdAt));
     }
     
-    return await query.orderBy(desc(tasks.createdAt));
+    return await db
+      .select()
+      .from(tasks)
+      .orderBy(desc(tasks.createdAt));
   }
 
   // Form Template operations
