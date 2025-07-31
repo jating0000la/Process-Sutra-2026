@@ -439,29 +439,25 @@ export default function Flows() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>System</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value}>
+                              <div className="space-y-2">
                                 <FormControl>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select existing or type new" />
-                                  </SelectTrigger>
+                                  <Input 
+                                    {...field}
+                                    placeholder="Enter system name (e.g., Order Tracker, Purchase)"
+                                    list="system-options"
+                                  />
                                 </FormControl>
-                                <SelectContent>
+                                <datalist id="system-options">
                                   {availableSystems.map((system) => (
-                                    <SelectItem key={system} value={system}>
-                                      {system}
-                                    </SelectItem>
+                                    <option key={system} value={system} />
                                   ))}
-                                  <SelectItem value="__custom__">Type Custom System...</SelectItem>
-                                </SelectContent>
-                              </Select>
-                              {field.value === "__custom__" && (
-                                <Input 
-                                  onChange={(e) => field.onChange(e.target.value)}
-                                  placeholder="Enter new system name"
-                                  className="mt-2"
-                                  autoFocus
-                                />
-                              )}
+                                </datalist>
+                                {availableSystems.length > 0 && (
+                                  <p className="text-xs text-gray-500">
+                                    Available systems: {availableSystems.join(", ")}
+                                  </p>
+                                )}
+                              </div>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -559,8 +555,17 @@ export default function Flows() {
                             <FormItem>
                               <FormLabel>Next Task</FormLabel>
                               <FormControl>
-                                <Input {...field} placeholder="e.g., Step 1" />
+                                <Input 
+                                  {...field} 
+                                  placeholder="Enter next task name (e.g., Customer Registration)"
+                                  list="task-options"
+                                />
                               </FormControl>
+                              <datalist id="task-options">
+                                {availableTasks.map((task) => (
+                                  <option key={task} value={task} />
+                                ))}
+                              </datalist>
                               <FormMessage />
                             </FormItem>
                           )}
