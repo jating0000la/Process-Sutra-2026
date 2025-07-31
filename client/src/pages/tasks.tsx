@@ -16,12 +16,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CheckCircle, Clock, AlertTriangle, Eye, Edit, Plus } from "lucide-react";
+import FormRenderer from "@/components/form-renderer";
 
 export default function Tasks() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading } = useAuth();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
+  const [formTemplate, setFormTemplate] = useState<any>(null);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -42,6 +45,53 @@ export default function Tasks() {
     queryKey: ["/api/tasks", statusFilter !== "all" ? statusFilter : ""],
     enabled: isAuthenticated,
   });
+
+  // Fetch form template
+  const { data: formTemplates } = useQuery({
+    queryKey: ["/api/form-templates"],
+    enabled: isAuthenticated,
+  });
+
+  const handleFillForm = async (task: any) => {
+    if (!task.formId) return;
+    
+    // Find the form template by formId
+    const template = (formTemplates as any[])?.find((t: any) => t.formId === task.formId);
+    if (template) {
+      setFormTemplate(template);
+      setIsFormDialogOpen(true);
+    } else {
+      toast({
+        title: "Error",
+        description: "Form template not found",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleFormSubmit = async (formData: Record<string, any>) => {
+    try {
+      await apiRequest("POST", "/api/form-responses", {
+        formId: formTemplate?.formId,
+        taskId: selectedTask?.id,
+        responses: formData,
+      });
+      
+      toast({
+        title: "Success",
+        description: "Form submitted successfully",
+      });
+      
+      setIsFormDialogOpen(false);
+      setFormTemplate(null);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to submit form",
+        variant: "destructive",
+      });
+    }
+  };
 
   const completeTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
@@ -169,7 +219,7 @@ export default function Tasks() {
                   </CardContent>
                 </Card>
               ))
-            ) : tasks?.length === 0 ? (
+            ) : (tasks as any[])?.length === 0 ? (
               <Card>
                 <CardContent className="p-12 text-center">
                   <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -186,7 +236,7 @@ export default function Tasks() {
                 </CardContent>
               </Card>
             ) : (
-              tasks?.map((task: any) => (
+              (tasks as any[])?.map((task: any) => (
                 <Card key={task.id} className="hover:shadow-md transition-shadow">
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between">
@@ -265,7 +315,7 @@ export default function Tasks() {
                                       <p className="text-sm text-gray-600 mb-3">
                                         Complete the required form for this task
                                       </p>
-                                      <Button size="sm">
+                                      <Button size="sm" onClick={() => handleFillForm(selectedTask)}>
                                         <Edit className="w-4 h-4 mr-2" />
                                         Fill Form
                                       </Button>
@@ -298,6 +348,22 @@ export default function Tasks() {
           </div>
         </div>
       </main>
+
+      {/* Form Dialog */}
+      <Dialog open={isFormDialogOpen} onOpenChange={setIsFormDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Fill Form</DialogTitle>
+          </DialogHeader>
+          {formTemplate && (
+            <FormRenderer
+              template={formTemplate}
+              onSubmit={handleFormSubmit}
+              isSubmitting={false}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

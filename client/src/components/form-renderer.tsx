@@ -76,9 +76,9 @@ export default function FormRenderer({
       
       if (question.required) {
         if (question.type === "checkbox") {
-          fieldSchema = fieldSchema.min(1, `${question.label} is required`);
+          fieldSchema = (fieldSchema as z.ZodArray<any>).min(1, `${question.label} is required`);
         } else {
-          fieldSchema = fieldSchema.min(1, `${question.label} is required`);
+          fieldSchema = (fieldSchema as z.ZodString).min(1, `${question.label} is required`);
         }
       } else {
         fieldSchema = fieldSchema.optional();
