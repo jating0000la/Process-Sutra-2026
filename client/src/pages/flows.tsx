@@ -245,10 +245,11 @@ export default function Flows() {
   };
 
   const onSubmitRule = (data: z.infer<typeof flowRuleSchema>) => {
-    // Handle special "__start__" value for currentTask
+    // Handle special values and custom inputs
     const formattedData = {
       ...data,
-      currentTask: data.currentTask === "__start__" ? "" : data.currentTask
+      currentTask: data.currentTask === "__start__" ? "" : data.currentTask,
+      // No need to handle __custom__ since the input already overwrites the field value
     };
     
     if (editingRule) {
@@ -458,6 +459,7 @@ export default function Flows() {
                                   onChange={(e) => field.onChange(e.target.value)}
                                   placeholder="Enter new system name"
                                   className="mt-2"
+                                  autoFocus
                                 />
                               )}
                               <FormMessage />
@@ -491,6 +493,7 @@ export default function Flows() {
                                   onChange={(e) => field.onChange(e.target.value)}
                                   placeholder="Enter task name"
                                   className="mt-2"
+                                  autoFocus
                                 />
                               )}
                               {field.value === "__start__" && (
@@ -542,6 +545,7 @@ export default function Flows() {
                                   onChange={(e) => field.onChange(e.target.value)}
                                   placeholder="Enter custom status"
                                   className="mt-2"
+                                  autoFocus
                                 />
                               )}
                               <FormMessage />
