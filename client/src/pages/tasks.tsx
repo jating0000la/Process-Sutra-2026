@@ -95,15 +95,19 @@ export default function Tasks() {
       
       // Handle special formatting for table data
       if (field?.type === 'table' && Array.isArray(value)) {
-        const tableData = value.map((row: any, index: number) => {
-          const rowData = Object.entries(row).map(([colKey, colValue]) => {
+        // Create a more readable table format
+        const tableRows = value.map((row: any, index: number) => {
+          const rowEntries = Object.entries(row).map(([colKey, colValue]) => {
             const column = field.tableColumns?.find((col: any) => col.id === colKey);
-            const colLabel = column?.label || colKey;
+            const colLabel = column?.label || colKey.replace(/_/g, ' ');
             return `${colLabel}: ${colValue}`;
-          }).join(', ');
-          return `Row ${index + 1}: ${rowData}`;
-        }).join(' | ');
-        readableData[label] = tableData;
+          });
+          return `Item ${index + 1} - ${rowEntries.join(', ')}`;
+        });
+        readableData[label] = tableRows.join(' • ');
+      } else if (typeof value === 'object' && value !== null) {
+        // Handle other object types by stringifying them properly
+        readableData[label] = JSON.stringify(value);
       } else {
         readableData[label] = value;
       }
@@ -624,11 +628,21 @@ export default function Tasks() {
                             {task.flowInitialFormData && (
                               <div className="pt-2 border-t border-blue-200 dark:border-blue-700 task-initial-data">
                                 <div className="font-medium text-blue-700 dark:text-blue-300 text-xs mb-1">📄 Initial Data:</div>
-                                <div className="bg-white dark:bg-gray-800 rounded p-2 text-xs border border-gray-200 dark:border-gray-600 shadow-sm">
+                                <div className="bg-white dark:bg-gray-800 rounded p-2 text-xs border border-gray-200 dark:border-gray-600 shadow-sm max-h-40 overflow-y-auto">
                                   {Object.entries(getReadableFormData(task.flowInitialFormData, task.formId)).map(([key, value]) => (
-                                    <div key={key} className="flex flex-wrap mb-1 min-h-[16px] py-0.5">
-                                      <span className="font-semibold text-gray-800 dark:text-gray-200 mr-1 shrink-0 bg-gray-100 dark:bg-gray-700 px-1 rounded text-xs">{key}:</span>
-                                      <span className="text-gray-900 dark:text-gray-100 break-words flex-1 pl-1">{String(value)}</span>
+                                    <div key={key} className="mb-2 p-1 bg-gray-50 dark:bg-gray-700 rounded">
+                                      <div className="font-semibold text-gray-800 dark:text-gray-200 mb-1 text-xs bg-blue-100 dark:bg-blue-900 px-2 py-0.5 rounded">{key}</div>
+                                      <div className="text-gray-900 dark:text-gray-100 break-words text-xs leading-relaxed pl-2">
+                                        {String(value).split(' • ').map((item, index) => (
+                                          <div key={index} className="mb-0.5">
+                                            {item.includes('Item') ? (
+                                              <span className="text-blue-700 dark:text-blue-300 font-medium">{item}</span>
+                                            ) : (
+                                              item
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
                                     </div>
                                   ))}
                                 </div>
