@@ -31,8 +31,67 @@ export const users = pgTable("users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   role: varchar("role").default("user"), // user, admin
+  // Extended user details
+  username: varchar("username").unique(),
+  phoneNumber: varchar("phone_number"),
+  department: varchar("department"),
+  designation: varchar("designation"),
+  employeeId: varchar("employee_id"),
+  dateOfBirth: timestamp("date_of_birth"),
+  address: text("address"),
+  emergencyContact: varchar("emergency_contact"),
+  emergencyContactPhone: varchar("emergency_contact_phone"),
+  status: varchar("status").default("active"), // active, inactive, suspended
+  lastLoginAt: timestamp("last_login_at"),
+  passwordChangedAt: timestamp("password_changed_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// User login logs table
+export const userLoginLogs = pgTable("user_login_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  deviceId: varchar("device_id").notNull(),
+  deviceName: varchar("device_name"),
+  deviceType: varchar("device_type"), // desktop, mobile, tablet
+  browserName: varchar("browser_name"),
+  browserVersion: varchar("browser_version"),
+  operatingSystem: varchar("operating_system"),
+  ipAddress: varchar("ip_address"),
+  location: jsonb("location"), // {country, region, city, lat, lng}
+  userAgent: text("user_agent"),
+  loginTime: timestamp("login_time").defaultNow(),
+  logoutTime: timestamp("logout_time"),
+  sessionDuration: integer("session_duration"), // in minutes
+  loginStatus: varchar("login_status").default("success"), // success, failed, suspicious
+  failureReason: varchar("failure_reason"),
+});
+
+// User devices table
+export const userDevices = pgTable("user_devices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  deviceId: varchar("device_id").notNull(),
+  deviceName: varchar("device_name"),
+  deviceType: varchar("device_type"),
+  browserName: varchar("browser_name"),
+  operatingSystem: varchar("operating_system"),
+  isTrusted: boolean("is_trusted").default(false),
+  firstSeenAt: timestamp("first_seen_at").defaultNow(),
+  lastSeenAt: timestamp("last_seen_at").defaultNow(),
+  isActive: boolean("is_active").default(true),
+});
+
+// Password change history table
+export const passwordChangeHistory = pgTable("password_change_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  changedAt: timestamp("changed_at").defaultNow(),
+  changedBy: varchar("changed_by"), // admin or self
+  reason: varchar("reason"), // scheduled, forgotten, security, admin_reset
+  ipAddress: varchar("ip_address"),
+  deviceId: varchar("device_id"),
 });
 
 // Flow Rules - Define workflow progression rules
@@ -108,6 +167,9 @@ export const formResponses = pgTable("form_responses", {
 export const usersRelations = relations(users, ({ many }) => ({
   createdForms: many(formTemplates),
   submittedResponses: many(formResponses),
+  loginLogs: many(userLoginLogs),
+  devices: many(userDevices),
+  passwordHistory: many(passwordChangeHistory),
 }));
 
 export const flowRulesRelations = relations(flowRules, ({ one }) => ({
@@ -148,6 +210,29 @@ export const formResponsesRelations = relations(formResponses, ({ one }) => ({
   }),
 }));
 
+export const userLoginLogsRelations = relations(userLoginLogs, ({ one }) => ({
+  user: one(users, {
+    fields: [userLoginLogs.userId],
+    references: [users.id],
+  }),
+}));
+
+export const userDevicesRelations = relations(userDevices, ({ one }) => ({
+  user: one(users, {
+    fields: [userDevices.userId],
+    references: [users.id],
+  }),
+}));
+
+export const passwordChangeHistoryRelations = relations(passwordChangeHistory, ({ one }) => ({
+  user: one(users, {
+    fields: [passwordChangeHistory.userId],
+    references: [users.id],
+  }),
+}));
+
+
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -178,6 +263,22 @@ export const insertFormResponseSchema = createInsertSchema(formResponses).omit({
   timestamp: true,
 });
 
+export const insertUserLoginLogSchema = createInsertSchema(userLoginLogs).omit({
+  id: true,
+  loginTime: true,
+});
+
+export const insertUserDeviceSchema = createInsertSchema(userDevices).omit({
+  id: true,
+  firstSeenAt: true,
+  lastSeenAt: true,
+});
+
+export const insertPasswordChangeHistorySchema = createInsertSchema(passwordChangeHistory).omit({
+  id: true,
+  changedAt: true,
+});
+
 // TAT Configuration table
 export const tatConfig = pgTable("tat_config", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -206,3 +307,9 @@ export type InsertFormTemplate = z.infer<typeof insertFormTemplateSchema>;
 export type FormTemplate = typeof formTemplates.$inferSelect;
 export type InsertFormResponse = z.infer<typeof insertFormResponseSchema>;
 export type FormResponse = typeof formResponses.$inferSelect;
+export type InsertUserLoginLog = z.infer<typeof insertUserLoginLogSchema>;
+export type UserLoginLog = typeof userLoginLogs.$inferSelect;
+export type InsertUserDevice = z.infer<typeof insertUserDeviceSchema>;
+export type UserDevice = typeof userDevices.$inferSelect;
+export type InsertPasswordChangeHistory = z.infer<typeof insertPasswordChangeHistorySchema>;
+export type PasswordChangeHistory = typeof passwordChangeHistory.$inferSelect;

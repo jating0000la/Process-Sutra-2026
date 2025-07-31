@@ -5,6 +5,9 @@ import {
   formTemplates,
   formResponses,
   tatConfig,
+  userLoginLogs,
+  userDevices,
+  passwordChangeHistory,
   type User,
   type UpsertUser,
   type FlowRule,
@@ -15,6 +18,12 @@ import {
   type InsertFormTemplate,
   type FormResponse,
   type InsertFormResponse,
+  type UserLoginLog,
+  type InsertUserLoginLog,
+  type UserDevice,
+  type InsertUserDevice,
+  type PasswordChangeHistory,
+  type InsertPasswordChangeHistory,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql } from "drizzle-orm";
@@ -65,6 +74,25 @@ export interface IStorage {
     avgCompletionTime: number;
     onTimeRate: number;
   }[]>;
+
+  // User Management operations
+  getAllUsers(): Promise<User[]>;
+  updateUserDetails(id: string, details: Partial<User>): Promise<User>;
+  changeUserStatus(id: string, status: string): Promise<User>;
+  
+  // Login Log operations
+  createLoginLog(loginLog: InsertUserLoginLog): Promise<UserLoginLog>;
+  getLoginLogs(userId?: string): Promise<UserLoginLog[]>;
+  updateLoginLog(id: string, data: Partial<UserLoginLog>): Promise<UserLoginLog>;
+  
+  // Device operations
+  createOrUpdateDevice(device: InsertUserDevice): Promise<UserDevice>;
+  getUserDevices(userId: string): Promise<UserDevice[]>;
+  updateDeviceTrust(deviceId: string, isTrusted: boolean): Promise<UserDevice>;
+  
+  // Password history operations
+  createPasswordChangeHistory(history: InsertPasswordChangeHistory): Promise<PasswordChangeHistory>;
+  getPasswordHistory(userId: string): Promise<PasswordChangeHistory[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -434,6 +462,109 @@ export class DatabaseStorage implements IStorage {
         .returning();
       return created;
     }
+  }
+
+  // User Management operations
+  async getAllUsers(): Promise<User[]> {
+    return await db.select().from(users).orderBy(asc(users.firstName));
+  }
+
+  async updateUserDetails(id: string, details: Partial<User>): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({ ...details, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  async changeUserStatus(id: string, status: string): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({ status, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  // Login Log operations
+  async createLoginLog(loginLog: InsertUserLoginLog): Promise<UserLoginLog> {
+    const [log] = await db.insert(userLoginLogs).values(loginLog).returning();
+    return log;
+  }
+
+  async getLoginLogs(userId?: string): Promise<UserLoginLog[]> {
+    let query = db.select().from(userLoginLogs);
+    
+    if (userId) {
+      query = query.where(eq(userLoginLogs.userId, userId));
+    }
+    
+    return await query.orderBy(desc(userLoginLogs.loginTime));
+  }
+
+  async updateLoginLog(id: string, data: Partial<UserLoginLog>): Promise<UserLoginLog> {
+    const [log] = await db
+      .update(userLoginLogs)
+      .set(data)
+      .where(eq(userLoginLogs.id, id))
+      .returning();
+    return log;
+  }
+
+  // Device operations
+  async createOrUpdateDevice(device: InsertUserDevice): Promise<UserDevice> {
+    // Check if device already exists
+    const existingDevice = await db
+      .select()
+      .from(userDevices)
+      .where(and(eq(userDevices.userId, device.userId), eq(userDevices.deviceId, device.deviceId)))
+      .limit(1);
+
+    if (existingDevice.length > 0) {
+      // Update existing device
+      const [updatedDevice] = await db
+        .update(userDevices)
+        .set({ ...device, lastSeenAt: new Date() })
+        .where(eq(userDevices.id, existingDevice[0].id))
+        .returning();
+      return updatedDevice;
+    } else {
+      // Create new device
+      const [newDevice] = await db.insert(userDevices).values(device).returning();
+      return newDevice;
+    }
+  }
+
+  async getUserDevices(userId: string): Promise<UserDevice[]> {
+    return await db
+      .select()
+      .from(userDevices)
+      .where(eq(userDevices.userId, userId))
+      .orderBy(desc(userDevices.lastSeenAt));
+  }
+
+  async updateDeviceTrust(deviceId: string, isTrusted: boolean): Promise<UserDevice> {
+    const [device] = await db
+      .update(userDevices)
+      .set({ isTrusted })
+      .where(eq(userDevices.deviceId, deviceId))
+      .returning();
+    return device;
+  }
+
+  // Password history operations
+  async createPasswordChangeHistory(history: InsertPasswordChangeHistory): Promise<PasswordChangeHistory> {
+    const [record] = await db.insert(passwordChangeHistory).values(history).returning();
+    return record;
+  }
+
+  async getPasswordHistory(userId: string): Promise<PasswordChangeHistory[]> {
+    return await db
+      .select()
+      .from(passwordChangeHistory)
+      .where(eq(passwordChangeHistory.userId, userId))
+      .orderBy(desc(passwordChangeHistory.changedAt));
   }
 }
 
