@@ -318,11 +318,51 @@ export default function Tasks() {
                         <div>
                           <h3 className="text-sm font-medium text-gray-900">{task.taskName}</h3>
                           <p className="text-sm text-gray-600">System: {task.system}</p>
-                          <div className="flex items-center space-x-4 mt-1">
+                          
+                          {/* Time Tracking Information */}
+                          <div className="mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border text-xs space-y-1">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <span className="font-medium text-gray-700">Created:</span>
+                                <div className="text-gray-600">{format(new Date(task.createdAt), 'MMM dd, HH:mm')}</div>
+                              </div>
+                              <div>
+                                <span className="font-medium text-gray-700">Due:</span>
+                                <div className="text-gray-600">{format(new Date(task.plannedTime), 'MMM dd, HH:mm')}</div>
+                              </div>
+                              {task.actualCompletionTime && (
+                                <div className="col-span-2">
+                                  <span className="font-medium text-gray-700">Completed:</span>
+                                  <div className="text-gray-600">{format(new Date(task.actualCompletionTime), 'MMM dd, HH:mm')}</div>
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Performance Status */}
+                            <div className="pt-1 border-t border-gray-200">
+                              {task.actualCompletionTime ? (
+                                <div>
+                                  {new Date(task.actualCompletionTime) <= new Date(task.plannedTime) ? (
+                                    <span className="text-green-600 font-medium">✅ Completed On Time</span>
+                                  ) : (
+                                    <span className="text-red-600 font-medium">⚠️ Completed Late</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <div>
+                                  {new Date() > new Date(task.plannedTime) ? (
+                                    <span className="text-red-600 font-medium">⚠️ Overdue</span>
+                                  ) : (
+                                    <span className="text-blue-600 font-medium">⏳ In Progress</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center space-x-4 mt-2">
                             <span className="text-xs text-gray-500">Flow ID: {task.flowId}</span>
-                            <span className="text-xs text-gray-500">
-                              Due: {new Date(task.plannedTime).toLocaleDateString()}
-                            </span>
+                            <span className="text-xs text-gray-500">Order: {task.orderNumber}</span>
                           </div>
                         </div>
                       </div>

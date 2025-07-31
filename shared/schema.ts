@@ -8,7 +8,6 @@ import {
   text,
   integer,
   boolean,
-  boolean,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -59,12 +58,12 @@ export const tasks = pgTable("tasks", {
   flowId: varchar("flow_id").notNull(), // Unique identifier for flow instance
   orderNumber: varchar("order_number"), // Optional order/case number
   taskName: varchar("task_name").notNull(),
-  plannedTime: timestamp("planned_time").notNull(),
-  actualTime: timestamp("actual_time"),
+  plannedTime: timestamp("planned_time").notNull(), // When task should be completed (TAT-based)
+  actualCompletionTime: timestamp("actual_completion_time"), // When task was actually completed
   doerEmail: varchar("doer_email").notNull(),
   status: varchar("status").default("pending"), // pending, in_progress, completed, overdue
   formId: varchar("form_id"), // Associated form template
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(), // When task was created
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

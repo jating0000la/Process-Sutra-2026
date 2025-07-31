@@ -248,7 +248,7 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(tasks.status, "completed"),
-          sql`${tasks.actualTime} <= ${tasks.plannedTime}`
+          sql`${tasks.actualCompletionTime} <= ${tasks.plannedTime}`
         )
       );
 
@@ -274,9 +274,9 @@ export class DatabaseStorage implements IStorage {
     const results = await db
       .select({
         system: tasks.system,
-        avgTime: sql<number>`AVG(EXTRACT(EPOCH FROM (${tasks.actualTime} - ${tasks.plannedTime})) / 86400)`,
+        avgTime: sql<number>`AVG(EXTRACT(EPOCH FROM (${tasks.actualCompletionTime} - ${tasks.plannedTime})) / 86400)`,
         totalCompleted: count(),
-        onTimeCount: sql<number>`COUNT(CASE WHEN ${tasks.actualTime} <= ${tasks.plannedTime} THEN 1 END)`,
+        onTimeCount: sql<number>`COUNT(CASE WHEN ${tasks.actualCompletionTime} <= ${tasks.plannedTime} THEN 1 END)`,
       })
       .from(tasks)
       .where(eq(tasks.status, "completed"))

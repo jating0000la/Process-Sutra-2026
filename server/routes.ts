@@ -171,7 +171,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Mark current task as completed
       const completedTask = await storage.updateTask(id, {
         status: "completed",
-        actualTime: new Date(),
+        actualCompletionTime: new Date(),
       });
 
       // Find next task in workflow based on completion status
@@ -226,7 +226,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const updateData: any = { status };
       if (status === "completed") {
-        updateData.actualTime = new Date();
+        updateData.actualCompletionTime = new Date();
       }
       
       // Update the task
