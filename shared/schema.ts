@@ -44,7 +44,7 @@ export const flowRules = pgTable("flow_rules", {
   status: varchar("status").default(""), // Task completion status
   nextTask: varchar("next_task").notNull(), // Next task in flow
   tat: integer("tat").notNull(), // Turn around time
-  tatType: varchar("tat_type").notNull().default("Day"), // Day, Hour, etc.
+  tatType: varchar("tat_type").notNull().default("daytat"), // daytat, hourtat, beforetat, specifytat
   doer: varchar("doer").notNull(), // Role who performs this task
   email: varchar("email").notNull(), // Email of assignee
   formId: varchar("form_id"), // Associated form template

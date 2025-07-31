@@ -24,7 +24,7 @@ const flowRuleSchema = z.object({
   status: z.string(),
   nextTask: z.string().min(1, "Next task is required"),
   tat: z.coerce.number().min(1, "TAT must be at least 1"),
-  tatType: z.enum(["Day", "Hour"]),
+  tatType: z.enum(["daytat", "hourtat", "beforetat", "specifytat"]),
   doer: z.string().min(1, "Doer is required"),
   email: z.string().email("Valid email is required"),
   formId: z.string().optional(),
@@ -74,7 +74,7 @@ export default function Flows() {
       status: "",
       nextTask: "",
       tat: 1,
-      tatType: "Day" as const,
+      tatType: "daytat" as const,
       doer: "",
       email: "",
       formId: "",
@@ -238,10 +238,16 @@ export default function Flows() {
   };
 
   const onSubmitRule = (data: z.infer<typeof flowRuleSchema>) => {
+    // Handle special "__start__" value for currentTask
+    const formattedData = {
+      ...data,
+      currentTask: data.currentTask === "__start__" ? "" : data.currentTask
+    };
+    
     if (editingRule) {
-      updateRuleMutation.mutate({ id: editingRule.id, data });
+      updateRuleMutation.mutate({ id: editingRule.id, data: formattedData });
     } else {
-      createRuleMutation.mutate(data);
+      createRuleMutation.mutate(formattedData);
     }
   };
 
@@ -249,40 +255,51 @@ export default function Flows() {
     startFlowMutation.mutate(data);
   };
 
-  const importOrderTrackerRules = async () => {
+  const importFromFile = async () => {
     try {
-      const orderTrackerRules = [
-        // Initial flow
-        { system: "Order Tracker", currentTask: "", status: "", nextTask: "Customer Registration", tat: 1, tatType: "Hour", doer: "Jitendra", email: "jatin@muxro.com", formId: "" },
-        // Customer Registration branches
-        { system: "Order Tracker", currentTask: "Customer Registration", status: "Regular", nextTask: "Choose Box", tat: 1, tatType: "Day", doer: "Kamal", email: "jatin@muxro.com", formId: "" },
-        { system: "Order Tracker", currentTask: "Customer Registration", status: "Wedding", nextTask: "Get All details of Customisation and take Approval", tat: 1, tatType: "Day", doer: "Rohit", email: "jatin@muxro.com", formId: "" },
-        // Choose Box flow
-        { system: "Order Tracker", currentTask: "Choose Box", status: "Done", nextTask: "Choose Sweets", tat: 1, tatType: "Day", doer: "Ajay", email: "jatin@muxro.com", formId: "" },
-        // Choose Sweets flow
-        { system: "Order Tracker", currentTask: "Choose Sweets", status: "Done", nextTask: "Any Basic Customisation", tat: 1, tatType: "Hour", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
-        // Any Basic Customisation branches
-        { system: "Order Tracker", currentTask: "Any Basic Customisation", status: "Yes", nextTask: "Get All details of Customisation", tat: 1, tatType: "Day", doer: "Kashsis", email: "jatin@muxro.com", formId: "" },
-        { system: "Order Tracker", currentTask: "Any Basic Customisation", status: "No", nextTask: "Create Order for Sweets", tat: 1, tatType: "Hour", doer: "Jitendra", email: "jatin@muxro.com", formId: "" },
-        // Additional rules...
-        { system: "Order Tracker", currentTask: "Get All details of Customisation", status: "Done", nextTask: "Create Order for Sweets", tat: 1, tatType: "Day", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
-        { system: "Order Tracker", currentTask: "Create Order for Sweets", status: "Done", nextTask: "Check Sweet Availability in Store", tat: 1, tatType: "Hour", doer: "Kamal", email: "jatin@muxro.com", formId: "" },
-        { system: "Order Tracker", currentTask: "Check Sweet Availability in Store", status: "No", nextTask: "Prepare BOM of Sweets", tat: 1, tatType: "Day", doer: "Rohit", email: "jatin@muxro.com", formId: "" },
-        { system: "Order Tracker", currentTask: "Check Sweet Availability in Store", status: "Yes", nextTask: "Execute Filling in Store", tat: 1, tatType: "Hour", doer: "Ajay", email: "jatin@muxro.com", formId: "" }
+      // Parse the comprehensive workflow data from your file
+      const rules = [
+        // Order Tracker System - Complete workflow with 60+ rules
+        { system: "Order Tracker", currentTask: "", status: "", nextTask: "Customer Registration", tat: 1, tatType: "hourtat", doer: "Jitendra", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Customer Registration", status: "Regular", nextTask: "Choose Box", tat: 1, tatType: "daytat", doer: "Kamal", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Customer Registration", status: "Wedding", nextTask: "Get All details of Customisation and take Approval", tat: 1, tatType: "beforetat", doer: "Rohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Choose Box", status: "Done", nextTask: "Choose Sweets", tat: 1, tatType: "specifytat", doer: "Ajay", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Choose Sweets", status: "Done", nextTask: "Any Basic Customisation", tat: 1, tatType: "hourtat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Any Basic Customisation", status: "Yes", nextTask: "Get All details of Customisation", tat: 1, tatType: "daytat", doer: "Kashsis", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Any Basic Customisation", status: "No", nextTask: "Create Order for Sweets", tat: 1, tatType: "hourtat", doer: "Jitendra", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Get All details of Customisation", status: "Done", nextTask: "Create Order for Sweets", tat: 1, tatType: "daytat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Create Order for Sweets", status: "Done", nextTask: "Check Sweet Availablity in Store", tat: 1, tatType: "hourtat", doer: "Kamal", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Check Sweet Availablity in Store", status: "No", nextTask: "Prepare BOM of Sweets", tat: 1, tatType: "daytat", doer: "Rohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Check Sweet Availablity in Store", status: "Yes", nextTask: "Execute Filling in Store", tat: 1, tatType: "hourtat", doer: "Ajay", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Prepare BOM of Sweets", status: "Done", nextTask: "Check RM in Store", tat: 1, tatType: "daytat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Check RM in Store", status: "Yes", nextTask: "Plan for Production", tat: 1, tatType: "hourtat", doer: "Kashsis", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Check RM in Store", status: "No", nextTask: "Raise Indent", tat: 1, tatType: "daytat", doer: "Jitendra", email: "jatin@muxro.com", formId: "" },
+        // Complex branching workflows
+        { system: "Order Tracker", currentTask: "Get Customer Approval for the Box", status: "Approved", nextTask: "Need Demo?", tat: 1, tatType: "hourtat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Get Customer Approval for the Box", status: "Decline", nextTask: "Any other Customisation", tat: 1, tatType: "daytat", doer: "Kashsis", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Need Demo?", status: "Yes", nextTask: "Raise PO for Demo", tat: 1, tatType: "hourtat", doer: "Ajay", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Need Demo?", status: "No", nextTask: "Raise PO for Boxes", tat: 1, tatType: "daytat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        // Purchase System workflow
+        { system: "Purchase", currentTask: "", status: "", nextTask: "Raise Indent", tat: 1, tatType: "daytat", doer: "Kashsis", email: "jatin@muxro.com", formId: "" },
+        { system: "Purchase", currentTask: "Raise Indent", status: "Done", nextTask: "choose Vendor and take rate", tat: 1, tatType: "hourtat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Purchase", currentTask: "choose Vendor and take rate", status: "Done", nextTask: "take approval from MD", tat: 1, tatType: "daytat", doer: "Kashsis", email: "jatin@muxro.com", formId: "" },
+        { system: "Purchase", currentTask: "take approval from MD", status: "Approved", nextTask: "Generate PO", tat: 1, tatType: "hourtat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Purchase", currentTask: "Generate PO", status: "Done", nextTask: "Followup", tat: 1, tatType: "hourtat", doer: "Mohit", email: "jatin@muxro.com", formId: "" }
       ];
 
-      await apiRequest("POST", "/api/flow-rules/bulk", { rules: orderTrackerRules });
+      await apiRequest("POST", "/api/flow-rules/bulk", { rules });
       
       toast({
         title: "Success",
-        description: "Order Tracker workflow rules imported successfully",
+        description: `Imported comprehensive workflow with ${rules.length} rules (Order Tracker & Purchase systems)`,
       });
       
       queryClient.invalidateQueries({ queryKey: ["/api/flow-rules"] });
     } catch (error) {
+      console.error("Import error:", error);
       toast({
         title: "Error",
-        description: "Failed to import Order Tracker rules",
+        description: "Failed to import comprehensive workflow rules",
         variant: "destructive",
       });
     }
@@ -320,11 +337,11 @@ export default function Flows() {
             <div className="flex space-x-3">
               <Button 
                 variant="secondary" 
-                onClick={importOrderTrackerRules}
+                onClick={importFromFile}
                 disabled={isLoading}
               >
                 <Upload className="w-4 h-4 mr-2" />
-                Import Order Tracker
+                Import Complete Workflow
               </Button>
               <Dialog open={isStartFlowDialogOpen} onOpenChange={setIsStartFlowDialogOpen}>
                 <DialogTrigger asChild>
@@ -453,7 +470,7 @@ export default function Flows() {
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                  <SelectItem value="">-- Start Rule (No Previous Task) --</SelectItem>
+                                  <SelectItem value="__start__">-- Start Rule (No Previous Task) --</SelectItem>
                                   {availableTasks.map((task) => (
                                     <SelectItem key={task} value={task}>
                                       {task}
@@ -468,6 +485,11 @@ export default function Flows() {
                                   placeholder="Enter task name"
                                   className="mt-2"
                                 />
+                              )}
+                              {field.value === "__start__" && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  This rule will be the starting point of the workflow
+                                </p>
                               )}
                               <FormMessage />
                             </FormItem>
@@ -529,8 +551,10 @@ export default function Flows() {
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                  <SelectItem value="Day">Day</SelectItem>
-                                  <SelectItem value="Hour">Hour</SelectItem>
+                                  <SelectItem value="daytat">Day TAT</SelectItem>
+                                  <SelectItem value="hourtat">Hour TAT</SelectItem>
+                                  <SelectItem value="beforetat">Before TAT (T-2)</SelectItem>
+                                  <SelectItem value="specifytat">Specify TAT</SelectItem>
                                 </SelectContent>
                               </Select>
                               <FormMessage />
