@@ -182,13 +182,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid status value" });
       }
       
+      // Get current task details
+      const task = await storage.getTaskById(id);
+      if (!task) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+      
       const updateData: any = { status };
       if (status === "completed") {
         updateData.actualTime = new Date();
       }
       
-      const task = await storage.updateTask(id, updateData);
-      res.json(task);
+      // Update the task
+      const updatedTask = await storage.updateTask(id, updateData);
+      
+      // Check for workflow progression based on new status
+      const flowRules = await storage.getFlowRules(task.system);
+      
+      // Map status values to flow rule status values
+      const statusMap: Record<string, string> = {
+        "pending": "Pending",
+        "in_progress": "In Progress", 
+        "completed": "Done",
+        "overdue": "Overdue"
+      };
+      
+      const ruleStatus = statusMap[status];
+      const nextRule = flowRules.find(
+        rule => rule.currentTask === task.taskName && rule.status === ruleStatus
+      );
+      
+      if (nextRule) {
+        // Create next task based on current task status
+        const plannedTime = new Date();
+        if (nextRule.tatType === "Day") {
+          plannedTime.setDate(plannedTime.getDate() + nextRule.tat);
+        } else if (nextRule.tatType === "Hour") {
+          plannedTime.setHours(plannedTime.getHours() + nextRule.tat);
+        }
+
+        await storage.createTask({
+          system: task.system,
+          flowId: task.flowId,
+          orderNumber: task.orderNumber,
+          taskName: nextRule.nextTask,
+          plannedTime,
+          doerEmail: nextRule.email,
+          status: "pending",
+          formId: nextRule.formId,
+        });
+      }
+      
+      res.json(updatedTask);
     } catch (error) {
       console.error("Error updating task status:", error);
       res.status(500).json({ message: "Failed to update task status" });
