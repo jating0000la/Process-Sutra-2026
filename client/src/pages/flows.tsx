@@ -65,6 +65,13 @@ export default function Flows() {
   // Get unique systems and tasks from existing rules for dropdowns
   const availableSystems = Array.from(new Set((flowRules as any[])?.map(rule => rule.system) || []));
   const availableTasks = Array.from(new Set((flowRules as any[])?.map(rule => rule.nextTask).filter(Boolean) || []));
+  
+  // Get available statuses for a specific task - shows only relevant statuses
+  const getAvailableStatuses = (taskName: string) => {
+    if (!taskName || taskName === "__start__") return [];
+    const taskStatuses = (flowRules as any[])?.filter(rule => rule.currentTask === taskName).map(rule => rule.status) || [];
+    return Array.from(new Set(taskStatuses)).filter(status => status && status.trim() !== "");
+  };
 
   const ruleForm = useForm({
     resolver: zodResolver(flowRuleSchema),
@@ -502,10 +509,41 @@ export default function Flows() {
                           name="status"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Status (empty for start)</FormLabel>
-                              <FormControl>
-                                <Input {...field} placeholder="e.g., completed" />
-                              </FormControl>
+                              <FormLabel>Status</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select status or enter custom" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {ruleForm.watch("currentTask") && getAvailableStatuses(ruleForm.watch("currentTask")).length > 0 ? (
+                                    getAvailableStatuses(ruleForm.watch("currentTask")).map((status) => (
+                                      <SelectItem key={status} value={status}>
+                                        {status}
+                                      </SelectItem>
+                                    ))
+                                  ) : (
+                                    <>
+                                      <SelectItem value="Done">Done</SelectItem>
+                                      <SelectItem value="Yes">Yes</SelectItem>
+                                      <SelectItem value="No">No</SelectItem>
+                                      <SelectItem value="Approved">Approved</SelectItem>
+                                      <SelectItem value="Decline">Decline</SelectItem>
+                                      <SelectItem value="Regular">Regular</SelectItem>
+                                      <SelectItem value="Wedding">Wedding</SelectItem>
+                                    </>
+                                  )}
+                                  <SelectItem value="__custom__">Type Custom Status...</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {field.value === "__custom__" && (
+                                <Input 
+                                  onChange={(e) => field.onChange(e.target.value)}
+                                  placeholder="Enter custom status"
+                                  className="mt-2"
+                                />
+                              )}
                               <FormMessage />
                             </FormItem>
                           )}
