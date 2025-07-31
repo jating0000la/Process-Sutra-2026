@@ -146,5 +146,8 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     return res.status(401).json({ message: "Unauthorized" });
   }
 
+  // Attach user to request object
+  (req as any).user = user;
+
   return next();
 };

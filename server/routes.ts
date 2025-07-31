@@ -940,7 +940,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const history = await storage.createPasswordChangeHistory({
         ...req.body,
-        userId: req.user.claims.sub
+        userId: req.user.id
       });
       res.json(history);
     } catch (error) {
