@@ -299,7 +299,11 @@ export default function Tasks() {
         title: "Success",
         description: "Task completed successfully. Next task created automatically.",
       });
+      // Invalidate all task-related queries including filtered ones
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === "/api/tasks" });
+      queryClient.invalidateQueries({ queryKey: ["/api/form-responses"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/analytics/metrics"] });
       setIsCompleteDialogOpen(false);
       setTaskToComplete(null);
       setCompletionStatus("");
@@ -333,7 +337,9 @@ export default function Tasks() {
         title: "Success",
         description: "Task transferred successfully.",
       });
+      // Invalidate all task-related queries
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === "/api/tasks" });
       setIsTransferDialogOpen(false);
       setTaskToTransfer(null);
       setTransferEmail("");
