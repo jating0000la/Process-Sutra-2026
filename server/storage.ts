@@ -103,18 +103,52 @@ export class DatabaseStorage implements IStorage {
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
-    const [user] = await db
-      .insert(users)
-      .values(userData)
-      .onConflictDoUpdate({
-        target: users.id,
-        set: {
-          ...userData,
-          updatedAt: new Date(),
-        },
-      })
-      .returning();
-    return user;
+    try {
+      // First try to find existing user by email or id
+      const existingUser = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, userData.email))
+        .limit(1);
+      
+      if (existingUser.length > 0) {
+        // Update existing user
+        const [user] = await db
+          .update(users)
+          .set({
+            ...userData,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.email, userData.email))
+          .returning();
+        return user;
+      } else {
+        // Insert new user
+        const [user] = await db.insert(users).values(userData).returning();
+        return user;
+      }
+    } catch (error) {
+      console.error("Error in upsertUser:", error);
+      // If there's still a conflict, try to find and update the user
+      const [existingUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, userData.email))
+        .limit(1);
+      
+      if (existingUser) {
+        const [user] = await db
+          .update(users)
+          .set({
+            ...userData,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.email, userData.email))
+          .returning();
+        return user;
+      }
+      throw error;
+    }
   }
 
   // Flow Rules operations
