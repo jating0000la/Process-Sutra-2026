@@ -445,8 +445,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Form Templates API
   app.get("/api/form-templates", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const userRole = req.user.claims.role || "user";
+      const userId = req.user.id;
+      const currentUser = await storage.getUser(userId);
+      const userRole = currentUser?.role || "user";
       
       // For regular users, get all form templates they need for their tasks
       // For admins, get all templates they created
@@ -859,7 +860,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Login Logs API
   app.get("/api/login-logs", isAuthenticated, async (req: any, res) => {
     try {
-      const currentUser = await storage.getUser(req.user.claims.sub);
+      const currentUser = await storage.getUser(req.user.id);
       let logs;
       
       if (currentUser?.role === "admin") {
@@ -879,7 +880,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const log = await storage.createLoginLog({
         ...req.body,
-        userId: req.user.claims.sub
+        userId: req.user.id
       });
       res.json(log);
     } catch (error) {
@@ -891,7 +892,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Device Management API
   app.get("/api/devices", isAuthenticated, async (req: any, res) => {
     try {
-      const currentUser = await storage.getUser(req.user.claims.sub);
+      const currentUser = await storage.getUser(req.user.id);
       const devices = await storage.getUserDevices(currentUser?.id || "");
       res.json(devices);
     } catch (error) {
@@ -904,7 +905,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const device = await storage.createOrUpdateDevice({
         ...req.body,
-        userId: req.user.claims.sub
+        userId: req.user.id
       });
       res.json(device);
     } catch (error) {
@@ -926,7 +927,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Password History API
   app.get("/api/password-history", isAuthenticated, async (req: any, res) => {
     try {
-      const currentUser = await storage.getUser(req.user.claims.sub);
+      const currentUser = await storage.getUser(req.user.id);
       const history = await storage.getPasswordHistory(currentUser?.id || "");
       res.json(history);
     } catch (error) {
