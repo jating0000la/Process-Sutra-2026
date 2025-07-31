@@ -120,7 +120,18 @@ export default function FormRenderer({
     };
 
     if (!question.tableColumns || question.tableColumns.length === 0) {
-      return <div className="text-gray-500 text-sm">No table columns configured</div>;
+      return (
+        <div className="border border-gray-200 rounded-lg">
+          <div className="p-3 bg-gray-50 border-b">
+            <h4 className="text-sm font-medium">{question.label}</h4>
+          </div>
+          <div className="p-6 text-center">
+            <div className="text-gray-500 text-sm">
+              This table has no columns configured yet. Please contact the administrator to configure the table columns.
+            </div>
+          </div>
+        </div>
+      );
     }
 
     return (
