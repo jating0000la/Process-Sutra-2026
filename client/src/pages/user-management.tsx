@@ -41,7 +41,8 @@ export default function UserManagement() {
   // Update user mutation
   const updateUserMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<User> }) => {
-      return await apiRequest(`/api/users/${id}`, "PUT", data);
+      const response = await apiRequest("PUT", `/api/users/${id}`, data);
+      return await response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
@@ -63,7 +64,8 @@ export default function UserManagement() {
   // Create user mutation
   const createUserMutation = useMutation({
     mutationFn: async (data: Partial<User>) => {
-      return await apiRequest("/api/users", "POST", data);
+      const response = await apiRequest("POST", "/api/users", data);
+      return await response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
@@ -86,7 +88,8 @@ export default function UserManagement() {
   // Change user status mutation
   const changeStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      return await apiRequest(`/api/users/${id}/status`, "PUT", { status });
+      const response = await apiRequest("PUT", `/api/users/${id}/status`, { status });
+      return await response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
@@ -259,22 +262,22 @@ export default function UserManagement() {
                           </div>
                         </TableCell>
                         <TableCell>{user.email}</TableCell>
-                        <TableCell>{user.username ?? '-'}</TableCell>
-                        <TableCell>{user.department ?? '-'}</TableCell>
+                        <TableCell>{user.username || '-'}</TableCell>
+                        <TableCell>{user.department || '-'}</TableCell>
                         <TableCell>
-                          <Badge variant={getRoleBadgeVariant(user.role)}>
-                            {user.role}
+                          <Badge variant={getRoleBadgeVariant(user.role || 'user')}>
+                            {user.role || 'user'}
                           </Badge>
                         </TableCell>
                         <TableCell>
                           <Select
-                            value={user.status}
+                            value={user.status || 'active'}
                             onValueChange={(value) => handleStatusChange(user.id, value)}
                           >
                             <SelectTrigger className="w-32">
                               <SelectValue>
-                                <Badge variant={getStatusBadgeVariant(user.status)}>
-                                  {user.status}
+                                <Badge variant={getStatusBadgeVariant(user.status || 'active')}>
+                                  {user.status || 'active'}
                                 </Badge>
                               </SelectValue>
                             </SelectTrigger>
