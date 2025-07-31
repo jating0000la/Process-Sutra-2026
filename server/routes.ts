@@ -456,7 +456,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/form-templates", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const templates = await storage.getFormTemplates(userId);
+      const userRole = req.user.claims.role || "user";
+      
+      // For regular users, get all form templates they need for their tasks
+      // For admins, get all templates they created
+      const templates = userRole === "admin" 
+        ? await storage.getFormTemplates(userId)
+        : await storage.getAllFormTemplates(); // Users need access to all templates for their tasks
+      
       res.json(templates);
     } catch (error) {
       console.error("Error fetching form templates:", error);

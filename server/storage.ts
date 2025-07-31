@@ -48,6 +48,7 @@ export interface IStorage {
 
   // Form Template operations
   getFormTemplates(createdBy?: string): Promise<FormTemplate[]>;
+  getAllFormTemplates(): Promise<FormTemplate[]>;
   getFormTemplateByFormId(formId: string): Promise<FormTemplate | undefined>;
   createFormTemplate(template: InsertFormTemplate): Promise<FormTemplate>;
   updateFormTemplate(id: string, template: Partial<InsertFormTemplate>): Promise<FormTemplate>;
@@ -291,6 +292,10 @@ export class DatabaseStorage implements IStorage {
         .where(eq(formTemplates.createdBy, createdBy))
         .orderBy(desc(formTemplates.createdAt));
     }
+    return await db.select().from(formTemplates).orderBy(desc(formTemplates.createdAt));
+  }
+
+  async getAllFormTemplates(): Promise<FormTemplate[]> {
     return await db.select().from(formTemplates).orderBy(desc(formTemplates.createdAt));
   }
 
