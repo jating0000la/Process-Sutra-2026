@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -37,6 +38,7 @@ interface FormRendererProps {
   isSubmitting?: boolean;
   initialData?: Record<string, any>;
   readonly?: boolean;
+  flowId?: string; // Add flowId to fetch previous responses
 }
 
 export default function FormRenderer({ 
@@ -44,8 +46,46 @@ export default function FormRenderer({
   onSubmit, 
   isSubmitting = false, 
   initialData = {},
-  readonly = false 
+  readonly = false,
+  flowId 
 }: FormRendererProps) {
+  
+  // Fetch previous form responses from the same flow for auto-prefill
+  const { data: flowResponses } = useQuery({
+    queryKey: ["/api/flows", flowId, "responses"],
+    enabled: !!flowId,
+  });
+
+  // Create auto-prefill data by matching field labels from previous responses
+  const getAutoPrefillData = () => {
+    if (!flowResponses || !Array.isArray(flowResponses)) {
+      return {};
+    }
+
+    const prefillData: Record<string, any> = {};
+
+    // Iterate through previous responses to find matching field labels
+    flowResponses.forEach((response: any) => {
+      if (response.formData && typeof response.formData === 'object') {
+        template.questions.forEach((question) => {
+          // Check if this field label exists in previous responses and not already set
+          if (response.formData[question.label] !== undefined && prefillData[question.label] === undefined) {
+            prefillData[question.label] = response.formData[question.label];
+          }
+        });
+      }
+    });
+
+    return prefillData;
+  };
+
+  const autoPrefillData = getAutoPrefillData();
+  
+  // Merge initialData with auto-prefill data (initialData takes precedence)
+  const combinedInitialData = {
+    ...autoPrefillData,
+    ...initialData
+  };
   
   // Table Input Component
   const TableInput = ({ question, field, readonly }: { 
@@ -112,7 +152,7 @@ export default function FormRenderer({
                             onValueChange={(value) => updateRow(rowIndex, col.id, value)}
                             disabled={readonly}
                           >
-                            <SelectTrigger size="sm">
+                            <SelectTrigger className="h-8">
                               <SelectValue placeholder="Select..." />
                             </SelectTrigger>
                             <SelectContent>
@@ -126,7 +166,7 @@ export default function FormRenderer({
                             value={row[col.id] || ""}
                             onChange={(e) => updateRow(rowIndex, col.id, e.target.value)}
                             placeholder={`Enter ${col.label.toLowerCase()}`}
-                            size="sm"
+                            className="h-8 text-sm"
                             disabled={readonly}
                           />
                         )}
@@ -216,13 +256,19 @@ export default function FormRenderer({
 
   const formSchema = createFormSchema();
   
-  // Create proper default values for all form fields
-  const getDefaultValues = () => {
+  // Create proper default values for all form fields with auto-prefill
+  const getDefaultValues = useCallback(() => {
     const defaults: Record<string, any> = {};
     template.questions.forEach((question) => {
+      // Priority: initialData > autoPrefillData > default empty values
       const existingValue = initialData[question.id];
+      const prefillValue = autoPrefillData[question.label]; // Use label for matching
+      
       if (existingValue !== undefined) {
         defaults[question.id] = existingValue;
+      } else if (prefillValue !== undefined) {
+        // Auto-prefill from previous form responses with same label
+        defaults[question.id] = prefillValue;
       } else {
         switch (question.type) {
           case "text":
@@ -247,12 +293,21 @@ export default function FormRenderer({
       }
     });
     return defaults;
-  };
+  }, [initialData, autoPrefillData, template.questions]);
 
   const form = useForm({
     resolver: zodResolver(formSchema),
     defaultValues: getDefaultValues(),
   });
+
+  // Update form when auto-prefill data becomes available
+  useEffect(() => {
+    if (Object.keys(autoPrefillData).length > 0) {
+      const newDefaults = getDefaultValues();
+      // Reset form with new defaults that include auto-prefill data
+      form.reset(newDefaults);
+    }
+  }, [autoPrefillData, form, getDefaultValues]);
 
   const handleSubmit = (data: any) => {
     // Clean up the data by removing empty optional fields
@@ -281,6 +336,9 @@ export default function FormRenderer({
             <FormLabel>
               {question.label}
               {question.required && <span className="text-red-500 ml-1">*</span>}
+              {autoPrefillData[question.label] && !initialData[question.id] && (
+                <span className="text-blue-500 ml-2 text-xs">(Auto-filled)</span>
+              )}
             </FormLabel>
             <FormControl>
               {(() => {

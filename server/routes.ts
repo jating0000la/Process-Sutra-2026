@@ -455,6 +455,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Auto-prefill endpoint - get previous form responses for a flow
+  app.get("/api/flows/:flowId/responses", isAuthenticated, async (req, res) => {
+    try {
+      const { flowId } = req.params;
+      const formResponses = await storage.getFormResponsesByFlowId(flowId);
+      
+      // Return all form responses in chronological order for auto-prefill
+      const responses = formResponses.map(response => ({
+        id: response.id,
+        taskId: response.taskId,
+        formData: response.formData,
+        submittedAt: new Date(response.timestamp).toISOString(),
+      })).sort((a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime());
+      
+      res.json(responses);
+    } catch (error) {
+      console.error("Error fetching flow responses:", error);
+      res.status(500).json({ message: "Failed to fetch flow responses" });
+    }
+  });
+
   app.post("/api/form-templates", isAuthenticated, requireAdmin, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;

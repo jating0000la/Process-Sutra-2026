@@ -775,6 +775,7 @@ export default function Tasks() {
               template={formTemplate}
               onSubmit={handleFormSubmit}
               isSubmitting={false}
+              flowId={selectedTask?.flowId}
             />
           )}
         </DialogContent>
