@@ -51,6 +51,12 @@ const navigationItems = [
     badge: null,
   },
   {
+    name: "Flow Data",
+    href: "/flow-data",
+    icon: FileBarChart,
+    badge: null,
+  },
+  {
     name: "Reports",
     href: "/reports",
     icon: FileBarChart,
