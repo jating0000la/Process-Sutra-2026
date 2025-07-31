@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { setupAuth, isAuthenticated } from "./firebaseAuth";
 import {
   insertFlowRuleSchema,
   insertTaskSchema,
@@ -18,7 +18,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Role-based middleware
   const requireAdmin = async (req: any, res: any, next: any) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.session as any)?.user?.id;
       const user = await storage.getUser(userId);
       
       if (!user || user.role !== 'admin') {
@@ -35,7 +35,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Add current user to request for any authenticated route
   const addUserToRequest = async (req: any, res: any, next: any) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.session as any)?.user?.id;
       const user = await storage.getUser(userId);
       req.currentUser = user;
       next();
@@ -44,17 +44,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   };
 
-  // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      res.json(user);
-    } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
-    }
-  });
+  // Auth routes are now handled in firebaseAuth.ts
 
   // Flow Rules API (Admin only)
   app.get("/api/flow-rules", isAuthenticated, requireAdmin, async (req, res) => {

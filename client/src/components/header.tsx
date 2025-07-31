@@ -1,4 +1,4 @@
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
@@ -17,30 +17,25 @@ interface HeaderProps {
 }
 
 export default function Header({ title, description, actions }: HeaderProps) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
 
   const handleLogout = () => {
-    window.location.href = "/api/logout";
+    logout();
   };
 
-  const getInitials = (firstName?: string, lastName?: string) => {
-    if (firstName && lastName) {
-      return `${firstName[0]}${lastName[0]}`.toUpperCase();
-    }
-    if (firstName) {
-      return firstName[0].toUpperCase();
+  const getInitials = (displayName?: string | null) => {
+    if (displayName) {
+      const names = displayName.split(' ');
+      if (names.length >= 2) {
+        return `${names[0][0]}${names[1][0]}`.toUpperCase();
+      }
+      return names[0][0].toUpperCase();
     }
     return "U";
   };
 
-  const getDisplayName = (firstName?: string, lastName?: string) => {
-    if (firstName && lastName) {
-      return `${firstName} ${lastName}`;
-    }
-    if (firstName) {
-      return firstName;
-    }
-    return "User";
+  const getDisplayName = (displayName?: string | null) => {
+    return displayName || "User";
   };
 
   return (
@@ -85,16 +80,16 @@ export default function Header({ title, description, actions }: HeaderProps) {
                   <Button variant="ghost" className="flex items-center space-x-3 p-2">
                     <Avatar className="h-8 w-8">
                       <AvatarImage 
-                        src={user?.profileImageUrl} 
+                        src={user?.photoURL} 
                         alt="User profile"
                         className="profile-image"
                       />
                       <AvatarFallback>
-                        {getInitials(user?.firstName, user?.lastName)}
+                        {getInitials(user?.displayName)}
                       </AvatarFallback>
                     </Avatar>
                     <span className="text-sm font-medium text-gray-700">
-                      {getDisplayName(user?.firstName, user?.lastName)}
+                      {getDisplayName(user?.displayName)}
                     </span>
                     <ChevronDown className="h-4 w-4 text-gray-500" />
                   </Button>

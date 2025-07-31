@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { 
   LayoutDashboard, 
@@ -93,7 +93,7 @@ export default function Sidebar() {
     return location.startsWith(href);
   };
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.email === 'admin@example.com'; // Temporary admin check
   const navigationItems = isAdmin ? [...userNavigationItems, ...adminNavigationItems] : userNavigationItems;
 
   return (
