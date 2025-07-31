@@ -1,0 +1,247 @@
+ Title: Intelligent Task Flow & Form Management System
+Developed by: Jatin Gola
+Company: Muxro Technologies
+Platform: MERN Stack (MongoDB, Express.js, React.js, Node.js)
+
+1️⃣ Executive Summary
+This system is a full-stack, cloud-based workflow automation platform. It helps organizations define task flows, assign tasks dynamically, collect structured data via forms, and track performance — all powered by a custom-built rule engine, MongoDB backend, and modern React dashboard.
+
+2️⃣ Objective
+To replace static Google-based systems with a scalable backend, enabling:
+
+Configurable task flows
+
+Role/email-based assignment
+
+Custom forms at each task step
+
+Real-time dashboards and performance analytics
+
+MongoDB-backed data persistence
+
+Server-hosted architecture (no Google Sheets or Apps Script)
+
+3️⃣ Key Features
+Feature	Description
+✅ Task Flow Engine	Automatically creates, progresses, and assigns tasks based on JSON-defined flow rules
+✅ Form Builder	Drag-and-drop schema builder with 15+ input types
+✅ MongoDB Storage	All tasks and form responses stored in collections
+✅ Role-Based View	Each user only sees their tasks
+✅ Flow ID Tracking	All tasks/forms linked to unique flow ID
+✅ Form Response Viewer	Shows all responses for a specific Flow ID
+✅ Analytics	Charts showing on-time completion, bottlenecks
+✅ OrgChart	Visual task map showing flow rules and step-wise performance
+
+4️⃣ System Architecture
+Layer	Technology
+Frontend	React.js, Bootstrap 5, Chart.js, Google Charts
+Backend	Node.js, Express.js
+Database	MongoDB Atlas
+Storage	GridFS or AWS S3 (for file uploads)
+Auth (optional)	JWT or session-based access control
+
+5️⃣ Data Structure
+🧩 Flow Rules (Collection: flow_rules)
+json
+Copy
+Edit
+{
+  "system": "CRM Onboarding",
+  "current_task": "",
+  "status": "",
+  "next_task": "Step 1",
+  "tat": 2,
+  "tat_type": "Day",
+  "doer": "Sales Executive",
+  "email": "sales@example.com",
+  "form_id": "f001"
+}
+📌 Task (Collection: tasks)
+json
+Copy
+Edit
+{
+  "system": "CRM Onboarding",
+  "flow_id": "CRM001",
+  "order_number": "ORD001",
+  "task_name": "Step 1",
+  "planned_time": ISODate,
+  "actual_time": null,
+  "doer_email": "sales@example.com",
+  "status": null
+}
+📄 Form Template (Collection: form_templates)
+json
+Copy
+Edit
+{
+  "form_id": "f001",
+  "title": "Client Entry",
+  "description": "Basic info form",
+  "questions": [
+    { "label": "Client Name", "type": "text", "required": true }
+  ]
+}
+📤 Form Responses (Collection: form_responses_<taskname>)
+json
+Copy
+Edit
+{
+  "flow_id": "CRM001",
+  "response_id": "resp_001",
+  "task_name": "Step 1",
+  "submitted_by": "sales@example.com",
+  "timestamp": ISODate,
+  "form_data": {
+    "Client Name": "ABC Pvt Ltd",
+    "Remarks": "Ready for follow-up",
+    "Files": "S3_URL"
+  }
+}
+6️⃣ Flow Logic
+🟢 startFlow()
+Finds flow rule where current_task == ""
+
+Generates first task with TAT calculation
+
+Inserts into tasks collection
+
+✅ markDone()
+Updates current task: actual_time, status
+
+Triggers nextTask() based on flow_rules
+
+🔁 nextTask()
+Looks up matching rule for (current_task, status)
+
+Creates new task, sets doer and planned_time
+
+7️⃣ Form System
+Field Type	Supported
+Short Answer	✅
+Paragraph	✅
+Dropdown	✅
+Checkboxes	✅
+Radio	✅
+File Upload	✅
+Table Input	✅
+Date/Time/Scale	✅
+Rating & Grid	✅
+
+8️⃣ Security & Access
+Auth via JWT (recommended)
+
+Users only fetch tasks where doer_email == user_email
+
+Form responses log submitted_by field
+
+9️⃣ Modules
+1. 📋 Task Tracker (/dashboard)
+Shows tasks for current user
+
+Buttons for Mark Done, Fill Form, View Forms
+
+2. 🏗 Form Builder (/admin/form-builder)
+Admin UI to design and save form schema
+
+3. 📝 Form Renderer (/form/:form_id?flow_id=...)
+Loads and renders schema from DB
+
+Submits responses to MongoDB
+
+4. 📈 Reporting Dashboard (/report)
+Stats: Completed %, On-time %, Avg delay
+
+Bar charts for bottlenecks
+
+5. 🗺 OrgChart (/flow-map)
+Task transition map based on flow_rules
+
+6. 📂 Flow Viewer (/flow/:flow_id)
+Shows all forms submitted under one flow
+
+🔟 Analytics & Charts
+Metric	Description
+Total Tasks	Count of all tasks
+Completed Tasks	Tasks where actual_time != null
+On-Time Completion %	Tasks with actual_time < planned_time
+Avg Delay	Aggregated delay per task step
+Bottleneck	Task with highest avg delay
+OrgChart	Tree of task transitions with % success
+
+1️⃣1️⃣ Benefits
+✅ No dependency on Google Workspace
+
+✅ Full control over backend + frontend
+
+✅ Custom flows, forms, dashboards
+
+✅ Modern UI/UX and responsive components
+
+✅ Easy scalability to 1000s of tasks
+
+1️⃣2️⃣ Future Enhancements
+Feature	Priority
+Email/WhatsApp Reminders	High
+PDF Export of Responses	Medium
+Mobile App (React Native)	High
+Approval Matrix / Hierarchy	Medium
+Drag & Drop Flow Designer	Long Term
+
+📦 Deliverables
+File	Description
+server/	Express backend with models/controllers/routes
+client/	React frontend with dashboard, form builder, reporting
+MongoDB	Collections: flow_rules, tasks, form_templates, form_responses_*
+Docker (optional)	For containerized deployment
+.env	Stores DB and secret config
+
+🛠 Implementation Flow
+css
+Copy
+Edit
+[Admin Flow Rules] → [startFlow()] → [Task Created] 
+     ↓ Mark Done
+[nextTask()] → [New Task Created]
+     ↓
+[User fills form]
+     ↓
+[Form Saved → MongoDB]
+     ↓
+[Dashboard + OrgChart Updated]
+✅ You're Done!
+You now have a:
+
+🔁 Dynamic task engine
+
+🧠 Rules-based flow system
+
+📄 Custom per-step form management
+
+📈 Performance insights with reporting
+
+📦 Fully server-hosted MERN solution
+
+📥 Ready to Export?
+Would you like this project report:
+
+As a downloadable PDF
+
+In Notion / Markdown format
+
+With visual architecture diagrams?
+
+Let me know your preferred output — or if you'd like to proceed with generating the actual backend (taskRoutes.js, taskController.js, etc.).
+
+
+
+
+
+
+
+
+
+
+Tools
+
+
