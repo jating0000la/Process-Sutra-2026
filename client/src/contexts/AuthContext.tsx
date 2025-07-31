@@ -24,85 +24,76 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let handled = false;
+    let isHandlingAuth = false;
     
+    const syncUserWithBackend = async (firebaseUser: any) => {
+      if (isHandlingAuth) return;
+      isHandlingAuth = true;
+      
+      try {
+        console.log('Syncing user with backend:', firebaseUser.email);
+        const idToken = await firebaseUser.getIdToken(true); // Force refresh
+        
+        const response = await fetch('/api/auth/firebase-login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: firebaseUser.displayName,
+            photoURL: firebaseUser.photoURL,
+            idToken: idToken,
+          }),
+        });
+        
+        if (response.ok) {
+          console.log('Successfully authenticated with backend');
+          const data = await response.json();
+          console.log('Backend response:', data);
+        } else {
+          const errorData = await response.json();
+          console.error('Backend authentication failed:', errorData);
+        }
+      } catch (error) {
+        console.error('Error syncing user with backend:', error);
+      }
+      
+      isHandlingAuth = false;
+    };
+
     // Handle redirect result on app load
     const handleRedirect = async () => {
       try {
         const result = await handleRedirectResult();
-        if (result?.user && !handled) {
-          handled = true;
+        if (result?.user) {
           console.log('Processing redirect result for user:', result.user.email);
-          // Send user data to backend for session creation
-          const response = await fetch('/api/auth/firebase-login', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              uid: result.user.uid,
-              email: result.user.email,
-              displayName: result.user.displayName,
-              photoURL: result.user.photoURL,
-              idToken: await result.user.getIdToken(),
-            }),
-          });
-          
-          if (response.ok) {
-            console.log('Successfully authenticated with backend');
-            setUser(result.user);
-          } else {
-            console.error('Backend authentication failed');
-          }
-          setLoading(false);
+          await syncUserWithBackend(result.user);
+          setUser(result.user);
         }
       } catch (error) {
         console.error('Error handling redirect:', error);
-        setLoading(false);
       }
+      setLoading(false);
     };
 
     // Listen for auth state changes
     const unsubscribe = onAuthStateChange(async (firebaseUser) => {
       console.log('Auth state changed:', firebaseUser?.email || 'signed out');
       
-      if (firebaseUser && !handled) {
-        // Send user data to backend
-        try {
-          const response = await fetch('/api/auth/firebase-login', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              uid: firebaseUser.uid,
-              email: firebaseUser.email,
-              displayName: firebaseUser.displayName,
-              photoURL: firebaseUser.photoURL,
-              idToken: await firebaseUser.getIdToken(),
-            }),
-          });
-          
-          if (response.ok) {
-            console.log('User synced with backend successfully');
-          }
-        } catch (error) {
-          console.error('Error syncing user with backend:', error);
-        }
+      if (firebaseUser) {
+        await syncUserWithBackend(firebaseUser);
+        setUser(firebaseUser);
+      } else {
+        setUser(null);
       }
       
-      setUser(firebaseUser);
-      if (!handled) {
-        setLoading(false);
-      }
+      setLoading(false);
     });
 
-    // Handle redirect first, then start listening to auth changes
-    handleRedirect().then(() => {
-      if (!handled) {
-        setLoading(false);
-      }
-    });
+    // Start the authentication flow
+    handleRedirect();
 
     return () => unsubscribe();
   }, []);

@@ -67,10 +67,18 @@ export async function setupAuth(app: Express) {
       }
 
       // Verify the Firebase ID token
-      const decodedToken = await adminAuth.verifyIdToken(idToken);
+      let decodedToken;
+      try {
+        decodedToken = await adminAuth.verifyIdToken(idToken);
+        console.log('Token verified for user:', decodedToken.email);
+      } catch (tokenError) {
+        console.error('Token verification failed:', tokenError);
+        return res.status(401).json({ message: 'Invalid or expired token' });
+      }
       
       if (decodedToken.uid !== uid) {
-        return res.status(401).json({ message: 'Invalid token' });
+        console.log('UID mismatch:', decodedToken.uid, 'vs', uid);
+        return res.status(401).json({ message: 'Token UID mismatch' });
       }
 
       // Upsert user in database
