@@ -86,7 +86,7 @@ export default function Sidebar() {
             const IconComponent = item.icon;
             return (
               <Link key={item.name} href={item.href}>
-                <a
+                <div
                   className={cn(
                     "sidebar-nav-item",
                     isActive(item.href) && "active"
@@ -99,7 +99,7 @@ export default function Sidebar() {
                       {item.badge}
                     </span>
                   )}
-                </a>
+                </div>
               </Link>
             );
           })}
@@ -114,7 +114,7 @@ export default function Sidebar() {
               const IconComponent = item.icon;
               return (
                 <Link key={item.name} href={item.href}>
-                  <a
+                  <div
                     className={cn(
                       "sidebar-nav-item",
                       isActive(item.href) && "active"
@@ -122,7 +122,7 @@ export default function Sidebar() {
                   >
                     <IconComponent className="mr-3 h-5 w-5" />
                     {item.name}
-                  </a>
+                  </div>
                 </Link>
               );
             })}
