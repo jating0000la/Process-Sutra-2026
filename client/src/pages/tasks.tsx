@@ -53,7 +53,10 @@ export default function Tasks() {
   }, [isAuthenticated, isLoading, toast]);
 
   const { data: tasks, isLoading: tasksLoading } = useQuery({
-    queryKey: ["/api/tasks", statusFilter !== "all" ? statusFilter : ""],
+    queryKey: statusFilter !== "all" ? ["/api/tasks", { status: statusFilter }] : ["/api/tasks"],
+    queryFn: statusFilter !== "all" 
+      ? () => fetch(`/api/tasks?status=${statusFilter}`).then(res => res.json())
+      : undefined, // Use default fetcher for all tasks
     enabled: isAuthenticated,
   });
 
@@ -496,9 +499,7 @@ export default function Tasks() {
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="overdue">Overdue</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -545,7 +546,7 @@ export default function Tasks() {
                   <p className="text-gray-500 mb-4">
                     {statusFilter === "all" 
                       ? "You don't have any tasks assigned yet."
-                      : `No tasks with status "${statusFilter}" found.`
+                      : `No ${statusFilter} tasks found. Try selecting "All Status" to see all tasks.`
                     }
                   </p>
                   <Button onClick={() => window.location.href = '/flows'}>
