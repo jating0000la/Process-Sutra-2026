@@ -509,41 +509,35 @@ export default function Flows() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>Status</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value}>
+                              <div className="space-y-2">
                                 <FormControl>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select status or enter custom" />
-                                  </SelectTrigger>
+                                  <Input 
+                                    {...field}
+                                    placeholder="Enter status (e.g., Done, Approved, Pending)"
+                                    list="status-options-main"
+                                  />
                                 </FormControl>
-                                <SelectContent>
+                                <datalist id="status-options-main">
                                   {ruleForm.watch("currentTask") && getAvailableStatuses(ruleForm.watch("currentTask")).length > 0 ? (
                                     getAvailableStatuses(ruleForm.watch("currentTask")).map((status) => (
-                                      <SelectItem key={status} value={status}>
-                                        {status}
-                                      </SelectItem>
+                                      <option key={status} value={status} />
                                     ))
                                   ) : (
                                     <>
-                                      <SelectItem value="Done">Done</SelectItem>
-                                      <SelectItem value="Yes">Yes</SelectItem>
-                                      <SelectItem value="No">No</SelectItem>
-                                      <SelectItem value="Approved">Approved</SelectItem>
-                                      <SelectItem value="Decline">Decline</SelectItem>
-                                      <SelectItem value="Regular">Regular</SelectItem>
-                                      <SelectItem value="Wedding">Wedding</SelectItem>
+                                      <option value="Done" />
+                                      <option value="Yes" />
+                                      <option value="No" />
+                                      <option value="Approved" />
+                                      <option value="Decline" />
+                                      <option value="Regular" />
+                                      <option value="Wedding" />
                                     </>
                                   )}
-                                  <SelectItem value="__custom__">Type Custom Status...</SelectItem>
-                                </SelectContent>
-                              </Select>
-                              {field.value === "__custom__" && (
-                                <Input 
-                                  onChange={(e) => field.onChange(e.target.value)}
-                                  placeholder="Enter custom status"
-                                  className="mt-2"
-                                  autoFocus
-                                />
-                              )}
+                                </datalist>
+                                <p className="text-xs text-gray-500">
+                                  Common statuses: Done, Approved, Decline, Yes, No
+                                </p>
+                              </div>
                               <FormMessage />
                             </FormItem>
                           )}
