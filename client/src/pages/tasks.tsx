@@ -321,6 +321,16 @@ export default function Tasks() {
                         }>
                           {task.status}
                         </Badge>
+                        {task.formId && task.formId.trim() !== "" && (
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handleFillForm(task)}
+                          >
+                            <Edit className="w-4 h-4 mr-2" />
+                            Fill Form
+                          </Button>
+                        )}
                         <Dialog>
                           <DialogTrigger asChild>
                             <Button 
@@ -373,7 +383,7 @@ export default function Tasks() {
                                   </div>
                                 </div>
                                 
-                                {selectedTask.formId && (
+                                {selectedTask.formId && selectedTask.formId.trim() !== "" && (
                                   <div>
                                     <Label className="text-sm text-gray-600 mb-2 block">Associated Form</Label>
                                     <div className="border border-gray-200 rounded-lg p-4">
