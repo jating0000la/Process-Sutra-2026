@@ -15,8 +15,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CheckCircle, Clock, AlertTriangle, Eye, Edit, Plus, Database } from "lucide-react";
+import { CheckCircle, Clock, AlertTriangle, Eye, Edit, Plus, Database, Download } from "lucide-react";
 import FormRenderer from "@/components/form-renderer";
+import { format } from "date-fns";
 
 export default function Tasks() {
   const { toast } = useToast();
@@ -30,6 +31,7 @@ export default function Tasks() {
   const [formTemplate, setFormTemplate] = useState<any>(null);
   const [isFlowDataDialogOpen, setIsFlowDataDialogOpen] = useState(false);
   const [flowDataForTask, setFlowDataForTask] = useState<any>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -118,6 +120,126 @@ export default function Tasks() {
         description: "Failed to submit form. Please check all required fields.",
         variant: "destructive",
       });
+    }
+  };
+
+  // Export functionality with comprehensive data including form responses and cycle time
+  const handleExportData = async () => {
+    try {
+      setIsExporting(true);
+      const response = await apiRequest("GET", "/api/export/flow-data");
+      
+      // Create comprehensive CSV/JSON export
+      const exportData = response.data;
+      
+      // Create detailed CSV with all task, form, and timing data
+      const csvData = exportData.map((flow: any) => {
+        const baseFlowData = {
+          "Flow ID": flow.flowId,
+          "System": flow.system,
+          "Order Number": flow.orderNumber,
+          "Total Tasks": flow.totalTasks,
+          "Completed Tasks": flow.completedTasks,
+          "Completion Rate %": flow.completionRate,
+          "Average Cycle Time (Hours)": flow.avgCycleTime,
+          "Overall Flow Time (Hours)": flow.overallFlowTime || "In Progress",
+          "On Time Rate %": flow.onTimeRate,
+          "Flow Start": flow.flowStartTime ? format(new Date(flow.flowStartTime), 'yyyy-MM-dd HH:mm:ss') : "N/A",
+          "Flow End": flow.flowEndTime ? format(new Date(flow.flowEndTime), 'yyyy-MM-dd HH:mm:ss') : "In Progress"
+        };
+        
+        // Add task-level details
+        const taskRows = flow.tasks.map((task: any, taskIndex: number) => ({
+          ...baseFlowData,
+          "Task #": taskIndex + 1,
+          "Task Name": task.taskName,
+          "Task Status": task.status,
+          "Task Created": format(new Date(task.createdAt), 'yyyy-MM-dd HH:mm:ss'),
+          "Task Due": format(new Date(task.plannedTime), 'yyyy-MM-dd HH:mm:ss'),
+          "Task Completed": task.actualCompletionTime ? format(new Date(task.actualCompletionTime), 'yyyy-MM-dd HH:mm:ss') : "Not Completed",
+          "Task Cycle Time (Hours)": task.cycleTime || "N/A",
+          "TAT Variance (Hours)": task.tatVariance || "N/A",
+          "On Time": task.isOnTime === null ? "N/A" : (task.isOnTime ? "Yes" : "No"),
+          "Assignee": task.doerEmail,
+          "Form ID": task.formId || "No Form",
+          "Form Responses Count": task.formResponses.length,
+          
+          // Add form data if available
+          ...task.formResponses.reduce((formAcc: any, response: any, respIndex: number) => {
+            const prefix = `Form Response ${respIndex + 1}`;
+            formAcc[`${prefix} - Submitted By`] = response.submittedBy;
+            formAcc[`${prefix} - Submitted At`] = format(new Date(response.timestamp), 'yyyy-MM-dd HH:mm:ss');
+            
+            // Flatten form data
+            Object.entries(response.formData || {}).forEach(([key, value]) => {
+              formAcc[`${prefix} - ${key}`] = typeof value === 'object' ? JSON.stringify(value) : String(value);
+            });
+            
+            return formAcc;
+          }, {})
+        }));
+        
+        return taskRows;
+      }).flat();
+      
+      // Convert to CSV
+      if (csvData.length > 0) {
+        const headers = Object.keys(csvData[0]);
+        const csvContent = [
+          headers.join(","),
+          ...csvData.map(row => 
+            headers.map(header => {
+              const value = row[header] || "";
+              // Escape commas and quotes in CSV
+              return typeof value === 'string' && (value.includes(',') || value.includes('"')) 
+                ? `"${value.replace(/"/g, '""')}"` 
+                : value;
+            }).join(",")
+          )
+        ].join("\n");
+        
+        // Download CSV file
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", `workflow_export_${format(new Date(), 'yyyy-MM-dd_HH-mm-ss')}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // Also download JSON for detailed analysis
+        const jsonBlob = new Blob([JSON.stringify(response, null, 2)], { type: 'application/json;charset=utf-8;' });
+        const jsonLink = document.createElement("a");
+        const jsonUrl = URL.createObjectURL(jsonBlob);
+        jsonLink.setAttribute("href", jsonUrl);
+        jsonLink.setAttribute("download", `workflow_export_detailed_${format(new Date(), 'yyyy-MM-dd_HH-mm-ss')}.json`);
+        jsonLink.style.visibility = 'hidden';
+        document.body.appendChild(jsonLink);
+        jsonLink.click();
+        document.body.removeChild(jsonLink);
+        
+        toast({
+          title: "Export Successful",
+          description: `Exported ${response.totalFlows} flows with comprehensive data including form responses and cycle times.`,
+        });
+      } else {
+        toast({
+          title: "No Data",
+          description: "No workflow data available for export.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Export error:", error);
+      toast({
+        title: "Export Failed",
+        description: "Failed to export workflow data. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -258,20 +380,39 @@ export default function Tasks() {
 
         <div className="p-6">
           {/* Filters */}
-          <div className="mb-6 flex items-center space-x-4">
-            <Label htmlFor="status-filter">Filter by status:</Label>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="in_progress">In Progress</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="overdue">Overdue</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="mb-6 flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <Label htmlFor="status-filter">Filter by status:</Label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="in_progress">In Progress</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="overdue">Overdue</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              <Button 
+                variant="outline" 
+                onClick={handleExportData}
+                disabled={isExporting}
+                size="sm"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                {isExporting ? "Exporting..." : "Export Data"}
+              </Button>
+              
+              <Button variant="outline" size="sm" onClick={() => window.location.href = '/flow-data'}>
+                <Database className="w-4 h-4 mr-2" />
+                View Flow Data
+              </Button>
+            </div>
           </div>
 
           {/* Task List */}

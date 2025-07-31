@@ -415,6 +415,119 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Export API with comprehensive data
+  app.get("/api/export/flow-data", isAuthenticated, async (req, res) => {
+    try {
+      // Get all tasks with their associated form responses
+      const tasks = await storage.getTasks();
+      const formResponses = await storage.getFormResponses();
+      
+      // Group form responses by task ID for quick lookup
+      const responsesByTask = formResponses.reduce((acc: any, response: any) => {
+        if (!acc[response.taskId]) {
+          acc[response.taskId] = [];
+        }
+        acc[response.taskId].push(response);
+        return acc;
+      }, {});
+      
+      // Group tasks by flow ID and calculate comprehensive metrics
+      const flowGroups = tasks.reduce((acc: any, task: any) => {
+        if (!acc[task.flowId]) {
+          acc[task.flowId] = {
+            flowId: task.flowId,
+            system: task.system,
+            orderNumber: task.orderNumber,
+            tasks: [],
+            totalTasks: 0,
+            completedTasks: 0,
+            totalCycleTime: 0,
+            flowStartTime: null,
+            flowEndTime: null,
+            formData: {}
+          };
+        }
+        
+        const flowGroup = acc[task.flowId];
+        
+        // Add task data
+        const taskWithResponses = {
+          ...task,
+          formResponses: responsesByTask[task.id] || [],
+          cycleTime: task.actualCompletionTime 
+            ? Math.round((new Date(task.actualCompletionTime).getTime() - new Date(task.createdAt).getTime()) / (1000 * 60 * 60))
+            : null,
+          tatVariance: task.actualCompletionTime
+            ? Math.round((new Date(task.actualCompletionTime).getTime() - new Date(task.plannedTime).getTime()) / (1000 * 60 * 60))
+            : null,
+          isOnTime: task.actualCompletionTime
+            ? new Date(task.actualCompletionTime) <= new Date(task.plannedTime)
+            : null
+        };
+        
+        flowGroup.tasks.push(taskWithResponses);
+        flowGroup.totalTasks++;
+        
+        if (task.status === 'completed') {
+          flowGroup.completedTasks++;
+          if (taskWithResponses.cycleTime) {
+            flowGroup.totalCycleTime += taskWithResponses.cycleTime;
+          }
+        }
+        
+        // Track flow start and end times
+        const taskCreated = new Date(task.createdAt);
+        const taskCompleted = task.actualCompletionTime ? new Date(task.actualCompletionTime) : null;
+        
+        if (!flowGroup.flowStartTime || taskCreated < flowGroup.flowStartTime) {
+          flowGroup.flowStartTime = taskCreated;
+        }
+        
+        if (taskCompleted && (!flowGroup.flowEndTime || taskCompleted > flowGroup.flowEndTime)) {
+          flowGroup.flowEndTime = taskCompleted;
+        }
+        
+        // Collect all form data for the flow
+        taskWithResponses.formResponses.forEach((response: any) => {
+          if (!flowGroup.formData[response.formId]) {
+            flowGroup.formData[response.formId] = [];
+          }
+          flowGroup.formData[response.formId].push({
+            taskName: response.taskName,
+            submittedBy: response.submittedBy,
+            timestamp: response.timestamp,
+            data: response.formData
+          });
+        });
+        
+        return acc;
+      }, {});
+      
+      // Calculate flow-level metrics
+      const exportData = Object.values(flowGroups).map((flow: any) => ({
+        ...flow,
+        avgCycleTime: flow.completedTasks > 0 ? Math.round(flow.totalCycleTime / flow.completedTasks) : 0,
+        completionRate: flow.totalTasks > 0 ? Math.round((flow.completedTasks / flow.totalTasks) * 100) : 0,
+        overallFlowTime: flow.flowStartTime && flow.flowEndTime 
+          ? Math.round((flow.flowEndTime.getTime() - flow.flowStartTime.getTime()) / (1000 * 60 * 60))
+          : null,
+        onTimeRate: (() => {
+          const completedOnTime = flow.tasks.filter((t: any) => t.isOnTime === true).length;
+          return flow.completedTasks > 0 ? Math.round((completedOnTime / flow.completedTasks) * 100) : 0;
+        })()
+      }));
+      
+      res.json({
+        exportTimestamp: new Date().toISOString(),
+        totalFlows: exportData.length,
+        data: exportData
+      });
+    } catch (error) {
+      console.error("Error exporting flow data:", error);
+      res.status(500).json({ message: "Failed to export flow data" });
+    }
+  });
+
   // Analytics API
   app.get("/api/analytics/metrics", isAuthenticated, async (req, res) => {
     try {
