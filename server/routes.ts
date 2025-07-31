@@ -807,6 +807,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/users", isAuthenticated, requireAdmin, async (req, res) => {
+    try {
+      const user = await storage.createUser(req.body);
+      res.status(201).json(user);
+    } catch (error) {
+      console.error("Error creating user:", error);
+      res.status(500).json({ message: "Failed to create user" });
+    }
+  });
+
   app.put("/api/users/:id", isAuthenticated, requireAdmin, async (req, res) => {
     try {
       const user = await storage.updateUserDetails(req.params.id, req.body);

@@ -623,6 +623,20 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(users).orderBy(asc(users.firstName));
   }
 
+  async createUser(userData: Partial<User>): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values({
+        ...userData,
+        status: userData.status || "active",
+        role: userData.role || "user",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+    return user;
+  }
+
   async updateUserDetails(id: string, details: Partial<User>): Promise<User> {
     const [user] = await db
       .update(users)

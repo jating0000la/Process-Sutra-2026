@@ -18,7 +18,9 @@ import type { User, UserLoginLog, UserDevice, PasswordChangeHistory } from "@sha
 export default function UserManagement() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [addUserDialogOpen, setAddUserDialogOpen] = useState(false);
   const [editFormData, setEditFormData] = useState<Partial<User>>({});
+  const [newUserData, setNewUserData] = useState<Partial<User>>({});
   const { toast } = useToast();
 
   // Fetch users
@@ -48,6 +50,29 @@ export default function UserManagement() {
         description: "User updated successfully",
       });
       setEditDialogOpen(false);
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Create user mutation
+  const createUserMutation = useMutation({
+    mutationFn: async (data: Partial<User>) => {
+      return await apiRequest("/api/users", "POST", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({
+        title: "Success",
+        description: "User created successfully",
+      });
+      setAddUserDialogOpen(false);
+      setNewUserData({});
     },
     onError: (error) => {
       toast({
@@ -110,6 +135,29 @@ export default function UserManagement() {
     changeStatusMutation.mutate({ id: userId, status: newStatus });
   };
 
+  const handleCreateUser = () => {
+    createUserMutation.mutate(newUserData);
+  };
+
+  const handleAddUserClick = () => {
+    setNewUserData({
+      firstName: "",
+      lastName: "",
+      email: "",
+      username: "",
+      phoneNumber: "",
+      department: "",
+      designation: "",
+      employeeId: "",
+      address: "",
+      emergencyContact: "",
+      emergencyContactPhone: "",
+      role: "user",
+      status: "active",
+    });
+    setAddUserDialogOpen(true);
+  };
+
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
       case "active": return "default";
@@ -153,13 +201,21 @@ export default function UserManagement() {
         <TabsContent value="users" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="w-5 h-5" />
-                User Accounts
-              </CardTitle>
-              <CardDescription>
-                Manage user profiles, roles, and account status
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="w-5 h-5" />
+                    User Accounts
+                  </CardTitle>
+                  <CardDescription>
+                    Manage user profiles, roles, and account status
+                  </CardDescription>
+                </div>
+                <Button onClick={handleAddUserClick} className="flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  Add User
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {usersLoading ? (
@@ -385,6 +441,134 @@ export default function UserManagement() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Add User Dialog */}
+      <Dialog open={addUserDialogOpen} onOpenChange={setAddUserDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add New User</DialogTitle>
+            <DialogDescription>
+              Create a new user account with profile information
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="newFirstName">First Name *</Label>
+              <Input
+                id="newFirstName"
+                value={newUserData.firstName || ''}
+                onChange={(e) => setNewUserData({ ...newUserData, firstName: e.target.value })}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="newLastName">Last Name *</Label>
+              <Input
+                id="newLastName"
+                value={newUserData.lastName || ''}
+                onChange={(e) => setNewUserData({ ...newUserData, lastName: e.target.value })}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="newEmail">Email *</Label>
+              <Input
+                id="newEmail"
+                type="email"
+                value={newUserData.email || ''}
+                onChange={(e) => setNewUserData({ ...newUserData, email: e.target.value })}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="newUsername">Username *</Label>
+              <Input
+                id="newUsername"
+                value={newUserData.username || ''}
+                onChange={(e) => setNewUserData({ ...newUserData, username: e.target.value })}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="newPhoneNumber">Phone Number</Label>
+              <Input
+                id="newPhoneNumber"
+                value={newUserData.phoneNumber || ''}
+                onChange={(e) => setNewUserData({ ...newUserData, phoneNumber: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="newEmployeeId">Employee ID</Label>
+              <Input
+                id="newEmployeeId"
+                value={newUserData.employeeId || ''}
+                onChange={(e) => setNewUserData({ ...newUserData, employeeId: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="newDepartment">Department</Label>
+              <Input
+                id="newDepartment"
+                value={newUserData.department || ''}
+                onChange={(e) => setNewUserData({ ...newUserData, department: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="newDesignation">Designation</Label>
+              <Input
+                id="newDesignation"
+                value={newUserData.designation || ''}
+                onChange={(e) => setNewUserData({ ...newUserData, designation: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="newRole">Role</Label>
+              <Select
+                value={newUserData.role || 'user'}
+                onValueChange={(value) => setNewUserData({ ...newUserData, role: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="newEmergencyContact">Emergency Contact</Label>
+              <Input
+                id="newEmergencyContact"
+                value={newUserData.emergencyContact || ''}
+                onChange={(e) => setNewUserData({ ...newUserData, emergencyContact: e.target.value })}
+              />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label htmlFor="newAddress">Address</Label>
+              <Input
+                id="newAddress"
+                value={newUserData.address || ''}
+                onChange={(e) => setNewUserData({ ...newUserData, address: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setAddUserDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateUser}
+              disabled={createUserMutation.isPending}
+            >
+              {createUserMutation.isPending ? "Creating..." : "Create User"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit User Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
