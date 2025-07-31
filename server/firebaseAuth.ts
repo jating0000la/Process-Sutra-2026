@@ -140,6 +140,21 @@ export async function setupAuth(app: Express) {
         photoURL: photoURL,
       });
 
+      // Check if user is suspended or inactive before creating session
+      if (dbUser.status === 'suspended') {
+        return res.status(403).json({ 
+          success: false, 
+          message: "Account suspended. Contact administrator." 
+        });
+      }
+      
+      if (dbUser.status === 'inactive') {
+        return res.status(403).json({ 
+          success: false, 
+          message: "Account inactive. Contact administrator." 
+        });
+      }
+
       // Create session with database user ID
       (req.session as any).user = {
         id: dbUser.id, // Use database ID, not Firebase UID
@@ -165,13 +180,30 @@ export async function setupAuth(app: Express) {
     }
   });
 
-  // Get current user
-  app.get('/api/auth/user', (req, res) => {
-    const user = (req.session as any)?.user;
-    if (!user) {
-      return res.status(401).json({ message: 'Unauthorized' });
+  // Get current user with status check
+  app.get('/api/auth/user', isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.session as any)?.user?.id;
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      
+      // Check if user is suspended or inactive
+      if (user.status === 'suspended') {
+        return res.status(403).json({ message: "Account suspended. Contact administrator." });
+      }
+      
+      if (user.status === 'inactive') {
+        return res.status(403).json({ message: "Account inactive. Contact administrator." });
+      }
+      
+      res.json(user);
+    } catch (error) {
+      console.error('Error fetching user:', error);
+      res.status(500).json({ message: 'Failed to fetch user' });
     }
-    res.json(user);
   });
 
   // Logout

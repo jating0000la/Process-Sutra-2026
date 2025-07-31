@@ -15,11 +15,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
 
-  // Role-based middleware
+  // Role-based middleware with status check
   const requireAdmin = async (req: any, res: any, next: any) => {
     try {
       const userId = (req.session as any)?.user?.id;
       const user = await storage.getUser(userId);
+      
+      // Check if user is suspended or inactive
+      if (user?.status === 'suspended') {
+        return res.status(403).json({ message: "Account suspended. Contact administrator." });
+      }
+      
+      if (user?.status === 'inactive') {
+        return res.status(403).json({ message: "Account inactive. Contact administrator." });
+      }
       
       if (!user || user.role !== 'admin') {
         return res.status(403).json({ message: "Admin access required" });
@@ -32,11 +41,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   };
 
-  // Add current user to request for any authenticated route
+  // Add current user to request for any authenticated route with status check
   const addUserToRequest = async (req: any, res: any, next: any) => {
     try {
       const userId = (req.session as any)?.user?.id;
       const user = await storage.getUser(userId);
+      
+      // Check if user is suspended or inactive
+      if (user?.status === 'suspended') {
+        return res.status(403).json({ message: "Account suspended. Contact administrator." });
+      }
+      
+      if (user?.status === 'inactive') {
+        return res.status(403).json({ message: "Account inactive. Contact administrator." });
+      }
+      
       req.currentUser = user;
       next();
     } catch (error) {
