@@ -23,7 +23,22 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
-// User storage table for Replit Auth
+// Organizations table for multi-tenant support
+export const organizations = pgTable("organizations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name").notNull(),
+  domain: varchar("domain").unique().notNull(), // email domain like "muxro.com"
+  subdomain: varchar("subdomain").unique(), // optional custom subdomain
+  logoUrl: varchar("logo_url"),
+  primaryColor: varchar("primary_color").default("#0066cc"),
+  isActive: boolean("is_active").default(true),
+  maxUsers: integer("max_users").default(50), // subscription limits
+  planType: varchar("plan_type").default("free"), // free, pro, enterprise
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// User storage table with organization support
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: varchar("email").unique(),
@@ -31,6 +46,7 @@ export const users = pgTable("users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   role: varchar("role").default("user"), // user, admin
+  organizationId: varchar("organization_id").references(() => organizations.id),
   // Extended user details
   username: varchar("username").unique(),
   phoneNumber: varchar("phone_number"),
@@ -94,9 +110,10 @@ export const passwordChangeHistory = pgTable("password_change_history", {
   deviceId: varchar("device_id"),
 });
 
-// Flow Rules - Define workflow progression rules
+// Flow Rules - Define workflow progression rules (organization-specific)
 export const flowRules = pgTable("flow_rules", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id),
   system: varchar("system").notNull(), // e.g., "CRM Onboarding"
   currentTask: varchar("current_task").default(""), // Empty for start rule
   status: varchar("status").default(""), // Task completion status
@@ -112,9 +129,10 @@ export const flowRules = pgTable("flow_rules", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Tasks - Individual task instances
+// Tasks - Individual task instances (organization-specific)
 export const tasks = pgTable("tasks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id),
   system: varchar("system").notNull(),
   flowId: varchar("flow_id").notNull(), // Unique identifier for flow instance
   orderNumber: varchar("order_number"), // Optional order/case number
@@ -138,10 +156,11 @@ export const tasks = pgTable("tasks", {
   transferReason: text("transfer_reason"), // Reason for transfer
 });
 
-// Form Templates - Define form structure
+// Form Templates - Define form structure (organization-specific)
 export const formTemplates = pgTable("form_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  formId: varchar("form_id").notNull().unique(), // Short identifier like "f001"
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id),
+  formId: varchar("form_id").notNull(), // Short identifier like "f001"
   title: varchar("title").notNull(),
   description: text("description"),
   questions: jsonb("questions").notNull(), // Array of question objects
@@ -150,9 +169,10 @@ export const formTemplates = pgTable("form_templates", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Form Responses - Store submitted form data
+// Form Responses - Store submitted form data (organization-specific)
 export const formResponses = pgTable("form_responses", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id),
   responseId: varchar("response_id").notNull(), // Unique response identifier
   flowId: varchar("flow_id").notNull(),
   taskId: varchar("task_id").notNull(),
@@ -164,7 +184,19 @@ export const formResponses = pgTable("form_responses", {
 });
 
 // Relations
-export const usersRelations = relations(users, ({ many }) => ({
+export const organizationsRelations = relations(organizations, ({ many }) => ({
+  users: many(users),
+  flowRules: many(flowRules),
+  tasks: many(tasks),
+  formTemplates: many(formTemplates),
+  formResponses: many(formResponses),
+}));
+
+export const usersRelations = relations(users, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [users.organizationId],
+    references: [organizations.id],
+  }),
   createdForms: many(formTemplates),
   submittedResponses: many(formResponses),
   loginLogs: many(userLoginLogs),
@@ -234,6 +266,12 @@ export const passwordChangeHistoryRelations = relations(passwordChangeHistory, (
 
 
 // Insert schemas
+export const insertOrganizationSchema = createInsertSchema(organizations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
@@ -297,6 +335,8 @@ export const insertTATConfigSchema = createInsertSchema(tatConfig).omit({
 });
 
 // Types
+export type Organization = typeof organizations.$inferSelect;
+export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type InsertFlowRule = z.infer<typeof insertFlowRuleSchema>;

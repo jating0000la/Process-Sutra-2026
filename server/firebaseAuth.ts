@@ -38,14 +38,62 @@ export function getSession() {
   });
 }
 
+async function getOrCreateOrganization(email: string) {
+  // Extract domain from email (e.g., "muxro.com" from "user@muxro.com")
+  const domain = email.split('@')[1];
+  
+  try {
+    // Check if organization exists for this domain
+    let organization = await storage.getOrganizationByDomain(domain);
+    
+    if (!organization) {
+      // Create new organization for this domain
+      const orgName = domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1); // e.g., "Muxro"
+      organization = await storage.createOrganization({
+        name: orgName,
+        domain: domain,
+        isActive: true,
+        maxUsers: 50,
+        planType: 'free'
+      });
+      console.log(`✅ Created new organization: ${orgName} for domain: ${domain}`);
+    }
+    
+    return organization;
+  } catch (error) {
+    console.error("Error getting/creating organization:", error);
+    throw error;
+  }
+}
+
 async function upsertUser(userData: any) {
   try {
+    // Get or create organization first
+    const organization = await getOrCreateOrganization(userData.email);
+    
+    // Check if user already exists
+    let existingUser = await storage.getUserByEmail(userData.email);
+    
+    // Determine user role: first user of an organization becomes admin
+    let role = 'user';
+    if (!existingUser) {
+      const orgUserCount = await storage.getOrganizationUserCount(organization.id);
+      if (orgUserCount === 0) {
+        role = 'admin';
+        console.log(`🔐 Making ${userData.email} admin of organization: ${organization.name}`);
+      }
+    } else {
+      role = existingUser.role; // Keep existing role
+    }
+    
     // Don't pass ID for upsert to avoid constraint violations
     const userPayload = {
       email: userData.email,
       firstName: userData.displayName ? userData.displayName.split(' ')[0] : '',
       lastName: userData.displayName ? userData.displayName.split(' ').slice(1).join(' ') : '',
       profileImageUrl: userData.photoURL,
+      organizationId: organization.id,
+      role: role,
       lastLoginAt: new Date(),
     };
     

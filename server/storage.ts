@@ -1,5 +1,6 @@
 import {
   users,
+  organizations,
   flowRules,
   tasks,
   formTemplates,
@@ -10,6 +11,8 @@ import {
   passwordChangeHistory,
   type User,
   type UpsertUser,
+  organizations,
+  insertOrganizationSchema,
   type FlowRule,
   type InsertFlowRule,
   type Task,
@@ -29,8 +32,14 @@ import { db } from "./db";
 import { eq, and, desc, asc, count, sql } from "drizzle-orm";
 
 export interface IStorage {
+  // Organization operations
+  getOrganizationByDomain(domain: string): Promise<typeof organizations.$inferSelect | undefined>;
+  createOrganization(organization: typeof organizations.$inferInsert): Promise<typeof organizations.$inferSelect>;
+  getOrganizationUserCount(organizationId: string): Promise<number>;
+
   // User operations (mandatory for Replit Auth)
   getUser(id: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
 
   // Flow Rules operations
@@ -97,9 +106,33 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  // Organization operations
+  async getOrganizationByDomain(domain: string): Promise<typeof organizations.$inferSelect | undefined> {
+    const [organization] = await db.select().from(organizations).where(eq(organizations.domain, domain));
+    return organization;
+  }
+
+  async createOrganization(organizationData: typeof organizations.$inferInsert): Promise<typeof organizations.$inferSelect> {
+    const [organization] = await db.insert(organizations).values(organizationData).returning();
+    return organization;
+  }
+
+  async getOrganizationUserCount(organizationId: string): Promise<number> {
+    const result = await db
+      .select({ count: count() })
+      .from(users)
+      .where(eq(users.organizationId, organizationId));
+    return result[0]?.count || 0;
+  }
+
   // User operations
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
     return user;
   }
 
