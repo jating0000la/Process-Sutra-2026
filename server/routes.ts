@@ -212,30 +212,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         actualCompletionTime: new Date(),
       });
 
-      // Find next task in workflow based on completion status
+      // Find ALL next tasks in workflow based on completion status (multiple tasks can depend on same previous task)
       const flowRules = await storage.getFlowRules(task.system);
-      const nextRule = flowRules.find(
+      const nextRules = flowRules.filter(
         rule => rule.currentTask === task.taskName && rule.status === completionStatus
       );
 
-      if (nextRule) {
+      // Get all previous form data for this flow to include in new tasks
+      const previousFormResponses = await storage.getFormResponsesByFlowId(task.flowId);
+      const flowInitialData = previousFormResponses.length > 0 ? previousFormResponses[0].formData : null;
+
+      if (nextRules.length > 0) {
         // Get TAT configuration for enhanced calculations
         const tatConfiguration = await storage.getTATConfig();
         const config = tatConfiguration || { officeStartHour: 9, officeEndHour: 18 };
         
-        // Create next task using enhanced TAT calculation
-        const plannedTime = calculateTAT(new Date(), nextRule.tat, nextRule.tatType, config);
+        // Create ALL next tasks using enhanced TAT calculation
+        for (const nextRule of nextRules) {
+          const plannedTime = calculateTAT(new Date(), nextRule.tat, nextRule.tatType, config);
 
-        await storage.createTask({
-          system: task.system,
-          flowId: task.flowId,
-          orderNumber: task.orderNumber,
-          taskName: nextRule.nextTask,
-          plannedTime,
-          doerEmail: nextRule.email,
-          status: "pending",
-          formId: nextRule.formId,
-        });
+          await storage.createTask({
+            system: task.system,
+            flowId: task.flowId,
+            orderNumber: task.orderNumber,
+            taskName: nextRule.nextTask,
+            plannedTime,
+            doerEmail: nextRule.email,
+            status: "pending",
+            formId: nextRule.formId,
+            // Include flow context and previous form data
+            flowInitiatedBy: task.flowInitiatedBy,
+            flowInitiatedAt: task.flowInitiatedAt,
+            flowDescription: task.flowDescription,
+            flowInitialFormData: task.flowInitialFormData || (flowInitialData as any),
+          });
+        }
       }
 
       res.json(completedTask);
@@ -270,7 +281,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update the task
       const updatedTask = await storage.updateTask(id, updateData);
       
-      // Check for workflow progression based on new status
+      // Check for workflow progression based on new status - Create ALL matching next tasks
       const flowRules = await storage.getFlowRules(task.system);
       
       // Map status values to flow rule status values
@@ -282,28 +293,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       const ruleStatus = statusMap[status];
-      const nextRule = flowRules.find(
+      const nextRules = flowRules.filter(
         rule => rule.currentTask === task.taskName && rule.status === ruleStatus
       );
       
-      if (nextRule) {
+      // Get all previous form data for this flow to include in new tasks
+      const previousFormResponses = await storage.getFormResponsesByFlowId(task.flowId);
+      const flowInitialData = previousFormResponses.length > 0 ? previousFormResponses[0].formData : null;
+      
+      if (nextRules.length > 0) {
         // Get TAT configuration for enhanced calculations
         const tatConfiguration = await storage.getTATConfig();
         const config = tatConfiguration || { officeStartHour: 9, officeEndHour: 18 };
         
-        // Create next task based on current task status using enhanced TAT calculation
-        const plannedTime = calculateTAT(new Date(), nextRule.tat, nextRule.tatType, config);
+        // Create ALL next tasks based on current task status using enhanced TAT calculation
+        for (const nextRule of nextRules) {
+          const plannedTime = calculateTAT(new Date(), nextRule.tat, nextRule.tatType, config);
 
-        await storage.createTask({
-          system: task.system,
-          flowId: task.flowId,
-          orderNumber: task.orderNumber,
-          taskName: nextRule.nextTask,
-          plannedTime,
-          doerEmail: nextRule.email,
-          status: "pending",
-          formId: nextRule.formId,
-        });
+          await storage.createTask({
+            system: task.system,
+            flowId: task.flowId,
+            orderNumber: task.orderNumber,
+            taskName: nextRule.nextTask,
+            plannedTime,
+            doerEmail: nextRule.email,
+            status: "pending",
+            formId: nextRule.formId,
+            // Include flow context and previous form data
+            flowInitiatedBy: task.flowInitiatedBy,
+            flowInitiatedAt: task.flowInitiatedAt,
+            flowDescription: task.flowDescription,
+            flowInitialFormData: task.flowInitialFormData || (flowInitialData as any),
+          });
+        }
       }
       
       res.json(updatedTask);
