@@ -147,3 +147,8 @@ Preferred communication style: Simple, everyday language.
 - ✓ Implemented task transfer API endpoint with validation and tracking of transfer history
 - ✓ Added transfer UI in task management with dialog for selecting target email and reason
 - ✓ System now tracks original assignee, transfer timestamp, and transfer reason for audit trail
+- ✓ Implemented table/multiple line item support in form builder with configurable columns and data types
+- ✓ Enhanced task display to show initial form data from first task across all subsequent tasks in workflow
+- ✓ Added prominent initial form data section in flow data dialog for better context visibility
+- ✓ Updated backend to automatically fetch and include first form response data in all workflow tasks
+- ✓ System now maintains complete workflow context from initiation through completion
