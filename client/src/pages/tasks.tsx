@@ -140,7 +140,7 @@ export default function Tasks() {
       const response = await apiRequest("GET", "/api/export/flow-data");
       
       // Create comprehensive CSV/JSON export
-      const exportData = response.data;
+      const exportData = (response as any).data;
       
       // Create detailed CSV with all task, form, and timing data
       const csvData = exportData.map((flow: any) => {
@@ -197,7 +197,7 @@ export default function Tasks() {
         const headers = Object.keys(csvData[0]);
         const csvContent = [
           headers.join(","),
-          ...csvData.map(row => 
+          ...csvData.map((row: any) => 
             headers.map(header => {
               const value = row[header] || "";
               // Escape commas and quotes in CSV
@@ -232,7 +232,7 @@ export default function Tasks() {
         
         toast({
           title: "Export Successful",
-          description: `Exported ${response.totalFlows} flows with comprehensive data including form responses and cycle times.`,
+          description: `Exported ${(response as any).totalFlows || exportData.length} flows with comprehensive data including form responses and cycle times.`,
         });
       } else {
         toast({
