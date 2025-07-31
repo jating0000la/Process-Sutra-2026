@@ -110,8 +110,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const login = async () => {
-    const { signInWithGoogle } = await import('@/lib/firebase');
-    await signInWithGoogle();
+    try {
+      setLoading(true);
+      const { signInWithGoogle } = await import('@/lib/firebase');
+      const result = await signInWithGoogle();
+      
+      // If popup succeeded, handle the result immediately
+      if (result?.user) {
+        console.log('✅ Login successful via popup:', result.user.email);
+        await syncUserWithBackend(result.user);
+        setUser(result.user);
+      }
+    } catch (error) {
+      console.error('❌ Login failed:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const logout = async () => {

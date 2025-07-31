@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged } from "firebase/auth";
+import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -18,9 +18,18 @@ googleProvider.setCustomParameters({
   prompt: 'select_account'
 });
 
-// Sign in with Google
-export const signInWithGoogle = () => {
-  return signInWithRedirect(auth, googleProvider);
+// Sign in with Google - try popup first, fallback to redirect
+export const signInWithGoogle = async () => {
+  try {
+    console.log('🔑 Attempting popup sign-in...');
+    const result = await signInWithPopup(auth, googleProvider);
+    console.log('✅ Popup sign-in successful:', result.user.email);
+    return result;
+  } catch (error: any) {
+    console.log('❌ Popup failed, trying redirect...', error.message);
+    // Fallback to redirect if popup fails
+    return signInWithRedirect(auth, googleProvider);
+  }
 };
 
 // Handle redirect result
