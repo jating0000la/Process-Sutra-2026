@@ -171,6 +171,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/tasks/:id/status", isAuthenticated, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      
+      // Validate status
+      const validStatuses = ["pending", "in_progress", "completed", "overdue"];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({ message: "Invalid status value" });
+      }
+      
+      const updateData: any = { status };
+      if (status === "completed") {
+        updateData.actualTime = new Date();
+      }
+      
+      const task = await storage.updateTask(id, updateData);
+      res.json(task);
+    } catch (error) {
+      console.error("Error updating task status:", error);
+      res.status(500).json({ message: "Failed to update task status" });
+    }
+  });
+
   app.post("/api/flows/start", isAuthenticated, async (req, res) => {
     try {
       const { system, orderNumber } = req.body;

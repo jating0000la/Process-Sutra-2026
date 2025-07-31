@@ -129,6 +129,37 @@ export default function Tasks() {
     },
   });
 
+  const statusChangeMutation = useMutation({
+    mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
+      await apiRequest("PATCH", `/api/tasks/${taskId}/status`, { status });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Task status updated successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        toast({
+          title: "Unauthorized",
+          description: "You are logged out. Logging in again...",
+          variant: "destructive",
+        });
+        setTimeout(() => {
+          window.location.href = "/api/login";
+        }, 500);
+        return;
+      }
+      toast({
+        title: "Error",
+        description: "Failed to update task status",
+        variant: "destructive",
+      });
+    },
+  });
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "completed":
@@ -260,9 +291,20 @@ export default function Tasks() {
                         </div>
                       </div>
                       <div className="flex items-center space-x-3">
-                        <Badge className={getStatusColor(task.status)}>
-                          {task.status.replace('_', ' ')}
-                        </Badge>
+                        <Select 
+                          value={task.status} 
+                          onValueChange={(value) => statusChangeMutation.mutate({ taskId: task.id, status: value })}
+                        >
+                          <SelectTrigger className="w-36">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pending">Pending</SelectItem>
+                            <SelectItem value="in_progress">In Progress</SelectItem>
+                            <SelectItem value="completed">Completed</SelectItem>
+                            <SelectItem value="overdue">Overdue</SelectItem>
+                          </SelectContent>
+                        </Select>
                         <Dialog>
                           <DialogTrigger asChild>
                             <Button 
