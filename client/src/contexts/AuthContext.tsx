@@ -2,8 +2,18 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { User } from 'firebase/auth';
 import { auth, handleRedirectResult, onAuthStateChange } from '@/lib/firebase';
 
+interface DatabaseUser {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  profileImageUrl?: string;
+}
+
 interface AuthContextType {
   user: User | null;
+  dbUser: DatabaseUser | null;
   loading: boolean;
   login: () => void;
   logout: () => void;
@@ -21,6 +31,7 @@ export const useAuth = () => {
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [dbUser, setDbUser] = useState<DatabaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   
   const syncUserWithBackend = async (firebaseUser: any) => {
@@ -46,6 +57,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         console.log('Successfully authenticated with backend');
         const data = await response.json();
         console.log('Backend response:', data);
+        
+        // Store database user info
+        if (data.user) {
+          setDbUser(data.user);
+        }
       } else {
         const errorData = await response.json();
         console.error('Backend authentication failed:', errorData);
@@ -87,6 +103,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       } else {
         console.log('❌ User signed out');
         setUser(null);
+        setDbUser(null);
       }
       
       setLoading(false);
@@ -127,6 +144,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       await logOut();
       await fetch('/api/auth/logout', { method: 'POST' });
       setUser(null);
+      setDbUser(null);
     } catch (error) {
       console.error('Error signing out:', error);
     }
@@ -134,6 +152,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const value = {
     user,
+    dbUser,
     loading,
     login,
     logout,

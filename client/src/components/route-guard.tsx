@@ -2,9 +2,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 
-// Temporary admin check for Firebase User
-const isFirebaseAdmin = (user: any) => {
-  return user?.email === 'admin@example.com'; // Update this based on your admin logic
+// Check if database user has admin role
+const isAdmin = (dbUser: any) => {
+  return dbUser?.role === 'admin';
 };
 
 interface RouteGuardProps {
@@ -13,7 +13,7 @@ interface RouteGuardProps {
 }
 
 export default function RouteGuard({ children, requireAdmin = false }: RouteGuardProps) {
-  const { user, loading } = useAuth();
+  const { user, dbUser, loading } = useAuth();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -29,7 +29,7 @@ export default function RouteGuard({ children, requireAdmin = false }: RouteGuar
       return;
     }
 
-    if (!loading && user && requireAdmin && !isFirebaseAdmin(user)) {
+    if (!loading && user && requireAdmin && !isAdmin(dbUser)) {
       toast({
         title: "Access Denied",
         description: "You don't have permission to access this page.",
@@ -51,7 +51,7 @@ export default function RouteGuard({ children, requireAdmin = false }: RouteGuar
   }
 
   // Don't render children if not authenticated or missing admin permission
-  if (!user || (requireAdmin && !isFirebaseAdmin(user))) {
+  if (!user || (requireAdmin && !isAdmin(dbUser))) {
     return null;
   }
 

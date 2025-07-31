@@ -84,7 +84,7 @@ const adminNavigationItems = [
 
 export default function Sidebar() {
   const [location] = useLocation();
-  const { user } = useAuth();
+  const { dbUser } = useAuth();
 
   const isActive = (href: string) => {
     if (href === "/") {
@@ -93,7 +93,7 @@ export default function Sidebar() {
     return location.startsWith(href);
   };
 
-  const isAdmin = user?.email === 'admin@example.com'; // Temporary admin check
+  const isAdmin = dbUser?.role === 'admin';
   const navigationItems = isAdmin ? [...userNavigationItems, ...adminNavigationItems] : userNavigationItems;
 
   return (
