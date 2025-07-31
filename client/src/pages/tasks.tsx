@@ -69,6 +69,7 @@ export default function Tasks() {
     // Find the form template by formId
     const template = (formTemplates as any[])?.find((t: any) => t.formId === task.formId);
     if (template) {
+      setSelectedTask(task); // Set the selected task for form submission
       setFormTemplate(template);
       setIsFormDialogOpen(true);
     } else {
@@ -82,6 +83,13 @@ export default function Tasks() {
 
   const handleFormSubmit = async (formData: Record<string, any>) => {
     try {
+      console.log("Submitting form data:", formData);
+      console.log("Task info:", { 
+        taskId: selectedTask?.id, 
+        flowId: selectedTask?.flowId,
+        formId: formTemplate?.formId 
+      });
+      
       await apiRequest("POST", "/api/form-responses", {
         responseId: `resp_${Date.now()}`, // Generate unique ID
         flowId: selectedTask?.flowId,
@@ -96,13 +104,18 @@ export default function Tasks() {
         description: "Form submitted successfully",
       });
       
+      // Invalidate queries to refresh data
+      queryClient.invalidateQueries({ queryKey: ["/api/form-responses"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      
       setIsFormDialogOpen(false);
       setFormTemplate(null);
+      setSelectedTask(null);
     } catch (error) {
       console.error("Form submission error:", error);
       toast({
         title: "Error",
-        description: "Failed to submit form",
+        description: "Failed to submit form. Please check all required fields.",
         variant: "destructive",
       });
     }

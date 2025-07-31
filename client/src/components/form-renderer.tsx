@@ -91,13 +91,56 @@ export default function FormRenderer({
   };
 
   const formSchema = createFormSchema();
+  
+  // Create proper default values for all form fields
+  const getDefaultValues = () => {
+    const defaults: Record<string, any> = {};
+    template.questions.forEach((question) => {
+      const existingValue = initialData[question.id];
+      if (existingValue !== undefined) {
+        defaults[question.id] = existingValue;
+      } else {
+        switch (question.type) {
+          case "text":
+          case "textarea":
+          case "select":
+          case "radio":
+          case "date":
+            defaults[question.id] = "";
+            break;
+          case "checkbox":
+            defaults[question.id] = [];
+            break;
+          case "file":
+            defaults[question.id] = null;
+            break;
+          default:
+            defaults[question.id] = "";
+        }
+      }
+    });
+    return defaults;
+  };
+
   const form = useForm({
     resolver: zodResolver(formSchema),
-    defaultValues: initialData,
+    defaultValues: getDefaultValues(),
   });
 
   const handleSubmit = (data: any) => {
-    onSubmit(data);
+    // Clean up the data by removing empty optional fields
+    const cleanedData: Record<string, any> = {};
+    
+    template.questions.forEach((question) => {
+      const value = data[question.id];
+      
+      // Only include the field if it has a meaningful value or is required
+      if (question.required || (value !== "" && value !== null && value !== undefined && !(Array.isArray(value) && value.length === 0))) {
+        cleanedData[question.id] = value;
+      }
+    });
+    
+    onSubmit(cleanedData);
   };
 
   const renderField = (question: FormQuestion) => {
