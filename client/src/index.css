@@ -1,0 +1,181 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(0, 0%, 100%);
+  --foreground: hsl(20, 14.3%, 4.1%);
+  --muted: hsl(60, 4.8%, 95.9%);
+  --muted-foreground: hsl(25, 5.3%, 44.7%);
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(20, 14.3%, 4.1%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(20, 14.3%, 4.1%);
+  --border: hsl(20, 5.9%, 90%);
+  --input: hsl(20, 5.9%, 90%);
+  --primary: hsl(207, 90%, 54%);
+  --primary-foreground: hsl(211, 100%, 99%);
+  --secondary: hsl(60, 4.8%, 95.9%);
+  --secondary-foreground: hsl(24, 9.8%, 10%);
+  --accent: hsl(60, 4.8%, 95.9%);
+  --accent-foreground: hsl(24, 9.8%, 10%);
+  --destructive: hsl(0, 84.2%, 60.2%);
+  --destructive-foreground: hsl(60, 9.1%, 97.8%);
+  --ring: hsl(20, 14.3%, 4.1%);
+  --radius: 0.5rem;
+  --success: hsl(120, 50%, 50%);
+  --warning: hsl(14, 100%, 57%);
+  --neutral: hsl(0, 0%, 96%);
+}
+
+.dark {
+  --background: hsl(240, 10%, 3.9%);
+  --foreground: hsl(0, 0%, 98%);
+  --muted: hsl(240, 3.7%, 15.9%);
+  --muted-foreground: hsl(240, 5%, 64.9%);
+  --popover: hsl(240, 10%, 3.9%);
+  --popover-foreground: hsl(0, 0%, 98%);
+  --card: hsl(240, 10%, 3.9%);
+  --card-foreground: hsl(0, 0%, 98%);
+  --border: hsl(240, 3.7%, 15.9%);
+  --input: hsl(240, 3.7%, 15.9%);
+  --primary: hsl(207, 90%, 54%);
+  --primary-foreground: hsl(211, 100%, 99%);
+  --secondary: hsl(240, 3.7%, 15.9%);
+  --secondary-foreground: hsl(0, 0%, 98%);
+  --accent: hsl(240, 3.7%, 15.9%);
+  --accent-foreground: hsl(0, 0%, 98%);
+  --destructive: hsl(0, 62.8%, 30.6%);
+  --destructive-foreground: hsl(0, 0%, 98%);
+  --ring: hsl(240, 4.9%, 83.9%);
+  --radius: 0.5rem;
+  --success: hsl(120, 50%, 50%);
+  --warning: hsl(14, 100%, 57%);
+  --neutral: hsl(240, 3.7%, 15.9%);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-neutral text-foreground;
+  }
+}
+
+/* Custom utility classes for TaskFlow Pro */
+.bg-success {
+  background-color: hsl(var(--success));
+}
+
+.text-success {
+  color: hsl(var(--success));
+}
+
+.bg-warning {
+  background-color: hsl(var(--warning));
+}
+
+.text-warning {
+  color: hsl(var(--warning));
+}
+
+.bg-neutral {
+  background-color: hsl(var(--neutral));
+}
+
+.text-neutral {
+  color: hsl(var(--neutral));
+}
+
+/* Sidebar navigation styles */
+.sidebar-nav-item {
+  @apply text-gray-700 hover:bg-gray-50 flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors;
+}
+
+.sidebar-nav-item.active {
+  @apply bg-blue-50 text-primary border-l-4 border-primary;
+}
+
+.sidebar-nav-item:hover:not(.active) {
+  @apply border-l-4 border-gray-300;
+}
+
+/* Chart and data visualization styles */
+.chart-container {
+  @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6;
+}
+
+/* Task status colors */
+.status-pending {
+  @apply bg-yellow-100 text-yellow-800;  
+}
+
+.status-in-progress {
+  @apply bg-blue-100 text-blue-800;
+}
+
+.status-completed {
+  @apply bg-green-100 text-green-800;
+}
+
+.status-overdue {
+  @apply bg-red-100 text-red-800;
+}
+
+/* Form builder styles */
+.form-element-palette {
+  @apply bg-white border border-gray-200 rounded-lg cursor-move hover:shadow-sm transition-shadow;
+}
+
+.form-canvas {
+  @apply min-h-96 border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50;
+}
+
+.form-element-selected {
+  @apply border-primary bg-blue-50;
+}
+
+/* Metric card styles */
+.metric-card {
+  @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow;
+}
+
+.metric-trend-positive {
+  @apply text-green-600;
+}
+
+.metric-trend-negative {
+  @apply text-red-600;
+}
+
+/* Custom animations */
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Profile image handling - not guaranteed to be square */
+.profile-image {
+  @apply object-cover;
+}
+
+/* Responsive grid improvements */
+@media (max-width: 768px) {
+  .mobile-grid-single {
+    @apply grid-cols-1;
+  }
+  
+  .mobile-stack {
+    @apply flex-col space-x-0 space-y-2;
+  }
+}
