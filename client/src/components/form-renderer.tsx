@@ -11,7 +11,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Loader2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 
 interface FormQuestion {
   id: string;
@@ -20,6 +20,7 @@ interface FormQuestion {
   required: boolean;
   options?: string[];
   placeholder?: string;
+  tableColumns?: { id: string; label: string; type: string }[];
 }
 
 interface FormTemplate {
@@ -45,6 +46,126 @@ export default function FormRenderer({
   initialData = {},
   readonly = false 
 }: FormRendererProps) {
+  
+  // Table Input Component
+  const TableInput = ({ question, field, readonly }: { 
+    question: FormQuestion; 
+    field: any; 
+    readonly?: boolean;
+  }) => {
+    const [tableRows, setTableRows] = useState<Record<string, string>[]>(field.value || []);
+
+    const addRow = () => {
+      const newRow: Record<string, string> = {};
+      question.tableColumns?.forEach(col => {
+        newRow[col.id] = '';
+      });
+      const updatedRows = [...tableRows, newRow];
+      setTableRows(updatedRows);
+      field.onChange(updatedRows);
+    };
+
+    const updateRow = (rowIndex: number, columnId: string, value: string) => {
+      const updatedRows = tableRows.map((row, index) => 
+        index === rowIndex ? { ...row, [columnId]: value } : row
+      );
+      setTableRows(updatedRows);
+      field.onChange(updatedRows);
+    };
+
+    const removeRow = (rowIndex: number) => {
+      const updatedRows = tableRows.filter((_, index) => index !== rowIndex);
+      setTableRows(updatedRows);
+      field.onChange(updatedRows);
+    };
+
+    if (!question.tableColumns || question.tableColumns.length === 0) {
+      return <div className="text-gray-500 text-sm">No table columns configured</div>;
+    }
+
+    return (
+      <div className="border border-gray-200 rounded-lg">
+        <div className="p-3 bg-gray-50 border-b">
+          <h4 className="text-sm font-medium">{question.label}</h4>
+        </div>
+        <div className="p-3">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  {question.tableColumns.map((col) => (
+                    <th key={col.id} className="text-left p-2 border-b border-gray-200">
+                      {col.label}
+                    </th>
+                  ))}
+                  {!readonly && <th className="text-left p-2 border-b border-gray-200">Actions</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {tableRows.map((row, rowIndex) => (
+                  <tr key={rowIndex}>
+                    {question.tableColumns?.map((col) => (
+                      <td key={col.id} className="p-2 border-b border-gray-100">
+                        {col.type === "select" ? (
+                          <Select
+                            value={row[col.id] || ""}
+                            onValueChange={(value) => updateRow(rowIndex, col.id, value)}
+                            disabled={readonly}
+                          >
+                            <SelectTrigger size="sm">
+                              <SelectValue placeholder="Select..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="option1">Option 1</SelectItem>
+                              <SelectItem value="option2">Option 2</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input
+                            type={col.type === "number" ? "number" : col.type === "date" ? "date" : "text"}
+                            value={row[col.id] || ""}
+                            onChange={(e) => updateRow(rowIndex, col.id, e.target.value)}
+                            placeholder={`Enter ${col.label.toLowerCase()}`}
+                            size="sm"
+                            disabled={readonly}
+                          />
+                        )}
+                      </td>
+                    ))}
+                    {!readonly && (
+                      <td className="p-2 border-b border-gray-100">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => removeRow(rowIndex)}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!readonly && (
+            <div className="mt-3">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={addRow}
+              >
+                <Plus className="w-4 h-4 mr-1" />
+                Add Row
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
   // Create dynamic schema based on form questions
   const createFormSchema = () => {
     const schemaFields: Record<string, z.ZodTypeAny> = {};
@@ -69,6 +190,9 @@ export default function FormRenderer({
           break;
         case "file":
           fieldSchema = z.any();
+          break;
+        case "table":
+          fieldSchema = z.array(z.record(z.string()));
           break;
         default:
           fieldSchema = z.string();
@@ -113,6 +237,9 @@ export default function FormRenderer({
             break;
           case "file":
             defaults[question.id] = null;
+            break;
+          case "table":
+            defaults[question.id] = [];
             break;
           default:
             defaults[question.id] = "";
@@ -246,6 +373,8 @@ export default function FormRenderer({
                         disabled={readonly}
                       />
                     );
+                  case "table":
+                    return <TableInput question={question} field={field} readonly={readonly} />;
                   default:
                     return (
                       <Input

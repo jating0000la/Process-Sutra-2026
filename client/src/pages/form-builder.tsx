@@ -30,7 +30,8 @@ import {
   Circle, 
   Calendar, 
   Upload,
-  GripVertical 
+  GripVertical,
+  Table
 } from "lucide-react";
 
 interface FormQuestion {
@@ -40,6 +41,7 @@ interface FormQuestion {
   required: boolean;
   options?: string[];
   placeholder?: string;
+  tableColumns?: { id: string; label: string; type: string }[];
 }
 
 const formTemplateSchema = z.object({
@@ -53,6 +55,11 @@ const formTemplateSchema = z.object({
     required: z.boolean(),
     options: z.array(z.string()).optional(),
     placeholder: z.string().optional(),
+    tableColumns: z.array(z.object({
+      id: z.string(),
+      label: z.string(),
+      type: z.string(),
+    })).optional(),
   })),
 });
 
@@ -64,6 +71,7 @@ const questionTypes = [
   { value: "radio", label: "Radio Button", icon: Circle },
   { value: "date", label: "Date Picker", icon: Calendar },
   { value: "file", label: "File Upload", icon: Upload },
+  { value: "table", label: "Table/Multiple Items", icon: Table },
 ];
 
 export default function FormBuilder() {
@@ -73,6 +81,7 @@ export default function FormBuilder() {
   const [currentForm, setCurrentForm] = useState<any>(null);
   const [questions, setQuestions] = useState<FormQuestion[]>([]);
   const [selectedQuestion, setSelectedQuestion] = useState<FormQuestion | null>(null);
+  const [tableColumns, setTableColumns] = useState<{ id: string; label: string; type: string }[]>([]);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -205,7 +214,27 @@ export default function FormBuilder() {
     setCurrentForm(null);
     setQuestions([]);
     setSelectedQuestion(null);
+    setTableColumns([]);
     form.reset();
+  };
+
+  const addTableColumn = () => {
+    const newColumn = {
+      id: `col_${Date.now()}`,
+      label: `Column ${tableColumns.length + 1}`,
+      type: "text"
+    };
+    setTableColumns([...tableColumns, newColumn]);
+  };
+
+  const updateTableColumn = (id: string, field: string, value: string) => {
+    setTableColumns(tableColumns.map(col => 
+      col.id === id ? { ...col, [field]: value } : col
+    ));
+  };
+
+  const removeTableColumn = (id: string) => {
+    setTableColumns(tableColumns.filter(col => col.id !== id));
   };
 
   const addQuestion = (type: string) => {
@@ -216,15 +245,26 @@ export default function FormBuilder() {
       required: false,
       placeholder: "",
       options: type === "select" || type === "radio" ? ["Option 1", "Option 2"] : undefined,
+      tableColumns: type === "table" ? [] : undefined,
     };
     setQuestions([...questions, newQuestion]);
     setSelectedQuestion(newQuestion);
+    
+    // Reset table columns for new table question
+    if (type === "table") {
+      setTableColumns([]);
+    }
   };
 
   const updateQuestion = (id: string, updates: Partial<FormQuestion>) => {
     setQuestions(questions.map(q => q.id === id ? { ...q, ...updates } : q));
     if (selectedQuestion?.id === id) {
       setSelectedQuestion({ ...selectedQuestion, ...updates });
+    }
+    
+    // If updating table columns for the selected question
+    if (selectedQuestion?.id === id && updates.tableColumns) {
+      setTableColumns(updates.tableColumns);
     }
   };
 
@@ -236,6 +276,11 @@ export default function FormBuilder() {
   };
 
   const saveForm = () => {
+    // Update current selected question with table columns before saving
+    if (selectedQuestion?.type === "table") {
+      updateQuestion(selectedQuestion.id, { tableColumns });
+    }
+    
     const formData = {
       formId: form.getValues("formId"),
       title: form.getValues("title"),
@@ -253,6 +298,7 @@ export default function FormBuilder() {
   const editTemplate = (template: any) => {
     setCurrentForm(template);
     setQuestions(template.questions || []);
+    setTableColumns([]);
     form.reset({
       formId: template.formId,
       title: template.title,
@@ -330,6 +376,50 @@ export default function FormBuilder() {
             disabled 
             className="mt-2"
           />
+        );
+      case "table":
+        return (
+          <div className="mt-2 border border-gray-200 rounded-lg">
+            <div className="p-3 bg-gray-50 border-b">
+              <h4 className="text-sm font-medium">Multiple Items Table</h4>
+            </div>
+            <div className="p-3">
+              {question.tableColumns && question.tableColumns.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr>
+                        {question.tableColumns.map((col) => (
+                          <th key={col.id} className="text-left p-2 border-b border-gray-200">
+                            {col.label}
+                          </th>
+                        ))}
+                        <th className="text-left p-2 border-b border-gray-200">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        {question.tableColumns.map((col) => (
+                          <td key={col.id} className="p-2 border-b border-gray-100">
+                            <Input 
+                              placeholder={`Enter ${col.label.toLowerCase()}`} 
+                              disabled 
+                              size="sm"
+                            />
+                          </td>
+                        ))}
+                        <td className="p-2 border-b border-gray-100">
+                          <Button size="sm" variant="outline" disabled>Add</Button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-gray-500 text-sm">Configure table columns to see preview</p>
+              )}
+            </div>
+          </div>
         );
       default:
         return null;
@@ -521,7 +611,14 @@ export default function FormBuilder() {
                         className={`p-4 border rounded-lg bg-white cursor-pointer ${
                           selectedQuestion?.id === question.id ? 'border-primary' : 'border-gray-200'
                         }`}
-                        onClick={() => setSelectedQuestion(question)}
+                        onClick={() => {
+                          setSelectedQuestion(question);
+                          if (question.type === "table" && question.tableColumns) {
+                            setTableColumns(question.tableColumns);
+                          } else if (question.type !== "table") {
+                            setTableColumns([]);
+                          }
+                        }}
                       >
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center space-x-2">
@@ -630,6 +727,61 @@ export default function FormBuilder() {
                             }}
                           >
                             Add Option
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                    {selectedQuestion.type === "table" && (
+                      <div>
+                        <Label>Table Columns</Label>
+                        <div className="space-y-2">
+                          {tableColumns.map((column) => (
+                            <div key={column.id} className="space-y-2 p-3 border border-gray-200 rounded">
+                              <div className="flex items-center justify-between">
+                                <Label className="text-xs font-medium">Column {tableColumns.indexOf(column) + 1}</Label>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removeTableColumn(column.id)}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
+                              <div>
+                                <Label className="text-xs">Label</Label>
+                                <Input
+                                  value={column.label}
+                                  onChange={(e) => updateTableColumn(column.id, 'label', e.target.value)}
+                                  placeholder="Column label"
+                                  size="sm"
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs">Type</Label>
+                                <Select
+                                  value={column.type}
+                                  onValueChange={(value) => updateTableColumn(column.id, 'type', value)}
+                                >
+                                  <SelectTrigger size="sm">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="text">Text</SelectItem>
+                                    <SelectItem value="number">Number</SelectItem>
+                                    <SelectItem value="date">Date</SelectItem>
+                                    <SelectItem value="select">Dropdown</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          ))}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={addTableColumn}
+                          >
+                            <Plus className="w-4 h-4 mr-1" />
+                            Add Column
                           </Button>
                         </div>
                       </div>
