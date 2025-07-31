@@ -140,7 +140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Find next task in workflow
       const flowRules = await storage.getFlowRules(task.system);
       const nextRule = flowRules.find(
-        rule => rule.currentTask === task.taskName && rule.status === "completed"
+        rule => rule.currentTask === task.taskName && rule.status === "Done"
       );
 
       if (nextRule) {

@@ -245,7 +245,7 @@ export default function Flows() {
     startFlowMutation.mutate(data);
   };
 
-  const systems = Array.from(new Set(flowRules?.map((rule: any) => rule.system) || []));
+  const systems = Array.from(new Set((flowRules as any[])?.map((rule: any) => rule.system) || []));
 
   if (isLoading) {
     return (
@@ -519,7 +519,7 @@ export default function Flows() {
                   </CardContent>
                 </Card>
               ))
-            ) : flowRules?.length === 0 ? (
+            ) : (flowRules as any[])?.length === 0 ? (
               <Card>
                 <CardContent className="p-12 text-center">
                   <Workflow className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -543,7 +543,7 @@ export default function Flows() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
-                      {flowRules
+                      {(flowRules as any[])
                         ?.filter((rule: any) => rule.system === system)
                         .map((rule: any) => (
                           <div key={rule.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
