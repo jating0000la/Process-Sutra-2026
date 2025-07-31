@@ -19,10 +19,21 @@ import UserManagement from "@/pages/user-management";
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
+        <div className="text-lg">Loading...</div>
+      </div>
+    );
+  }
+
   return (
     <Switch>
-      {isLoading || !isAuthenticated ? (
-        <Route path="/" component={Landing} />
+      {!isAuthenticated ? (
+        <>
+          <Route path="/" component={Landing} />
+          <Route component={NotFound} />
+        </>
       ) : (
         <>
           <Route path="/" component={Dashboard} />
@@ -34,9 +45,9 @@ function Router() {
           <Route path="/flow-data" component={FlowData} />
           <Route path="/flow-simulator" component={FlowSimulator} />
           <Route path="/user-management" component={UserManagement} />
+          <Route component={NotFound} />
         </>
       )}
-      <Route component={NotFound} />
     </Switch>
   );
 }
