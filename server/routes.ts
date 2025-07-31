@@ -49,6 +49,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/flow-rules/bulk", isAuthenticated, async (req, res) => {
+    try {
+      const { rules } = req.body;
+      
+      if (!Array.isArray(rules)) {
+        return res.status(400).json({ message: "Rules must be an array" });
+      }
+
+      const createdRules = [];
+      for (const ruleData of rules) {
+        try {
+          const validatedData = insertFlowRuleSchema.parse(ruleData);
+          const rule = await storage.createFlowRule(validatedData);
+          createdRules.push(rule);
+        } catch (error) {
+          console.error("Error validating rule:", ruleData, error);
+          // Continue with other rules if one fails
+        }
+      }
+      
+      res.status(201).json({ 
+        message: `Successfully created ${createdRules.length} flow rules`,
+        rules: createdRules 
+      });
+    } catch (error) {
+      console.error("Error creating bulk flow rules:", error);
+      res.status(500).json({ message: "Failed to create bulk flow rules" });
+    }
+  });
+
   app.put("/api/flow-rules/:id", isAuthenticated, async (req, res) => {
     try {
       const { id } = req.params;

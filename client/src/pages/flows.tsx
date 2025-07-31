@@ -16,7 +16,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Plus, Workflow, Play, Edit, Trash2 } from "lucide-react";
+import { Plus, Workflow, Play, Edit, Trash2, Upload } from "lucide-react";
 
 const flowRuleSchema = z.object({
   system: z.string().min(1, "System is required"),
@@ -245,6 +245,45 @@ export default function Flows() {
     startFlowMutation.mutate(data);
   };
 
+  const importOrderTrackerRules = async () => {
+    try {
+      const orderTrackerRules = [
+        // Initial flow
+        { system: "Order Tracker", currentTask: "", status: "", nextTask: "Customer Registration", tat: 1, tatType: "Hour", doer: "Jitendra", email: "jatin@muxro.com", formId: "" },
+        // Customer Registration branches
+        { system: "Order Tracker", currentTask: "Customer Registration", status: "Regular", nextTask: "Choose Box", tat: 1, tatType: "Day", doer: "Kamal", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Customer Registration", status: "Wedding", nextTask: "Get All details of Customisation and take Approval", tat: 1, tatType: "Day", doer: "Rohit", email: "jatin@muxro.com", formId: "" },
+        // Choose Box flow
+        { system: "Order Tracker", currentTask: "Choose Box", status: "Done", nextTask: "Choose Sweets", tat: 1, tatType: "Day", doer: "Ajay", email: "jatin@muxro.com", formId: "" },
+        // Choose Sweets flow
+        { system: "Order Tracker", currentTask: "Choose Sweets", status: "Done", nextTask: "Any Basic Customisation", tat: 1, tatType: "Hour", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        // Any Basic Customisation branches
+        { system: "Order Tracker", currentTask: "Any Basic Customisation", status: "Yes", nextTask: "Get All details of Customisation", tat: 1, tatType: "Day", doer: "Kashsis", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Any Basic Customisation", status: "No", nextTask: "Create Order for Sweets", tat: 1, tatType: "Hour", doer: "Jitendra", email: "jatin@muxro.com", formId: "" },
+        // Additional rules...
+        { system: "Order Tracker", currentTask: "Get All details of Customisation", status: "Done", nextTask: "Create Order for Sweets", tat: 1, tatType: "Day", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Create Order for Sweets", status: "Done", nextTask: "Check Sweet Availability in Store", tat: 1, tatType: "Hour", doer: "Kamal", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Check Sweet Availability in Store", status: "No", nextTask: "Prepare BOM of Sweets", tat: 1, tatType: "Day", doer: "Rohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Check Sweet Availability in Store", status: "Yes", nextTask: "Execute Filling in Store", tat: 1, tatType: "Hour", doer: "Ajay", email: "jatin@muxro.com", formId: "" }
+      ];
+
+      await apiRequest("POST", "/api/flow-rules/bulk", { rules: orderTrackerRules });
+      
+      toast({
+        title: "Success",
+        description: "Order Tracker workflow rules imported successfully",
+      });
+      
+      queryClient.invalidateQueries({ queryKey: ["/api/flow-rules"] });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to import Order Tracker rules",
+        variant: "destructive",
+      });
+    }
+  };
+
   const systems = Array.from(new Set((flowRules as any[])?.map((rule: any) => rule.system) || []));
 
   if (isLoading) {
@@ -277,6 +316,14 @@ export default function Flows() {
           description="Design and manage your workflow rules"
           actions={
             <div className="flex space-x-3">
+              <Button 
+                variant="secondary" 
+                onClick={importOrderTrackerRules}
+                disabled={isLoading}
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Import Order Tracker
+              </Button>
               <Dialog open={isStartFlowDialogOpen} onOpenChange={setIsStartFlowDialogOpen}>
                 <DialogTrigger asChild>
                   <Button variant="outline">
