@@ -65,6 +65,11 @@ export const tasks = pgTable("tasks", {
   formId: varchar("form_id"), // Associated form template
   createdAt: timestamp("created_at").defaultNow(), // When task was created
   updatedAt: timestamp("updated_at").defaultNow(),
+  // Flow context information - WHO, WHAT, WHEN, HOW
+  flowInitiatedBy: varchar("flow_initiated_by"), // WHO started the flow
+  flowInitiatedAt: timestamp("flow_initiated_at"), // WHEN the flow was started
+  flowDescription: text("flow_description"), // WHAT/HOW - description of the flow purpose
+  flowInitialFormData: jsonb("flow_initial_form_data"), // First form data visible to all tasks in flow
 });
 
 // Form Templates - Define form structure

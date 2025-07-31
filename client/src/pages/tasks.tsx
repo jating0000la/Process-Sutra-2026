@@ -460,27 +460,77 @@ export default function Tasks() {
                           <h3 className="text-sm font-medium text-gray-900">{task.taskName}</h3>
                           <p className="text-sm text-gray-600">System: {task.system}</p>
                           
+                          {/* Flow Context Information - WHO, WHAT, WHEN, HOW */}
+                          <div className="mt-2 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                            <div className="text-xs font-semibold text-blue-800 dark:text-blue-200 mb-2">📋 Flow Context</div>
+                            
+                            {/* WHO, WHAT, WHEN */}
+                            <div className="grid grid-cols-1 gap-1 text-xs mb-2">
+                              {task.flowInitiatedBy && (
+                                <div>
+                                  <span className="font-medium text-blue-700 dark:text-blue-300">WHO:</span>
+                                  <span className="text-blue-600 dark:text-blue-400 ml-1">Started by {task.flowInitiatedBy}</span>
+                                </div>
+                              )}
+                              
+                              {task.flowDescription && (
+                                <div>
+                                  <span className="font-medium text-blue-700 dark:text-blue-300">WHAT:</span>
+                                  <span className="text-blue-600 dark:text-blue-400 ml-1">{task.flowDescription}</span>
+                                </div>
+                              )}
+                              
+                              {task.flowInitiatedAt && (
+                                <div>
+                                  <span className="font-medium text-blue-700 dark:text-blue-300">WHEN:</span>
+                                  <span className="text-blue-600 dark:text-blue-400 ml-1">{format(new Date(task.flowInitiatedAt), 'MMM dd, yyyy HH:mm')}</span>
+                                </div>
+                              )}
+                              
+                              <div>
+                                <span className="font-medium text-blue-700 dark:text-blue-300">ORDER:</span>
+                                <span className="text-blue-600 dark:text-blue-400 ml-1 font-mono">{task.orderNumber}</span>
+                              </div>
+                            </div>
+                            
+                            {/* Initial Form Data */}
+                            {task.flowInitialFormData && (
+                              <div className="pt-2 border-t border-blue-200 dark:border-blue-700">
+                                <div className="font-medium text-blue-700 dark:text-blue-300 text-xs mb-1">Initial Data:</div>
+                                <div className="bg-white dark:bg-gray-800 rounded p-1 text-xs">
+                                  {Object.entries(task.flowInitialFormData).map(([key, value]) => (
+                                    <div key={key} className="flex">
+                                      <span className="font-medium text-gray-600 dark:text-gray-400">{key}:</span>
+                                      <span className="text-gray-800 dark:text-gray-200 ml-1">{String(value)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          
                           {/* Time Tracking Information */}
                           <div className="mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border text-xs space-y-1">
+                            <div className="font-medium text-gray-700 dark:text-gray-300 mb-1">⏱️ Timing</div>
                             <div className="grid grid-cols-2 gap-2">
                               <div>
-                                <span className="font-medium text-gray-700">Created:</span>
-                                <div className="text-gray-600">{format(new Date(task.createdAt), 'MMM dd, HH:mm')}</div>
+                                <span className="font-medium text-gray-700 dark:text-gray-300">Created:</span>
+                                <div className="text-gray-600 dark:text-gray-400">{format(new Date(task.createdAt), 'MMM dd, HH:mm')}</div>
                               </div>
                               <div>
-                                <span className="font-medium text-gray-700">Due:</span>
-                                <div className="text-gray-600">{format(new Date(task.plannedTime), 'MMM dd, HH:mm')}</div>
+                                <span className="font-medium text-gray-700 dark:text-gray-300">Due:</span>
+                                <div className="text-gray-600 dark:text-gray-400">{format(new Date(task.plannedTime), 'MMM dd, HH:mm')}</div>
                               </div>
                               {task.actualCompletionTime && (
                                 <div className="col-span-2">
-                                  <span className="font-medium text-gray-700">Completed:</span>
-                                  <div className="text-gray-600">{format(new Date(task.actualCompletionTime), 'MMM dd, HH:mm')}</div>
+                                  <span className="font-medium text-gray-700 dark:text-gray-300">Completed:</span>
+                                  <div className="text-gray-600 dark:text-gray-400">{format(new Date(task.actualCompletionTime), 'MMM dd, HH:mm')}</div>
                                 </div>
                               )}
                             </div>
                             
                             {/* Performance Status */}
-                            <div className="pt-1 border-t border-gray-200">
+                            <div className="pt-1 border-t border-gray-200 dark:border-gray-700">
                               {task.actualCompletionTime ? (
                                 <div>
                                   {new Date(task.actualCompletionTime) <= new Date(task.plannedTime) ? (

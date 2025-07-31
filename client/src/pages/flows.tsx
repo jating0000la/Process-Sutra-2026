@@ -32,7 +32,9 @@ const flowRuleSchema = z.object({
 
 const startFlowSchema = z.object({
   system: z.string().min(1, "System is required"),
-  orderNumber: z.string().optional(),
+  orderNumber: z.string().min(1, "Order Number/Unique ID is required"),
+  description: z.string().min(1, "Flow description is required"),
+  initialFormData: z.string().optional(), // JSON string of initial form data
 });
 
 export default function Flows() {
@@ -93,6 +95,8 @@ export default function Flows() {
     defaultValues: {
       system: "",
       orderNumber: "",
+      description: "",
+      initialFormData: "",
     },
   });
 
@@ -468,20 +472,52 @@ export default function Flows() {
                         name="orderNumber"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Order Number (Optional)</FormLabel>
+                            <FormLabel>Order Number/Unique ID *</FormLabel>
                             <FormControl>
-                              <Input {...field} placeholder="Enter order number" />
+                              <Input {...field} placeholder="Enter unique order/case number" />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
+                      
+                      <FormField
+                        control={startFlowForm.control}
+                        name="description"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Flow Description *</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="What is this flow for? (e.g., Wedding order for John & Jane)" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={startFlowForm.control}
+                        name="initialFormData"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Initial Form Data (Optional)</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder='Enter key information as JSON: {"customer": "John", "priority": "High"}' />
+                            </FormControl>
+                            <div className="text-xs text-gray-500">
+                              This data will be visible in all tasks of this flow for easy identification
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
                       <div className="flex justify-end space-x-3">
                         <Button type="button" variant="outline" onClick={() => setIsStartFlowDialogOpen(false)}>
                           Cancel
                         </Button>
                         <Button type="submit" disabled={startFlowMutation.isPending}>
-                          Start Flow
+                          {startFlowMutation.isPending ? "Starting..." : "Start Flow"}
                         </Button>
                       </div>
                     </form>

@@ -277,7 +277,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/flows/start", isAuthenticated, async (req, res) => {
     try {
-      const { system, orderNumber } = req.body;
+      const { system, orderNumber, description, initialFormData } = req.body;
+      const userId = req.user?.claims?.sub;
+      
+      if (!system) {
+        return res.status(400).json({ message: "System is required" });
+      }
+      
+      if (!orderNumber) {
+        return res.status(400).json({ message: "Order Number/Unique ID is required" });
+      }
+      
+      if (!description) {
+        return res.status(400).json({ message: "Flow description is required" });
+      }
       
       // Find the starting rule (currentTask is empty)
       const flowRules = await storage.getFlowRules(system);
@@ -288,11 +301,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const flowId = randomUUID();
+      
+      // Parse initial form data if provided
+      let parsedInitialFormData = null;
+      if (initialFormData && initialFormData.trim()) {
+        try {
+          parsedInitialFormData = JSON.parse(initialFormData);
+        } catch (error) {
+          return res.status(400).json({ message: "Invalid JSON format for initial form data" });
+        }
+      }
+      
       // Get TAT configuration for enhanced calculations
       const tatConfiguration = await storage.getTATConfig();
       const config = tatConfiguration || { officeStartHour: 9, officeEndHour: 18 };
       
       const plannedTime = calculateTAT(new Date(), startRule.tat, startRule.tatType, config);
+      const flowStartTime = new Date();
 
       const task = await storage.createTask({
         system,
@@ -303,9 +328,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         doerEmail: startRule.email,
         status: "pending",
         formId: startRule.formId,
+        // Flow context - WHO, WHAT, WHEN, HOW
+        flowInitiatedBy: userId,
+        flowInitiatedAt: flowStartTime,
+        flowDescription: description,
+        flowInitialFormData: parsedInitialFormData,
       });
 
-      res.status(201).json({ flowId, task });
+      res.status(201).json({ 
+        flowId, 
+        task,
+        orderNumber,
+        description,
+        initiatedBy: userId,
+        initiatedAt: flowStartTime.toISOString(),
+        message: "Flow started successfully"
+      });
     } catch (error) {
       console.error("Error starting flow:", error);
       res.status(500).json({ message: "Failed to start flow" });
