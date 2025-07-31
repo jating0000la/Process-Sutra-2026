@@ -145,19 +145,25 @@ export class DatabaseStorage implements IStorage {
 
   // Task operations
   async getTasks(userId?: string, status?: string): Promise<Task[]> {
-    let query = db.select().from(tasks);
+    let whereConditions = [];
     
     if (userId) {
-      query = query.where(eq(tasks.doerEmail, userId));
+      whereConditions.push(eq(tasks.doerEmail, userId));
     }
     
     if (status) {
-      const existingWhere = userId ? eq(tasks.doerEmail, userId) : undefined;
-      const statusWhere = eq(tasks.status, status);
-      query = query.where(existingWhere ? and(existingWhere, statusWhere) : statusWhere);
+      whereConditions.push(eq(tasks.status, status));
     }
     
-    const allTasks = await query.orderBy(desc(tasks.createdAt));
+    const whereClause = whereConditions.length > 0 
+      ? whereConditions.length === 1 
+        ? whereConditions[0] 
+        : and(...whereConditions)
+      : undefined;
+    
+    const allTasks = whereClause 
+      ? await db.select().from(tasks).where(whereClause).orderBy(desc(tasks.createdAt))
+      : await db.select().from(tasks).orderBy(desc(tasks.createdAt));
     
     // For each task, get the first form data from its flow
     const enrichedTasks = await Promise.all(
@@ -277,17 +283,15 @@ export class DatabaseStorage implements IStorage {
 
   // Form Response operations
   async getFormResponses(flowId?: string, taskId?: string): Promise<FormResponse[]> {
-    let query = db.select().from(formResponses);
-    
     if (flowId && taskId) {
-      query = query.where(and(eq(formResponses.flowId, flowId), eq(formResponses.taskId, taskId)));
+      return await db.select().from(formResponses).where(and(eq(formResponses.flowId, flowId), eq(formResponses.taskId, taskId))).orderBy(desc(formResponses.timestamp));
     } else if (flowId) {
-      query = query.where(eq(formResponses.flowId, flowId));
+      return await db.select().from(formResponses).where(eq(formResponses.flowId, flowId)).orderBy(desc(formResponses.timestamp));
     } else if (taskId) {
-      query = query.where(eq(formResponses.taskId, taskId));
+      return await db.select().from(formResponses).where(eq(formResponses.taskId, taskId)).orderBy(desc(formResponses.timestamp));
     }
     
-    return await query.orderBy(desc(formResponses.timestamp));
+    return await db.select().from(formResponses).orderBy(desc(formResponses.timestamp));
   }
 
   async createFormResponse(response: InsertFormResponse): Promise<FormResponse> {
@@ -644,13 +648,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getLoginLogs(userId?: string): Promise<UserLoginLog[]> {
-    let query = db.select().from(userLoginLogs);
-    
     if (userId) {
-      query = query.where(eq(userLoginLogs.userId, userId));
+      return await db.select().from(userLoginLogs).where(eq(userLoginLogs.userId, userId)).orderBy(desc(userLoginLogs.loginTime));
     }
     
-    return await query.orderBy(desc(userLoginLogs.loginTime));
+    return await db.select().from(userLoginLogs).orderBy(desc(userLoginLogs.loginTime));
   }
 
   async updateLoginLog(id: string, data: Partial<UserLoginLog>): Promise<UserLoginLog> {
