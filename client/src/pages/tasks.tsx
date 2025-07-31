@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CheckCircle, Clock, AlertTriangle, Eye, Edit, Plus, Database, Download } from "lucide-react";
+import { CheckCircle, Clock, AlertTriangle, Eye, Edit, Plus, Database, Download, UserCheck } from "lucide-react";
 import FormRenderer from "@/components/form-renderer";
 import { format } from "date-fns";
 
@@ -32,6 +32,10 @@ export default function Tasks() {
   const [isFlowDataDialogOpen, setIsFlowDataDialogOpen] = useState(false);
   const [flowDataForTask, setFlowDataForTask] = useState<any>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false);
+  const [taskToTransfer, setTaskToTransfer] = useState<any>(null);
+  const [transferEmail, setTransferEmail] = useState("");
+  const [transferReason, setTransferReason] = useState("");
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -62,6 +66,12 @@ export default function Tasks() {
   // Fetch form responses for flow data viewer
   const { data: formResponses } = useQuery({
     queryKey: ["/api/form-responses"],
+    enabled: isAuthenticated,
+  });
+
+  // Fetch flow rules to check transferability
+  const { data: flowRules } = useQuery({
+    queryKey: ["/api/flow-rules"],
     enabled: isAuthenticated,
   });
 
@@ -277,9 +287,59 @@ export default function Tasks() {
     },
   });
 
+  const transferTaskMutation = useMutation({
+    mutationFn: async ({ taskId, toEmail, reason }: { taskId: string; toEmail: string; reason: string }) => {
+      await apiRequest("POST", `/api/tasks/${taskId}/transfer`, { toEmail, reason });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Task transferred successfully.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setIsTransferDialogOpen(false);
+      setTaskToTransfer(null);
+      setTransferEmail("");
+      setTransferReason("");
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        toast({
+          title: "Unauthorized",
+          description: "You are logged out. Logging in again...",
+          variant: "destructive",
+        });
+        setTimeout(() => {
+          window.location.href = "/api/login";
+        }, 500);
+        return;
+      }
+      toast({
+        title: "Error",
+        description: "Failed to transfer task. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleCompleteClick = (task: any) => {
     setTaskToComplete(task);
     setIsCompleteDialogOpen(true);
+  };
+
+  const handleTransferClick = (task: any) => {
+    setTaskToTransfer(task);
+    setIsTransferDialogOpen(true);
+  };
+
+  const handleTransferConfirm = () => {
+    if (taskToTransfer && transferEmail) {
+      transferTaskMutation.mutate({ 
+        taskId: taskToTransfer.id, 
+        toEmail: transferEmail,
+        reason: transferReason
+      });
+    }
   };
 
   const handleCompleteConfirm = () => {
@@ -328,6 +388,21 @@ export default function Tasks() {
   };
 
 
+
+  // Check if a task is transferable based on flow rules
+  const isTaskTransferable = (task: any) => {
+    if (!flowRules) return false;
+    const rule = (flowRules as any[]).find(rule => rule.nextTask === task.taskName && rule.system === task.system);
+    return rule?.transferable || false;
+  };
+
+  // Get transfer target emails for a task
+  const getTransferTargetEmails = (task: any) => {
+    if (!flowRules) return [];
+    const rule = (flowRules as any[]).find(rule => rule.nextTask === task.taskName && rule.system === task.system);
+    if (!rule?.transferToEmails) return [];
+    return rule.transferToEmails.split(',').map((email: string) => email.trim()).filter((email: string) => email);
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -645,6 +720,15 @@ export default function Tasks() {
                                 
                                 <div className="flex justify-end space-x-3 pt-4">
                                   <Button variant="outline">Close</Button>
+                                  {isTaskTransferable(selectedTask) && selectedTask.status !== 'completed' && (
+                                    <Button 
+                                      variant="outline"
+                                      onClick={() => handleTransferClick(selectedTask)}
+                                    >
+                                      <UserCheck className="w-4 h-4 mr-2" />
+                                      Transfer
+                                    </Button>
+                                  )}
                                   {selectedTask.status !== "completed" && (
                                     <Button 
                                       onClick={() => handleCompleteClick(selectedTask)}
@@ -840,6 +924,64 @@ export default function Tasks() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Task Transfer Dialog */}
+      <Dialog open={isTransferDialogOpen} onOpenChange={setIsTransferDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Transfer Task</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Transfer task: <strong>{taskToTransfer?.taskName}</strong>
+            </p>
+            
+            <div>
+              <Label htmlFor="transfer-email">Transfer To Email</Label>
+              <Select value={transferEmail} onValueChange={setTransferEmail}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select email to transfer to" />
+                </SelectTrigger>
+                <SelectContent>
+                  {taskToTransfer && getTransferTargetEmails(taskToTransfer).map((email: string) => (
+                    <SelectItem key={email} value={email}>{email}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {taskToTransfer && getTransferTargetEmails(taskToTransfer).length === 0 && (
+                <p className="text-xs text-orange-600 mt-1">
+                  No transfer target emails configured for this task
+                </p>
+              )}
+            </div>
+            
+            <div>
+              <Label htmlFor="transfer-reason">Transfer Reason (Optional)</Label>
+              <Textarea 
+                value={transferReason}
+                onChange={(e) => setTransferReason(e.target.value)}
+                placeholder="Enter reason for transfer..."
+                rows={3}
+              />
+            </div>
+            
+            <div className="flex justify-end space-x-3">
+              <Button 
+                variant="outline" 
+                onClick={() => setIsTransferDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleTransferConfirm}
+                disabled={transferTaskMutation.isPending || !transferEmail}
+              >
+                {transferTaskMutation.isPending ? "Transferring..." : "Transfer Task"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

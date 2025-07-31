@@ -275,6 +275,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Task transfer route
+  app.post("/api/tasks/:id/transfer", isAuthenticated, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { toEmail, reason } = req.body;
+      const userId = req.user?.claims?.sub;
+      
+      if (!toEmail) {
+        return res.status(400).json({ message: "Transfer email is required" });
+      }
+
+      // Get current task details
+      const task = await storage.getTaskById(id);
+      if (!task) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+
+      // Check if task is transferable (get flow rule)
+      const flowRules = await storage.getFlowRules(task.system);
+      const currentRule = flowRules.find(rule => rule.nextTask === task.taskName);
+      
+      if (!currentRule?.transferable) {
+        return res.status(400).json({ message: "This task is not transferable according to flow rules" });
+      }
+
+      // Update task with transfer information
+      const transferredTask = await storage.updateTask(id, {
+        doerEmail: toEmail,
+        originalAssignee: task.originalAssignee || task.doerEmail,
+        transferredBy: userId,
+        transferredAt: new Date(),
+        transferReason: reason || null,
+      });
+
+      res.json(transferredTask);
+    } catch (error) {
+      console.error("Error transferring task:", error);
+      res.status(500).json({ message: "Failed to transfer task" });
+    }
+  });
+
   app.post("/api/flows/start", isAuthenticated, async (req, res) => {
     try {
       const { system, orderNumber, description, initialFormData } = req.body;

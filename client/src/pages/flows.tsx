@@ -16,7 +16,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Plus, Workflow, Play, Edit, Trash2, Upload } from "lucide-react";
+import { Plus, Workflow, Play, Edit, Trash2, Upload, Users } from "lucide-react";
 
 const flowRuleSchema = z.object({
   system: z.string().min(1, "System is required"),
@@ -28,6 +28,8 @@ const flowRuleSchema = z.object({
   doer: z.string().min(1, "Doer is required"),
   email: z.string().email("Valid email is required"),
   formId: z.string().optional(),
+  transferable: z.boolean().default(false),
+  transferToEmails: z.string().optional(),
 });
 
 const startFlowSchema = z.object({
@@ -87,6 +89,8 @@ export default function Flows() {
       doer: "",
       email: "",
       formId: "",
+      transferable: false,
+      transferToEmails: "",
     },
   });
 
@@ -244,6 +248,8 @@ export default function Flows() {
       doer: rule.doer,
       email: rule.email,
       formId: rule.formId || "",
+      transferable: rule.transferable || false,
+      transferToEmails: rule.transferToEmails || "",
     });
     setIsRuleDialogOpen(true);
   };
@@ -755,6 +761,59 @@ export default function Flows() {
                           </FormItem>
                         )}
                       />
+                      
+                      {/* Transfer Options */}
+                      <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <div className="flex items-center gap-2">
+                          <Users className="w-4 h-4 text-blue-600" />
+                          <h4 className="text-sm font-semibold text-blue-800">Task Transfer Options</h4>
+                        </div>
+                        
+                        <FormField
+                          control={ruleForm.control}
+                          name="transferable"
+                          render={({ field }) => (
+                            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                              <div className="space-y-0.5">
+                                <FormLabel className="text-base">Allow Task Transfer</FormLabel>
+                                <div className="text-sm text-gray-600">
+                                  Enable users to transfer this task to other team members
+                                </div>
+                              </div>
+                              <FormControl>
+                                <input
+                                  type="checkbox"
+                                  checked={field.value}
+                                  onChange={field.onChange}
+                                  className="w-4 h-4 text-blue-600 rounded"
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        
+                        {ruleForm.watch("transferable") && (
+                          <FormField
+                            control={ruleForm.control}
+                            name="transferToEmails"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Transfer Target Emails</FormLabel>
+                                <FormControl>
+                                  <Input 
+                                    {...field} 
+                                    placeholder="user1@example.com, user2@example.com"
+                                  />
+                                </FormControl>
+                                <div className="text-xs text-gray-500">
+                                  Comma-separated list of emails who can receive transferred tasks
+                                </div>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        )}
+                      </div>
                       <div className="flex justify-end space-x-3">
                         <Button type="button" variant="outline" onClick={() => setIsRuleDialogOpen(false)}>
                           Cancel

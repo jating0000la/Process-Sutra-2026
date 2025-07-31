@@ -47,6 +47,8 @@ export const flowRules = pgTable("flow_rules", {
   doer: varchar("doer").notNull(), // Role who performs this task
   email: varchar("email").notNull(), // Email of assignee
   formId: varchar("form_id"), // Associated form template
+  transferable: boolean("transferable").default(false), // Can task be transferred to others
+  transferToEmails: text("transfer_to_emails"), // Comma-separated list of emails for transfer options
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -70,6 +72,11 @@ export const tasks = pgTable("tasks", {
   flowInitiatedAt: timestamp("flow_initiated_at"), // WHEN the flow was started
   flowDescription: text("flow_description"), // WHAT/HOW - description of the flow purpose
   flowInitialFormData: jsonb("flow_initial_form_data"), // First form data visible to all tasks in flow
+  // Transfer tracking
+  originalAssignee: varchar("original_assignee"), // Original person assigned to task
+  transferredBy: varchar("transferred_by"), // Who transferred the task
+  transferredAt: timestamp("transferred_at"), // When task was transferred
+  transferReason: text("transfer_reason"), // Reason for transfer
 });
 
 // Form Templates - Define form structure
