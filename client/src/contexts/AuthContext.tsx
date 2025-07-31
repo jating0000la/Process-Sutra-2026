@@ -66,26 +66,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // Handle redirect result on app load
     const handleRedirect = async () => {
       try {
+        console.log('Checking for redirect result...');
         const result = await handleRedirectResult();
         if (result?.user) {
-          console.log('Processing redirect result for user:', result.user.email);
+          console.log('✅ Redirect result found for user:', result.user.email);
           await syncUserWithBackend(result.user);
           setUser(result.user);
+          setLoading(false);
+          return true; // Successfully handled redirect
+        } else {
+          console.log('No redirect result found');
         }
       } catch (error) {
-        console.error('Error handling redirect:', error);
+        console.error('❌ Error handling redirect:', error);
       }
-      setLoading(false);
+      return false; // No redirect handled
     };
 
     // Listen for auth state changes
     const unsubscribe = onAuthStateChange(async (firebaseUser) => {
-      console.log('Auth state changed:', firebaseUser?.email || 'signed out');
+      console.log('🔄 Auth state changed:', firebaseUser?.email || 'signed out');
       
       if (firebaseUser) {
+        console.log('✅ User authenticated:', firebaseUser.email);
         await syncUserWithBackend(firebaseUser);
         setUser(firebaseUser);
       } else {
+        console.log('❌ User signed out');
         setUser(null);
       }
       
@@ -93,7 +100,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     });
 
     // Start the authentication flow
-    handleRedirect();
+    handleRedirect().then((redirectHandled) => {
+      if (!redirectHandled) {
+        setLoading(false);
+      }
+    });
 
     return () => unsubscribe();
   }, []);
