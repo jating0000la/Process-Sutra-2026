@@ -86,7 +86,7 @@ export default function Tasks() {
     // Find the form template that matches this form ID
     const template = (formTemplates as any[])?.find((t: any) => t.formId === formId);
     
-    if (!template?.questions) {
+    if (!template) {
       // If no template found, still try to format table data if we can detect it
       const readableData: Record<string, any> = {};
       Object.entries(formData).forEach(([key, value]) => {
@@ -107,35 +107,82 @@ export default function Tasks() {
       return readableData;
     }
     
+    // Parse questions if it's a JSON string
+    const questions = typeof template.questions === 'string' 
+      ? JSON.parse(template.questions) 
+      : template.questions;
+    
+    if (!questions || !Array.isArray(questions)) {
+      return formData;
+    }
+    
     const readableData: Record<string, any> = {};
     
     // Map question IDs to labels
     Object.entries(formData).forEach(([key, value]) => {
-      const field = template.questions.find((f: any) => f.id === key);
+      const field = questions.find((f: any) => f.id === key);
       const label = field?.label || key; // Use label if found, otherwise keep original key
       
       // Handle special formatting for table data
       if (field?.type === 'table' && Array.isArray(value)) {
-        // Create a more readable table format with proper column mapping
-        const tableRows = value.map((row: any, index: number) => {
-          const rowEntries = Object.entries(row).map(([colKey, colValue]) => {
-            const column = field.tableColumns?.find((col: any) => col.id === colKey);
-            const colLabel = column?.label || colKey.replace(/_/g, ' ');
-            return `${colLabel}: ${colValue}`;
+        // Create an HTML table format for better display
+        if (value.length > 0) {
+          const columns = field.tableColumns || Object.keys(value[0]).map(key => ({ id: key, label: key.replace(/_/g, ' ') }));
+          
+          let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full border border-gray-300 text-xs">';
+          
+          // Table headers
+          tableHtml += '<thead class="bg-gray-50"><tr>';
+          columns.forEach((col: any) => {
+            tableHtml += `<th class="border border-gray-300 px-2 py-1 text-left font-medium">${col.label}</th>`;
           });
-          return `Item ${index + 1} - ${rowEntries.join(', ')}`;
-        });
-        readableData[label] = tableRows.join(' • ');
+          tableHtml += '</tr></thead>';
+          
+          // Table rows
+          tableHtml += '<tbody>';
+          value.forEach((row: any, index: number) => {
+            tableHtml += `<tr class="${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">`;
+            columns.forEach((col: any) => {
+              const cellValue = row[col.id] || '';
+              tableHtml += `<td class="border border-gray-300 px-2 py-1">${cellValue}</td>`;
+            });
+            tableHtml += '</tr>';
+          });
+          tableHtml += '</tbody></table></div>';
+          
+          readableData[label] = tableHtml;
+        } else {
+          readableData[label] = 'No data';
+        }
       } else if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
-        // Handle table data even without field definition (fallback)
-        const tableRows = value.map((row: any, index: number) => {
-          const rowEntries = Object.entries(row).map(([colKey, colValue]) => {
-            const colLabel = colKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
-            return `${colLabel}: ${colValue}`;
-          });
-          return `Item ${index + 1} - ${rowEntries.join(', ')}`;
+        // Handle table data even without field definition (fallback) - Create HTML table
+        const columns = Object.keys(value[0]).map(key => ({
+          id: key,
+          label: key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()
+        }));
+        
+        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full border border-gray-300 text-xs">';
+        
+        // Table headers
+        tableHtml += '<thead class="bg-gray-50"><tr>';
+        columns.forEach((col: any) => {
+          tableHtml += `<th class="border border-gray-300 px-2 py-1 text-left font-medium">${col.label}</th>`;
         });
-        readableData[label] = tableRows.join(' • ');
+        tableHtml += '</tr></thead>';
+        
+        // Table rows
+        tableHtml += '<tbody>';
+        value.forEach((row: any, index: number) => {
+          tableHtml += `<tr class="${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">`;
+          columns.forEach((col: any) => {
+            const cellValue = row[col.id] || '';
+            tableHtml += `<td class="border border-gray-300 px-2 py-1">${cellValue}</td>`;
+          });
+          tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table></div>';
+        
+        readableData[label] = tableHtml;
       } else if (Array.isArray(value)) {
         // Handle other arrays by joining them
         readableData[label] = value.join(', ');
@@ -739,11 +786,12 @@ export default function Tasks() {
                                         
                                         {/* Form Data Section */}
                                         <div className="space-y-2">
-                                          {Object.entries(formItem.data).map(([key, value]) => {
+                                          {Object.entries(getReadableFormData(formItem.data, formItem.formName)).map(([key, value]) => {
                                             // Get the original form template to determine if this is a table field
                                             const template = (formTemplates as any[])?.find((t: any) => t.formId === formItem.formName);
-                                            const field = template?.questions?.find((f: any) => f.id === key);
-                                            const label = field?.label || key;
+                                            const questions = template?.questions ? (typeof template.questions === 'string' ? JSON.parse(template.questions) : template.questions) : [];
+                                            const field = questions?.find((f: any) => f.id === key);
+                                            const label = key; // Already processed by getReadableFormData
                                             
                                             return (
                                               <div key={key} className="mb-2 p-1 bg-gray-50 dark:bg-gray-700 rounded">
@@ -751,36 +799,9 @@ export default function Tasks() {
                                                   {label}
                                                 </div>
                                                 
-                                                {/* Check if this is table data */}
-                                                {Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' ? (
-                                                  <div className="overflow-x-auto">
-                                                    <table className="w-full text-xs border-collapse border border-gray-300 dark:border-gray-600">
-                                                      <thead>
-                                                        <tr className="bg-gray-200 dark:bg-gray-600">
-                                                          {Object.keys(value[0]).map((colKey) => {
-                                                            const column = field?.tableColumns?.find((col: any) => col.id === colKey);
-                                                            const colLabel = column?.label || colKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
-                                                            return (
-                                                              <th key={colKey} className="border border-gray-300 dark:border-gray-600 px-2 py-1 text-left font-medium text-gray-700 dark:text-gray-300">
-                                                                {colLabel}
-                                                              </th>
-                                                            );
-                                                          })}
-                                                        </tr>
-                                                      </thead>
-                                                      <tbody>
-                                                        {value.map((row: any, rowIndex: number) => (
-                                                          <tr key={rowIndex} className="hover:bg-gray-100 dark:hover:bg-gray-600">
-                                                            {Object.entries(row).map(([colKey, colValue]) => (
-                                                              <td key={colKey} className="border border-gray-300 dark:border-gray-600 px-2 py-1 text-gray-900 dark:text-gray-100">
-                                                                {String(colValue)}
-                                                              </td>
-                                                            ))}
-                                                          </tr>
-                                                        ))}
-                                                      </tbody>
-                                                    </table>
-                                                  </div>
+                                                {/* Check if this is HTML table data */}
+                                                {typeof value === 'string' && value.includes('<table') ? (
+                                                  <div dangerouslySetInnerHTML={{ __html: value }} />
                                                 ) : (
                                                   <div className="text-gray-900 dark:text-gray-100 text-xs pl-1">
                                                     {Array.isArray(value) ? value.join(', ') : String(value)}
@@ -1062,8 +1083,10 @@ export default function Tasks() {
                         <span className="font-medium text-blue-800 mr-3 min-w-0 flex-shrink-0 text-sm">
                           {key}:
                         </span>
-                        <span className="text-blue-900 break-words text-sm">
-                          {Array.isArray(value) ? (
+                        <div className="text-blue-900 break-words text-sm flex-1">
+                          {typeof value === 'string' && value.includes('<table') ? (
+                            <div dangerouslySetInnerHTML={{ __html: value }} />
+                          ) : Array.isArray(value) ? (
                             <div className="space-y-1">
                               {value.map((item, index) => (
                                 <div key={index} className="bg-white p-2 rounded border text-xs">
@@ -1083,7 +1106,7 @@ export default function Tasks() {
                           ) : (
                             String(value)
                           )}
-                        </span>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1161,9 +1184,13 @@ export default function Tasks() {
                                 <span className="font-medium text-gray-600 mr-2 min-w-0 flex-shrink-0">
                                   {key}:
                                 </span>
-                                <span className="text-gray-800 break-words">
-                                  {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                                </span>
+                                <div className="text-gray-800 break-words flex-1">
+                                  {typeof value === 'string' && value.includes('<table') ? (
+                                    <div dangerouslySetInnerHTML={{ __html: value }} />
+                                  ) : (
+                                    <span>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</span>
+                                  )}
+                                </div>
                               </div>
                             ))}
                           </div>
