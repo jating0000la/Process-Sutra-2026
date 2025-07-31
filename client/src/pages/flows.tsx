@@ -265,34 +265,109 @@ export default function Flows() {
 
   const importFromFile = async () => {
     try {
-      // Parse the comprehensive workflow data from your file
+      // Complete Order Tracker and Purchase workflow rules from PDF
       const rules = [
-        // Order Tracker System - Complete workflow with 60+ rules
+        // Order Tracker System - Complete workflow (start rule)
         { system: "Order Tracker", currentTask: "", status: "", nextTask: "Customer Registration", tat: 1, tatType: "hourtat", doer: "Jitendra", email: "jatin@muxro.com", formId: "" },
+        
+        // Customer Registration branching
         { system: "Order Tracker", currentTask: "Customer Registration", status: "Regular", nextTask: "Choose Box", tat: 1, tatType: "daytat", doer: "Kamal", email: "jatin@muxro.com", formId: "" },
         { system: "Order Tracker", currentTask: "Customer Registration", status: "Wedding", nextTask: "Get All details of Customisation and take Approval", tat: 1, tatType: "beforetat", doer: "Rohit", email: "jatin@muxro.com", formId: "" },
+        
+        // Regular flow - Box and Sweets selection
         { system: "Order Tracker", currentTask: "Choose Box", status: "Done", nextTask: "Choose Sweets", tat: 1, tatType: "specifytat", doer: "Ajay", email: "jatin@muxro.com", formId: "" },
         { system: "Order Tracker", currentTask: "Choose Sweets", status: "Done", nextTask: "Any Basic Customisation", tat: 1, tatType: "hourtat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        
+        // Customisation branching
         { system: "Order Tracker", currentTask: "Any Basic Customisation", status: "Yes", nextTask: "Get All details of Customisation", tat: 1, tatType: "daytat", doer: "Kashsis", email: "jatin@muxro.com", formId: "" },
         { system: "Order Tracker", currentTask: "Any Basic Customisation", status: "No", nextTask: "Create Order for Sweets", tat: 1, tatType: "hourtat", doer: "Jitendra", email: "jatin@muxro.com", formId: "" },
         { system: "Order Tracker", currentTask: "Get All details of Customisation", status: "Done", nextTask: "Create Order for Sweets", tat: 1, tatType: "daytat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        
+        // Sweet availability and production flow
         { system: "Order Tracker", currentTask: "Create Order for Sweets", status: "Done", nextTask: "Check Sweet Availablity in Store", tat: 1, tatType: "hourtat", doer: "Kamal", email: "jatin@muxro.com", formId: "" },
         { system: "Order Tracker", currentTask: "Check Sweet Availablity in Store", status: "No", nextTask: "Prepare BOM of Sweets", tat: 1, tatType: "daytat", doer: "Rohit", email: "jatin@muxro.com", formId: "" },
         { system: "Order Tracker", currentTask: "Check Sweet Availablity in Store", status: "Yes", nextTask: "Execute Filling in Store", tat: 1, tatType: "hourtat", doer: "Ajay", email: "jatin@muxro.com", formId: "" },
+        
+        // Production preparation flow
         { system: "Order Tracker", currentTask: "Prepare BOM of Sweets", status: "Done", nextTask: "Check RM in Store", tat: 1, tatType: "daytat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
         { system: "Order Tracker", currentTask: "Check RM in Store", status: "Yes", nextTask: "Plan for Production", tat: 1, tatType: "hourtat", doer: "Kashsis", email: "jatin@muxro.com", formId: "" },
         { system: "Order Tracker", currentTask: "Check RM in Store", status: "No", nextTask: "Raise Indent", tat: 1, tatType: "daytat", doer: "Jitendra", email: "jatin@muxro.com", formId: "" },
-        // Complex branching workflows
+        
+        // Production execution
+        { system: "Order Tracker", currentTask: "Plan for Production", status: "Done", nextTask: "Execute Production", tat: 1, tatType: "hourtat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Execute Production", status: "Done", nextTask: "Get Sweet and box from Production and Store", tat: 1, tatType: "daytat", doer: "Kamal", email: "jatin@muxro.com", formId: "" },
+        
+        // Vendor and material flow
+        { system: "Order Tracker", currentTask: "Raise Indent", status: "Done", nextTask: "Choose Vendor", tat: 1, tatType: "hourtat", doer: "Rohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Choose Vendor", status: "Done", nextTask: "Generate PO", tat: 1, tatType: "daytat", doer: "Ajay", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Generate PO", status: "Done", nextTask: "Received Material", tat: 1, tatType: "hourtat", doer: "Jitendra", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Received Material", status: "Done", nextTask: "Plan for Production", tat: 1, tatType: "daytat", doer: "Kamal", email: "jatin@muxro.com", formId: "" },
+        
+        // Approval and demo flow
+        { system: "Order Tracker", currentTask: "Get Sweet and box from Production and Store", status: "Done", nextTask: "Take Approval from Head", tat: 1, tatType: "hourtat", doer: "Rohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Take Approval from Head", status: "Yes", nextTask: "Execute Demo filling", tat: 1, tatType: "daytat", doer: "Ajay", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Take Approval from Head", status: "No", nextTask: "Get Sweet and box from Production and Store(2)", tat: 1, tatType: "hourtat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Get Sweet and box from Production and Store(2)", status: "Done", nextTask: "Take Approval from Head(2)", tat: 1, tatType: "daytat", doer: "Kashsis", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Take Approval from Head(2)", status: "Yes", nextTask: "Execute Demo filling", tat: 1, tatType: "hourtat", doer: "Jitendra", email: "jatin@muxro.com", formId: "" },
+        
+        // Sales approval flow
+        { system: "Order Tracker", currentTask: "Execute Demo filling", status: "Done", nextTask: "Take Approval from Sales Person", tat: 1, tatType: "daytat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Take Approval from Sales Person", status: "Yes", nextTask: "Execute to Filling in Unit", tat: 1, tatType: "hourtat", doer: "Kamal", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Take Approval from Sales Person", status: "No", nextTask: "Execute Demo filling(2)", tat: 1, tatType: "daytat", doer: "Rohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Execute Demo filling(2)", status: "Done", nextTask: "Take Approval from Sales Person(2)", tat: 1, tatType: "hourtat", doer: "Ajay", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Take Approval from Sales Person(2)", status: "Yes", nextTask: "Execute to Filling in Unit", tat: 1, tatType: "daytat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        
+        // Final execution and dispatch
+        { system: "Order Tracker", currentTask: "Execute Filling in Store", status: "Done", nextTask: "Final Dispatch", tat: 1, tatType: "hourtat", doer: "Kashsis", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Execute to Filling in Unit", status: "Done", nextTask: "Dispatch to Store", tat: 1, tatType: "daytat", doer: "Jitendra", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Dispatch to Store", status: "Done", nextTask: "Final Dispatch", tat: 1, tatType: "hourtat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        
+        // Wedding customisation flow
+        { system: "Order Tracker", currentTask: "Get All details of Customisation and take Approval", status: "Done", nextTask: "Explain Timeline to Customer according to Production/Vendor", tat: 1, tatType: "daytat", doer: "Kamal", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Explain Timeline to Customer according to Production/Vendor", status: "Done", nextTask: "Customer Box Order Punch", tat: 1, tatType: "hourtat", doer: "Rohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Customer Box Order Punch", status: "Done", nextTask: "Choose Box Design", tat: 1, tatType: "daytat", doer: "Ajay", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Choose Box Design", status: "Done", nextTask: "Explain to Vendor and get Quotation", tat: 1, tatType: "hourtat", doer: "Jitendra", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Explain to Vendor and get Quotation", status: "Done", nextTask: "Received Quotation from Vendor", tat: 1, tatType: "daytat", doer: "Kamal", email: "jatin@muxro.com", formId: "" },
+        
+        // Quotation and approval flow
+        { system: "Order Tracker", currentTask: "Received Quotation from Vendor", status: "Done", nextTask: "Explain the costing to customer", tat: 1, tatType: "hourtat", doer: "Rohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Explain the costing to customer", status: "Done", nextTask: "Get Customer Approval for the Box", tat: 1, tatType: "daytat", doer: "Ajay", email: "jatin@muxro.com", formId: "" },
         { system: "Order Tracker", currentTask: "Get Customer Approval for the Box", status: "Approved", nextTask: "Need Demo?", tat: 1, tatType: "hourtat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
         { system: "Order Tracker", currentTask: "Get Customer Approval for the Box", status: "Decline", nextTask: "Any other Customisation", tat: 1, tatType: "daytat", doer: "Kashsis", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Any other Customisation", status: "Done", nextTask: "Get Customer Approval for the Box", tat: 1, tatType: "hourtat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        
+        // Demo flow
         { system: "Order Tracker", currentTask: "Need Demo?", status: "Yes", nextTask: "Raise PO for Demo", tat: 1, tatType: "hourtat", doer: "Ajay", email: "jatin@muxro.com", formId: "" },
         { system: "Order Tracker", currentTask: "Need Demo?", status: "No", nextTask: "Raise PO for Boxes", tat: 1, tatType: "daytat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Raise PO for Demo", status: "Done", nextTask: "Received Demo Boxes", tat: 1, tatType: "hourtat", doer: "Kashsis", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Received Demo Boxes", status: "Done", nextTask: "Customer Approval for Demo", tat: 1, tatType: "daytat", doer: "Jitendra", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Customer Approval for Demo", status: "Yes", nextTask: "Raise PO for Boxes", tat: 1, tatType: "hourtat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Customer Approval for Demo", status: "No", nextTask: "Get All details of Customisation of final box", tat: 1, tatType: "daytat", doer: "Kamal", email: "jatin@muxro.com", formId: "" },
+        
+        // Second demo flow
+        { system: "Order Tracker", currentTask: "Get All details of Customisation of final box", status: "Done", nextTask: "Need Demo?(2)", tat: 1, tatType: "hourtat", doer: "Rohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Need Demo?(2)", status: "Yes", nextTask: "Raise PO for Demo(2)", tat: 1, tatType: "daytat", doer: "Ajay", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Need Demo?(2)", status: "No", nextTask: "Raise PO for Boxes", tat: 1, tatType: "hourtat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Raise PO for Demo(2)", status: "Done", nextTask: "Received Demo Boxes(2)", tat: 1, tatType: "daytat", doer: "Kashsis", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Received Demo Boxes(2)", status: "Done", nextTask: "Customer Approval for Demo(2)", tat: 1, tatType: "hourtat", doer: "Jitendra", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Customer Approval for Demo(2)", status: "Yes", nextTask: "Raise PO for Boxes", tat: 1, tatType: "daytat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        
+        // Final box processing
+        { system: "Order Tracker", currentTask: "Raise PO for Boxes", status: "Done", nextTask: "Received Boxes", tat: 1, tatType: "hourtat", doer: "Kamal", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Received Boxes", status: "Done", nextTask: "Store Boxes", tat: 1, tatType: "daytat", doer: "Rohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Order Tracker", currentTask: "Store Boxes", status: "Done", nextTask: "Create Order for Sweets", tat: 1, tatType: "hourtat", doer: "Ajay", email: "jatin@muxro.com", formId: "" },
+        
+        // Final completion
+        { system: "Order Tracker", currentTask: "Final Dispatch", status: "Done", nextTask: "", tat: 1, tatType: "daytat", doer: "Jitendra", email: "jatin@muxro.com", formId: "" },
+        
         // Purchase System workflow
         { system: "Purchase", currentTask: "", status: "", nextTask: "Raise Indent", tat: 1, tatType: "daytat", doer: "Kashsis", email: "jatin@muxro.com", formId: "" },
         { system: "Purchase", currentTask: "Raise Indent", status: "Done", nextTask: "choose Vendor and take rate", tat: 1, tatType: "hourtat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
         { system: "Purchase", currentTask: "choose Vendor and take rate", status: "Done", nextTask: "take approval from MD", tat: 1, tatType: "daytat", doer: "Kashsis", email: "jatin@muxro.com", formId: "" },
         { system: "Purchase", currentTask: "take approval from MD", status: "Approved", nextTask: "Generate PO", tat: 1, tatType: "hourtat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
-        { system: "Purchase", currentTask: "Generate PO", status: "Done", nextTask: "Followup", tat: 1, tatType: "hourtat", doer: "Mohit", email: "jatin@muxro.com", formId: "" }
+        { system: "Purchase", currentTask: "take approval from MD", status: "Decline", nextTask: "", tat: 1, tatType: "daytat", doer: "Kashsis", email: "jatin@muxro.com", formId: "" },
+        { system: "Purchase", currentTask: "Generate PO", status: "Done", nextTask: "Followup", tat: 1, tatType: "hourtat", doer: "Mohit", email: "jatin@muxro.com", formId: "" },
+        { system: "Purchase", currentTask: "Followup", status: "Done", nextTask: "Followup 2 days before of tat", tat: 1, tatType: "daytat", doer: "Kashsis", email: "jatin@muxro.com", formId: "" }
       ];
 
       await apiRequest("POST", "/api/flow-rules/bulk", { rules });
