@@ -15,6 +15,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
 
+  // Role-based middleware
+  const requireAdmin = async (req: any, res: any, next: any) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+      
+      req.currentUser = user;
+      next();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to verify user role" });
+    }
+  };
+
+  // Add current user to request for any authenticated route
+  const addUserToRequest = async (req: any, res: any, next: any) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      req.currentUser = user;
+      next();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch user data" });
+    }
+  };
+
   // Auth routes
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
@@ -27,8 +56,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Flow Rules API
-  app.get("/api/flow-rules", isAuthenticated, async (req, res) => {
+  // Flow Rules API (Admin only)
+  app.get("/api/flow-rules", isAuthenticated, requireAdmin, async (req, res) => {
     try {
       const { system } = req.query;
       const flowRules = await storage.getFlowRules(system as string);
@@ -39,7 +68,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/flow-rules", isAuthenticated, async (req, res) => {
+  app.post("/api/flow-rules", isAuthenticated, requireAdmin, async (req, res) => {
     try {
       const validatedData = insertFlowRuleSchema.parse(req.body);
       const flowRule = await storage.createFlowRule(validatedData);
@@ -50,7 +79,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/flow-rules/bulk", isAuthenticated, async (req, res) => {
+  app.post("/api/flow-rules/bulk", isAuthenticated, requireAdmin, async (req, res) => {
     try {
       const { rules } = req.body;
       
@@ -80,7 +109,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/flow-rules/:id", isAuthenticated, async (req, res) => {
+  app.put("/api/flow-rules/:id", isAuthenticated, requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const validatedData = insertFlowRuleSchema.partial().parse(req.body);
@@ -103,12 +132,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Tasks API
-  app.get("/api/tasks", isAuthenticated, async (req: any, res) => {
+  // Tasks API (User-specific for regular users, all tasks for admins)
+  app.get("/api/tasks", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
-      const userEmail = req.user.claims.email;
+      const user = req.currentUser;
       const { status } = req.query;
-      const tasks = await storage.getTasks(userEmail, status as string);
+      
+      let tasks;
+      if (user.role === 'admin') {
+        // Admins see all tasks
+        tasks = await storage.getAllTasks(status as string);
+      } else {
+        // Regular users only see their own tasks
+        tasks = await storage.getTasks(user.email, status as string);
+      }
+      
       res.json(tasks);
     } catch (error) {
       console.error("Error fetching tasks:", error);
@@ -417,7 +455,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/form-templates", isAuthenticated, async (req: any, res) => {
+  app.post("/api/form-templates", isAuthenticated, requireAdmin, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const validatedData = insertFormTemplateSchema.parse({
@@ -432,7 +470,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/form-templates/:id", isAuthenticated, async (req, res) => {
+  app.put("/api/form-templates/:id", isAuthenticated, requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const validatedData = insertFormTemplateSchema.partial().parse(req.body);
@@ -444,7 +482,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/form-templates/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/form-templates/:id", isAuthenticated, requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       await storage.deleteFormTemplate(id);
@@ -607,10 +645,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Analytics API
-  app.get("/api/analytics/metrics", isAuthenticated, async (req, res) => {
+  // Analytics API (User-specific for regular users, all data for admins)
+  app.get("/api/analytics/metrics", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
-      const metrics = await storage.getTaskMetrics();
+      const user = req.currentUser;
+      
+      let metrics;
+      if (user.role === 'admin') {
+        // Admins see system-wide metrics
+        metrics = await storage.getTaskMetrics();
+      } else {
+        // Regular users see their own performance metrics
+        metrics = await storage.getUserTaskMetrics(user.email);
+      }
+      
       res.json(metrics);
     } catch (error) {
       console.error("Error fetching metrics:", error);
@@ -618,10 +666,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/analytics/flow-performance", isAuthenticated, async (req, res) => {
+  app.get("/api/analytics/flow-performance", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
-      const performance = await storage.getFlowPerformance();
-      res.json(performance);
+      const user = req.currentUser;
+      
+      let flowPerformance;
+      if (user.role === 'admin') {
+        // Admins see all flow performance
+        flowPerformance = await storage.getFlowPerformance();
+      } else {
+        // Regular users see their own flow performance
+        flowPerformance = await storage.getUserFlowPerformance(user.email);
+      }
+      
+      res.json(flowPerformance);
     } catch (error) {
       console.error("Error fetching flow performance:", error);
       res.status(500).json({ message: "Failed to fetch flow performance" });
@@ -644,7 +702,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/tat-config", isAuthenticated, async (req, res) => {
+  app.post("/api/tat-config", isAuthenticated, requireAdmin, async (req, res) => {
     try {
       const { officeStartHour, officeEndHour, timezone, skipWeekends } = req.body;
       const config = await storage.upsertTATConfig({

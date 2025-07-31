@@ -199,6 +199,16 @@ export class DatabaseStorage implements IStorage {
       .orderBy(asc(tasks.createdAt));
   }
 
+  async getAllTasks(status?: string): Promise<Task[]> {
+    let query = db.select().from(tasks);
+    
+    if (status) {
+      query = query.where(eq(tasks.status, status));
+    }
+    
+    return await query.orderBy(desc(tasks.createdAt));
+  }
+
   // Form Template operations
   async getFormTemplates(createdBy?: string): Promise<FormTemplate[]> {
     if (createdBy) {
@@ -332,6 +342,76 @@ export class DatabaseStorage implements IStorage {
   async getTATConfig(): Promise<any> {
     const [config] = await db.select().from(tatConfig).limit(1);
     return config;
+  }
+
+  // User-specific analytics methods
+  async getUserTaskMetrics(userEmail: string): Promise<{
+    totalTasks: number;
+    completedTasks: number;
+    overdueTasks: number;
+    onTimeRate: number;
+  }> {
+    const totalResult = await db
+      .select({ count: count() })
+      .from(tasks)
+      .where(eq(tasks.doerEmail, userEmail));
+    
+    const completedResult = await db
+      .select({ count: count() })
+      .from(tasks)
+      .where(and(eq(tasks.doerEmail, userEmail), eq(tasks.status, "completed")));
+    
+    const overdueResult = await db
+      .select({ count: count() })
+      .from(tasks)
+      .where(and(eq(tasks.doerEmail, userEmail), eq(tasks.status, "overdue")));
+    
+    const onTimeResult = await db
+      .select({ count: count() })
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.doerEmail, userEmail),
+          eq(tasks.status, "completed"),
+          sql`${tasks.actualCompletionTime} <= ${tasks.plannedTime}`
+        )
+      );
+
+    const totalTasks = totalResult[0].count;
+    const completedTasks = completedResult[0].count;
+    const overdueTasks = overdueResult[0].count;
+    const onTimeTasks = onTimeResult[0].count;
+    const onTimeRate = completedTasks > 0 ? (onTimeTasks / completedTasks) * 100 : 0;
+
+    return {
+      totalTasks,
+      completedTasks,
+      overdueTasks,
+      onTimeRate: Math.round(onTimeRate),
+    };
+  }
+
+  async getUserFlowPerformance(userEmail: string): Promise<{
+    system: string;
+    avgCompletionTime: number;
+    onTimeRate: number;
+  }[]> {
+    const results = await db
+      .select({
+        system: tasks.system,
+        avgTime: sql<number>`AVG(EXTRACT(EPOCH FROM (${tasks.actualCompletionTime} - ${tasks.plannedTime})) / 86400)`,
+        totalCompleted: count(),
+        onTimeCount: sql<number>`COUNT(CASE WHEN ${tasks.actualCompletionTime} <= ${tasks.plannedTime} THEN 1 END)`,
+      })
+      .from(tasks)
+      .where(and(eq(tasks.doerEmail, userEmail), eq(tasks.status, "completed")))
+      .groupBy(tasks.system);
+
+    return results.map(result => ({
+      system: result.system,
+      avgCompletionTime: Math.round(result.avgTime * 10) / 10,
+      onTimeRate: Math.round((result.onTimeCount / result.totalCompleted) * 100),
+    }));
   }
 
   async upsertTATConfig(configData: any): Promise<any> {
