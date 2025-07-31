@@ -14,6 +14,7 @@ import Analytics from "@/pages/analytics";
 import TATConfig from "@/pages/tat-config";
 import FlowData from "@/pages/flow-data";
 import FlowSimulator from "@/pages/flow-simulator";
+import UserManagement from "@/pages/user-management";
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -32,6 +33,7 @@ function Router() {
           <Route path="/tat-config" component={TATConfig} />
           <Route path="/flow-data" component={FlowData} />
           <Route path="/flow-simulator" component={FlowSimulator} />
+          <Route path="/user-management" component={UserManagement} />
         </>
       )}
       <Route component={NotFound} />

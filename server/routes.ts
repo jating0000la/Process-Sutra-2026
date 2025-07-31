@@ -739,6 +739,129 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // User Management API (Admin only)
+  app.get("/api/users", isAuthenticated, requireAdmin, async (req, res) => {
+    try {
+      const users = await storage.getAllUsers();
+      res.json(users);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  app.put("/api/users/:id", isAuthenticated, requireAdmin, async (req, res) => {
+    try {
+      const user = await storage.updateUserDetails(req.params.id, req.body);
+      res.json(user);
+    } catch (error) {
+      console.error("Error updating user:", error);
+      res.status(500).json({ message: "Failed to update user" });
+    }
+  });
+
+  app.put("/api/users/:id/status", isAuthenticated, requireAdmin, async (req, res) => {
+    try {
+      const user = await storage.changeUserStatus(req.params.id, req.body.status);
+      res.json(user);
+    } catch (error) {
+      console.error("Error updating user status:", error);
+      res.status(500).json({ message: "Failed to update user status" });
+    }
+  });
+
+  // Login Logs API
+  app.get("/api/login-logs", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      let logs;
+      
+      if (currentUser?.role === "admin") {
+        logs = await storage.getLoginLogs();
+      } else {
+        logs = await storage.getLoginLogs(currentUser?.id);
+      }
+      
+      res.json(logs);
+    } catch (error) {
+      console.error("Error fetching login logs:", error);
+      res.status(500).json({ message: "Failed to fetch login logs" });
+    }
+  });
+
+  app.post("/api/login-logs", isAuthenticated, async (req: any, res) => {
+    try {
+      const log = await storage.createLoginLog({
+        ...req.body,
+        userId: req.user.claims.sub
+      });
+      res.json(log);
+    } catch (error) {
+      console.error("Error creating login log:", error);
+      res.status(500).json({ message: "Failed to create login log" });
+    }
+  });
+
+  // Device Management API
+  app.get("/api/devices", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const devices = await storage.getUserDevices(currentUser?.id || "");
+      res.json(devices);
+    } catch (error) {
+      console.error("Error fetching devices:", error);
+      res.status(500).json({ message: "Failed to fetch devices" });
+    }
+  });
+
+  app.post("/api/devices", isAuthenticated, async (req: any, res) => {
+    try {
+      const device = await storage.createOrUpdateDevice({
+        ...req.body,
+        userId: req.user.claims.sub
+      });
+      res.json(device);
+    } catch (error) {
+      console.error("Error creating/updating device:", error);
+      res.status(500).json({ message: "Failed to create/update device" });
+    }
+  });
+
+  app.put("/api/devices/:deviceId/trust", isAuthenticated, async (req: any, res) => {
+    try {
+      const device = await storage.updateDeviceTrust(req.params.deviceId, req.body.isTrusted);
+      res.json(device);
+    } catch (error) {
+      console.error("Error updating device trust:", error);
+      res.status(500).json({ message: "Failed to update device trust" });
+    }
+  });
+
+  // Password History API
+  app.get("/api/password-history", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const history = await storage.getPasswordHistory(currentUser?.id || "");
+      res.json(history);
+    } catch (error) {
+      console.error("Error fetching password history:", error);
+      res.status(500).json({ message: "Failed to fetch password history" });
+    }
+  });
+
+  app.post("/api/password-history", isAuthenticated, async (req: any, res) => {
+    try {
+      const history = await storage.createPasswordChangeHistory({
+        ...req.body,
+        userId: req.user.claims.sub
+      });
+      res.json(history);
+    } catch (error) {
+      console.error("Error creating password history:", error);
+      res.status(500).json({ message: "Failed to create password history" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

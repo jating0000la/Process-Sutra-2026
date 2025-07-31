@@ -1,0 +1,514 @@
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Users, Settings, Activity, Shield, Smartphone, Clock, Eye, UserCheck, UserX, Edit2 } from "lucide-react";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { format } from "date-fns";
+import type { User, UserLoginLog, UserDevice, PasswordChangeHistory } from "@shared/schema";
+
+export default function UserManagement() {
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editFormData, setEditFormData] = useState<Partial<User>>({});
+  const { toast } = useToast();
+
+  // Fetch users
+  const { data: users = [], isLoading: usersLoading } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+  });
+
+  // Fetch login logs
+  const { data: loginLogs = [], isLoading: logsLoading } = useQuery<UserLoginLog[]>({
+    queryKey: ["/api/login-logs"],
+  });
+
+  // Fetch devices
+  const { data: devices = [], isLoading: devicesLoading } = useQuery<UserDevice[]>({
+    queryKey: ["/api/devices"],
+  });
+
+  // Update user mutation
+  const updateUserMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<User> }) => {
+      return await apiRequest(`/api/users/${id}`, "PUT", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({
+        title: "Success",
+        description: "User updated successfully",
+      });
+      setEditDialogOpen(false);
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Change user status mutation
+  const changeStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      return await apiRequest(`/api/users/${id}/status`, "PUT", { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({
+        title: "Success",
+        description: "User status updated successfully",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleEditUser = (user: User) => {
+    setSelectedUser(user);
+    setEditFormData({
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      username: user.username,
+      phoneNumber: user.phoneNumber,
+      department: user.department,
+      designation: user.designation,
+      employeeId: user.employeeId,
+      address: user.address,
+      emergencyContact: user.emergencyContact,
+      emergencyContactPhone: user.emergencyContactPhone,
+      role: user.role,
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleUpdateUser = () => {
+    if (!selectedUser) return;
+    updateUserMutation.mutate({
+      id: selectedUser.id,
+      data: editFormData,
+    });
+  };
+
+  const handleStatusChange = (userId: string, newStatus: string) => {
+    changeStatusMutation.mutate({ id: userId, status: newStatus });
+  };
+
+  const getStatusBadgeVariant = (status: string) => {
+    switch (status) {
+      case "active": return "default";
+      case "inactive": return "secondary";
+      case "suspended": return "destructive";
+      default: return "secondary";
+    }
+  };
+
+  const getRoleBadgeVariant = (role: string) => {
+    return role === "admin" ? "destructive" : "default";
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">User Management</h1>
+          <p className="text-muted-foreground">
+            Manage user accounts, permissions, and security settings
+          </p>
+        </div>
+      </div>
+
+      <Tabs defaultValue="users" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="users" className="flex items-center gap-2">
+            <Users className="w-4 h-4" />
+            Users
+          </TabsTrigger>
+          <TabsTrigger value="logs" className="flex items-center gap-2">
+            <Activity className="w-4 h-4" />
+            Login Logs
+          </TabsTrigger>
+          <TabsTrigger value="devices" className="flex items-center gap-2">
+            <Smartphone className="w-4 h-4" />
+            Devices
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="users" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="w-5 h-5" />
+                User Accounts
+              </CardTitle>
+              <CardDescription>
+                Manage user profiles, roles, and account status
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {usersLoading ? (
+                <div className="text-center py-8">Loading users...</div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Username</TableHead>
+                      <TableHead>Department</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Last Login</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {users.map((user) => (
+                      <TableRow key={user.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            {user.profileImageUrl && (
+                              <img
+                                src={user.profileImageUrl}
+                                alt={`${user.firstName} ${user.lastName}`}
+                                className="w-8 h-8 rounded-full object-cover"
+                              />
+                            )}
+                            <div>
+                              <div className="font-medium">
+                                {user.firstName} {user.lastName}
+                              </div>
+                              {user.employeeId && (
+                                <div className="text-sm text-muted-foreground">
+                                  ID: {user.employeeId}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>{user.email}</TableCell>
+                        <TableCell>{user.username ?? '-'}</TableCell>
+                        <TableCell>{user.department ?? '-'}</TableCell>
+                        <TableCell>
+                          <Badge variant={getRoleBadgeVariant(user.role)}>
+                            {user.role}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={user.status}
+                            onValueChange={(value) => handleStatusChange(user.id, value)}
+                          >
+                            <SelectTrigger className="w-32">
+                              <SelectValue>
+                                <Badge variant={getStatusBadgeVariant(user.status)}>
+                                  {user.status}
+                                </Badge>
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="active">Active</SelectItem>
+                              <SelectItem value="inactive">Inactive</SelectItem>
+                              <SelectItem value="suspended">Suspended</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          {user.lastLoginAt
+                            ? format(new Date(user.lastLoginAt), "MMM dd, yyyy HH:mm")
+                            : "Never"
+                          }
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleEditUser(user)}
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="logs" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="w-5 h-5" />
+                Login Activity
+              </CardTitle>
+              <CardDescription>
+                Monitor user login activity and security events
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {logsLoading ? (
+                <div className="text-center py-8">Loading login logs...</div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>User</TableHead>
+                      <TableHead>Device</TableHead>
+                      <TableHead>IP Address</TableHead>
+                      <TableHead>Location</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Login Time</TableHead>
+                      <TableHead>Session Duration</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loginLogs.map((log) => (
+                      <TableRow key={log.id}>
+                        <TableCell>{log.userId}</TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{log.deviceName || 'Unknown Device'}</div>
+                            <div className="text-sm text-muted-foreground">
+                              {log.operatingSystem} • {log.browserName}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>{log.ipAddress}</TableCell>
+                        <TableCell>
+                          {log.location 
+                            ? `${(log.location as any).city}, ${(log.location as any).country}`
+                            : '-'
+                          }
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={log.loginStatus === 'success' ? 'default' : 'destructive'}>
+                            {log.loginStatus}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {log.loginTime && format(new Date(log.loginTime), "MMM dd, yyyy HH:mm:ss")}
+                        </TableCell>
+                        <TableCell>
+                          {log.sessionDuration 
+                            ? `${Math.floor(log.sessionDuration / 60)}h ${log.sessionDuration % 60}m`
+                            : 'Active'
+                          }
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="devices" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Smartphone className="w-5 h-5" />
+                Device Management
+              </CardTitle>
+              <CardDescription>
+                Monitor and manage user devices and trust settings
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {devicesLoading ? (
+                <div className="text-center py-8">Loading devices...</div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Device</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Browser</TableHead>
+                      <TableHead>OS</TableHead>
+                      <TableHead>Trust Status</TableHead>
+                      <TableHead>First Seen</TableHead>
+                      <TableHead>Last Seen</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {devices.map((device) => (
+                      <TableRow key={device.id}>
+                        <TableCell>
+                          <div className="font-medium">{device.deviceName || 'Unknown Device'}</div>
+                          <div className="text-sm text-muted-foreground">{device.deviceId}</div>
+                        </TableCell>
+                        <TableCell>{device.deviceType}</TableCell>
+                        <TableCell>{device.browserName}</TableCell>
+                        <TableCell>{device.operatingSystem}</TableCell>
+                        <TableCell>
+                          <Badge variant={device.isTrusted ? 'default' : 'secondary'}>
+                            {device.isTrusted ? 'Trusted' : 'Untrusted'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {device.firstSeenAt && format(new Date(device.firstSeenAt), "MMM dd, yyyy")}
+                        </TableCell>
+                        <TableCell>
+                          {device.lastSeenAt && format(new Date(device.lastSeenAt), "MMM dd, yyyy HH:mm")}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={device.isActive ? 'default' : 'secondary'}>
+                            {device.isActive ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Edit User Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit User Details</DialogTitle>
+            <DialogDescription>
+              Update user information and account settings
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="firstName">First Name</Label>
+              <Input
+                id="firstName"
+                value={editFormData.firstName || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, firstName: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="lastName">Last Name</Label>
+              <Input
+                id="lastName"
+                value={editFormData.lastName || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, lastName: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={editFormData.email || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="username">Username</Label>
+              <Input
+                id="username"
+                value={editFormData.username || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, username: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="phoneNumber">Phone Number</Label>
+              <Input
+                id="phoneNumber"
+                value={editFormData.phoneNumber || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, phoneNumber: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="employeeId">Employee ID</Label>
+              <Input
+                id="employeeId"
+                value={editFormData.employeeId || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, employeeId: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="department">Department</Label>
+              <Input
+                id="department"
+                value={editFormData.department || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, department: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="designation">Designation</Label>
+              <Input
+                id="designation"
+                value={editFormData.designation || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, designation: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="role">Role</Label>
+              <Select
+                value={editFormData.role || 'user'}
+                onValueChange={(value) => setEditFormData({ ...editFormData, role: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="emergencyContact">Emergency Contact</Label>
+              <Input
+                id="emergencyContact"
+                value={editFormData.emergencyContact || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, emergencyContact: e.target.value })}
+              />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label htmlFor="address">Address</Label>
+              <Input
+                id="address"
+                value={editFormData.address || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpdateUser}
+              disabled={updateUserMutation.isPending}
+            >
+              {updateUserMutation.isPending ? "Updating..." : "Update User"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

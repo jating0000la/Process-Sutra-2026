@@ -70,7 +70,7 @@ const adminNavigationItems = [
   },
   {
     name: "User Management",
-    href: "/admin/users",
+    href: "/user-management",
     icon: Users,
     badge: null,
   },
