@@ -356,10 +356,19 @@ export default function Tasks() {
       // Get all tasks for this flow
       const allTasks = (tasks as any[])?.filter((t: any) => t.flowId === task.flowId) || [];
       
+      // Sort tasks by creation time to find the first task
+      const sortedTasks = allTasks.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      const firstTask = sortedTasks[0];
+      
       // Get all form responses for tasks in this flow
       const flowFormResponses = (formResponses as any[])?.filter((response: any) => {
         return allTasks.some((t: any) => t.id === response.taskId);
       }) || [];
+
+      // Find the first form response (from the initial task)
+      const firstFormResponse = flowFormResponses.find((response: any) => 
+        response.taskId === firstTask?.id
+      );
 
       // Add task names to form responses
       const enrichedResponses = flowFormResponses.map((response: any) => {
@@ -375,7 +384,9 @@ export default function Tasks() {
         orderNumber: task.orderNumber,
         system: task.system,
         tasks: allTasks,
-        formResponses: enrichedResponses
+        formResponses: enrichedResponses,
+        firstTask: firstTask,
+        firstFormData: firstFormResponse?.formData || null
       });
       setIsFlowDataDialogOpen(true);
     } catch (error) {
@@ -833,6 +844,48 @@ export default function Tasks() {
           </DialogHeader>
           {flowDataForTask && (
             <div className="space-y-6">
+              {/* Initial Form Data - Prominently displayed */}
+              {flowDataForTask.firstFormData && (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center mb-3">
+                    <div className="w-3 h-3 bg-blue-500 rounded-full mr-2"></div>
+                    <h3 className="font-semibold text-blue-900">Initial Form Data</h3>
+                    <span className="ml-2 text-xs text-blue-600">({flowDataForTask.firstTask?.taskName})</span>
+                  </div>
+                  <div className="space-y-2">
+                    {Object.entries(flowDataForTask.firstFormData).map(([key, value]) => (
+                      <div key={key} className="flex items-start">
+                        <span className="font-medium text-blue-800 mr-3 min-w-0 flex-shrink-0 text-sm">
+                          {key}:
+                        </span>
+                        <span className="text-blue-900 break-words text-sm">
+                          {Array.isArray(value) ? (
+                            <div className="space-y-1">
+                              {value.map((item, index) => (
+                                <div key={index} className="bg-white p-2 rounded border text-xs">
+                                  {typeof item === 'object' ? 
+                                    Object.entries(item).map(([k, v]) => (
+                                      <div key={k}><strong>{k}:</strong> {String(v)}</div>
+                                    )) : 
+                                    String(item)
+                                  }
+                                </div>
+                              ))}
+                            </div>
+                          ) : typeof value === 'object' ? (
+                            <div className="bg-white p-2 rounded border text-xs">
+                              {JSON.stringify(value, null, 2)}
+                            </div>
+                          ) : (
+                            String(value)
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Flow ID</Label>

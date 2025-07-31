@@ -129,7 +129,47 @@ export class DatabaseStorage implements IStorage {
       query = query.where(existingWhere ? and(existingWhere, statusWhere) : statusWhere);
     }
     
-    return await query.orderBy(desc(tasks.createdAt));
+    const allTasks = await query.orderBy(desc(tasks.createdAt));
+    
+    // For each task, get the first form data from its flow
+    const enrichedTasks = await Promise.all(
+      allTasks.map(async (task) => {
+        try {
+          // Get all tasks in this flow
+          const flowTasks = await db
+            .select()
+            .from(tasks)
+            .where(eq(tasks.flowId, task.flowId))
+            .orderBy(asc(tasks.createdAt));
+
+          // Get the first task
+          const firstTask = flowTasks[0];
+          
+          if (firstTask) {
+            // Get form response for the first task
+            const firstFormResponse = await db
+              .select()
+              .from(formResponses)
+              .where(eq(formResponses.taskId, firstTask.id))
+              .limit(1);
+
+            if (firstFormResponse.length > 0) {
+              return {
+                ...task,
+                flowInitialFormData: firstFormResponse[0].formData
+              };
+            }
+          }
+          
+          return task;
+        } catch (error) {
+          console.error(`Error enriching task ${task.id} with flow data:`, error);
+          return task;
+        }
+      })
+    );
+    
+    return enrichedTasks;
   }
 
   async getTaskById(id: string): Promise<Task | undefined> {
