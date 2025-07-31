@@ -72,9 +72,12 @@ export default function Tasks() {
   const handleFormSubmit = async (formData: Record<string, any>) => {
     try {
       await apiRequest("POST", "/api/form-responses", {
-        formId: formTemplate?.formId,
+        responseId: `resp_${Date.now()}`, // Generate unique ID
+        flowId: selectedTask?.flowId,
         taskId: selectedTask?.id,
-        responses: formData,
+        taskName: selectedTask?.taskName,
+        formId: formTemplate?.formId,
+        formData: formData,
       });
       
       toast({
@@ -85,6 +88,7 @@ export default function Tasks() {
       setIsFormDialogOpen(false);
       setFormTemplate(null);
     } catch (error) {
+      console.error("Form submission error:", error);
       toast({
         title: "Error",
         description: "Failed to submit form",
