@@ -78,10 +78,18 @@ export async function setupAuth(app: Express) {
     tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
     verified: passport.AuthenticateCallback
   ) => {
-    const user = {};
-    updateUserSession(user, tokens);
-    await upsertUser(tokens.claims());
-    verified(null, user);
+    try {
+      const claims = tokens.claims();
+      console.log("Auth verify function called, tokens:", claims);
+      const user = {};
+      updateUserSession(user, tokens);
+      await upsertUser(claims);
+      console.log("User upserted successfully:", claims?.sub);
+      verified(null, user);
+    } catch (error) {
+      console.error("Error in auth verify function:", error);
+      verified(error, null);
+    }
   };
 
   for (const domain of process.env
@@ -116,11 +124,19 @@ export async function setupAuth(app: Express) {
     // Use the first domain from REPLIT_DOMAINS if hostname is localhost
     const hostname = req.hostname === 'localhost' ? 
       process.env.REPLIT_DOMAINS!.split(",")[0] : req.hostname;
+    
+    console.log("Auth callback called for hostname:", hostname);
       
     passport.authenticate(`replitauth:${hostname}`, {
       successReturnToOrRedirect: "/",
       failureRedirect: "/api/login",
-    })(req, res, next);
+    })(req, res, (err: any) => {
+      if (err) {
+        console.error("Authentication callback error:", err);
+        return res.status(500).json({ message: "Authentication failed", error: err.message });
+      }
+      next();
+    });
   });
 
   app.get("/api/logout", (req, res) => {
