@@ -620,15 +620,15 @@ export default function Tasks() {
                               </div>
                             </div>
                             
-                            {/* Initial Form Data */}
+                            {/* Initial Form Data - Always Visible */}
                             {task.flowInitialFormData && (
-                              <div className="pt-2 border-t border-blue-200 dark:border-blue-700">
-                                <div className="font-medium text-blue-700 dark:text-blue-300 text-xs mb-1">Initial Data:</div>
-                                <div className="bg-white dark:bg-gray-800 rounded p-1 text-xs">
+                              <div className="pt-2 border-t border-blue-200 dark:border-blue-700 task-initial-data">
+                                <div className="font-medium text-blue-700 dark:text-blue-300 text-xs mb-1">📄 Initial Data:</div>
+                                <div className="bg-white dark:bg-gray-800 rounded p-2 text-xs border border-gray-200 dark:border-gray-600 shadow-sm">
                                   {Object.entries(getReadableFormData(task.flowInitialFormData, task.formId)).map(([key, value]) => (
-                                    <div key={key} className="flex flex-wrap mb-1">
-                                      <span className="font-medium text-gray-600 dark:text-gray-400 mr-1">{key}:</span>
-                                      <span className="text-gray-800 dark:text-gray-200 break-words">{String(value)}</span>
+                                    <div key={key} className="flex flex-wrap mb-1 min-h-[16px] py-0.5">
+                                      <span className="font-semibold text-gray-800 dark:text-gray-200 mr-1 shrink-0 bg-gray-100 dark:bg-gray-700 px-1 rounded text-xs">{key}:</span>
+                                      <span className="text-gray-900 dark:text-gray-100 break-words flex-1 pl-1">{String(value)}</span>
                                     </div>
                                   ))}
                                 </div>

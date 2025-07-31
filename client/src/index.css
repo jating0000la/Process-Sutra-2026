@@ -54,6 +54,20 @@
   --neutral: hsl(240, 3.7%, 15.9%);
 }
 
+/* Ensure initial data section is always visible and not affected by hover states */
+.task-initial-data {
+  position: relative !important;
+  z-index: 10 !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  display: block !important;
+}
+
+.task-initial-data > * {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
 @layer base {
   * {
     @apply border-border;
