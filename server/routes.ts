@@ -388,7 +388,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           parsedInitialFormData = JSON.parse(initialFormData);
         } catch (error) {
           console.error("JSON parse error:", error);
-          return res.status(400).json({ message: `Invalid JSON format for initial form data: ${error.message}` });
+          return res.status(400).json({ message: `Invalid JSON format for initial form data: ${(error as Error).message}` });
         }
       }
       
