@@ -115,13 +115,19 @@ export function getDeviceInfo(): DeviceInfo {
 // Get location information (requires external service)
 export async function getLocationInfo(): Promise<LocationInfo> {
   try {
-    // Try to get IP and location from a free service
+    // Try to get IP and location from a free service with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    
     const response = await fetch('https://ipapi.co/json/', {
       method: 'GET',
+      signal: controller.signal,
       headers: {
         'Accept': 'application/json',
       },
     });
+    
+    clearTimeout(timeoutId);
     
     if (response.ok) {
       const data = await response.json();
@@ -135,7 +141,10 @@ export async function getLocationInfo(): Promise<LocationInfo> {
       };
     }
   } catch (error) {
-    console.warn('Could not fetch location information:', error);
+    // Silently handle location fetch errors - this is not critical functionality
+    if (error.name !== 'AbortError') {
+      console.warn('Could not fetch location information:', error);
+    }
   }
   
   return {};
