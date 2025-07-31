@@ -157,6 +157,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/tasks/:id/complete", isAuthenticated, async (req, res) => {
     try {
       const { id } = req.params;
+      const { status: completionStatus } = req.body;
+      
+      if (!completionStatus) {
+        return res.status(400).json({ message: "Completion status is required" });
+      }
+
       const task = await storage.getTaskById(id);
       if (!task) {
         return res.status(404).json({ message: "Task not found" });
@@ -168,10 +174,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         actualTime: new Date(),
       });
 
-      // Find next task in workflow
+      // Find next task in workflow based on completion status
       const flowRules = await storage.getFlowRules(task.system);
       const nextRule = flowRules.find(
-        rule => rule.currentTask === task.taskName && rule.status === "Done"
+        rule => rule.currentTask === task.taskName && rule.status === completionStatus
       );
 
       if (nextRule) {

@@ -24,6 +24,9 @@ export default function Tasks() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
+  const [isCompleteDialogOpen, setIsCompleteDialogOpen] = useState(false);
+  const [taskToComplete, setTaskToComplete] = useState<any>(null);
+  const [completionStatus, setCompletionStatus] = useState("");
   const [formTemplate, setFormTemplate] = useState<any>(null);
 
   // Redirect to login if not authenticated
@@ -98,16 +101,18 @@ export default function Tasks() {
   };
 
   const completeTaskMutation = useMutation({
-    mutationFn: async (taskId: string) => {
-      await apiRequest("POST", `/api/tasks/${taskId}/complete`);
+    mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
+      await apiRequest("POST", `/api/tasks/${taskId}/complete`, { status });
     },
     onSuccess: () => {
       toast({
         title: "Success",
-        description: "Task completed successfully",
+        description: "Task completed successfully. Next task created automatically.",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-      setSelectedTask(null);
+      setIsCompleteDialogOpen(false);
+      setTaskToComplete(null);
+      setCompletionStatus("");
     },
     onError: (error) => {
       if (isUnauthorizedError(error)) {
@@ -128,6 +133,20 @@ export default function Tasks() {
       });
     },
   });
+
+  const handleCompleteClick = (task: any) => {
+    setTaskToComplete(task);
+    setIsCompleteDialogOpen(true);
+  };
+
+  const handleCompleteConfirm = () => {
+    if (taskToComplete && completionStatus) {
+      completeTaskMutation.mutate({ 
+        taskId: taskToComplete.id, 
+        status: completionStatus 
+      });
+    }
+  };
 
   const statusChangeMutation = useMutation({
     mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
@@ -371,9 +390,9 @@ export default function Tasks() {
                                 
                                 <div className="flex justify-end space-x-3 pt-4">
                                   <Button variant="outline">Close</Button>
-                                  {selectedTask.status === "pending" && (
+                                  {selectedTask.status !== "completed" && (
                                     <Button 
-                                      onClick={() => completeTaskMutation.mutate(selectedTask.id)}
+                                      onClick={() => handleCompleteClick(selectedTask)}
                                       disabled={completeTaskMutation.isPending}
                                     >
                                       <CheckCircle className="w-4 h-4 mr-2" />
@@ -408,6 +427,53 @@ export default function Tasks() {
               isSubmitting={false}
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Completion Status Dialog */}
+      <Dialog open={isCompleteDialogOpen} onOpenChange={setIsCompleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Complete Task</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Select the completion status for: <strong>{taskToComplete?.taskName}</strong>
+            </p>
+            <div>
+              <Label htmlFor="completion-status">Completion Status</Label>
+              <Select value={completionStatus} onValueChange={setCompletionStatus}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select completion status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Done">Done</SelectItem>
+                  <SelectItem value="Regular">Regular</SelectItem>
+                  <SelectItem value="Wedding">Wedding</SelectItem>
+                  <SelectItem value="Yes">Yes</SelectItem>
+                  <SelectItem value="No">No</SelectItem>
+                  <SelectItem value="Approved">Approved</SelectItem>
+                  <SelectItem value="Rejected">Rejected</SelectItem>
+                  <SelectItem value="Completed">Completed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end space-x-3">
+              <Button 
+                variant="outline" 
+                onClick={() => setIsCompleteDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleCompleteConfirm}
+                disabled={!completionStatus || completeTaskMutation.isPending}
+              >
+                <CheckCircle className="w-4 h-4 mr-2" />
+                Complete Task
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
