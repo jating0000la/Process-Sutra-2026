@@ -707,6 +707,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Weekly scoring for users
+  app.get("/api/analytics/weekly-scoring", isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      const weeklyScoring = await storage.getUserWeeklyScoring(user.email);
+      res.json(weeklyScoring);
+    } catch (error) {
+      console.error("Error fetching weekly scoring:", error);
+      res.status(500).json({ message: "Failed to fetch weekly scoring" });
+    }
+  });
+
+  // Admin-only: All doers performance with filtering
+  app.get("/api/analytics/doers-performance", isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      
+      if (user.role !== 'admin') {
+        return res.status(403).json({ message: "Access denied. Admin only." });
+      }
+
+      const filters = {
+        startDate: req.query.startDate as string,
+        endDate: req.query.endDate as string,
+        doerName: req.query.doerName as string,
+        doerEmail: req.query.doerEmail as string,
+      };
+
+      const doersPerformance = await storage.getAllDoersPerformance(filters);
+      res.json(doersPerformance);
+    } catch (error) {
+      console.error("Error fetching doers performance:", error);
+      res.status(500).json({ message: "Failed to fetch doers performance" });
+    }
+  });
+
+  // Admin-only: Detailed weekly performance for a specific doer
+  app.get("/api/analytics/doer-weekly/:doerEmail", isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      
+      if (user.role !== 'admin') {
+        return res.status(403).json({ message: "Access denied. Admin only." });
+      }
+
+      const { doerEmail } = req.params;
+      const weeks = parseInt(req.query.weeks as string) || 12;
+      
+      const weeklyPerformance = await storage.getDoerWeeklyPerformance(doerEmail, weeks);
+      res.json(weeklyPerformance);
+    } catch (error) {
+      console.error("Error fetching doer weekly performance:", error);
+      res.status(500).json({ message: "Failed to fetch doer weekly performance" });
+    }
+  });
+
   // TAT Configuration API
   app.get("/api/tat-config", isAuthenticated, async (req, res) => {
     try {

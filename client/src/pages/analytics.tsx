@@ -1,14 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { isUnauthorizedError } from "@/lib/authUtils";
 import Header from "@/components/header";
 import Sidebar from "@/components/sidebar";
 import MetricCard from "@/components/metric-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { 
   LineChart, 
   Line, 
@@ -27,16 +30,24 @@ import {
   TrendingUp, 
   Clock, 
   CheckCircle, 
-  AlertTriangle, 
+  Target,
+  Award,
   Users,
   Calendar,
-  Target,
-  Award
+  Download
 } from "lucide-react";
+import { format } from "date-fns";
 
 export default function Analytics() {
   const { toast } = useToast();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
+  const [activeTab, setActiveTab] = useState("overview");
+  const [doerFilters, setDoerFilters] = useState({
+    startDate: "",
+    endDate: "",
+    doerName: "",
+    doerEmail: "",
+  });
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -63,20 +74,30 @@ export default function Analytics() {
     enabled: isAuthenticated,
   });
 
-  const { data: tasks } = useQuery({
-    queryKey: ["/api/tasks"],
+  // Weekly scoring for users
+  const { data: weeklyScoring, isLoading: weeklyLoading } = useQuery({
+    queryKey: ["/api/analytics/weekly-scoring"],
     enabled: isAuthenticated,
   });
 
-  // Mock data for charts - in real app, this would come from API
-  const completionTrendData = [
-    { name: 'Jan', completed: 65, target: 70 },
-    { name: 'Feb', completed: 78, target: 75 },
-    { name: 'Mar', completed: 82, target: 80 },
-    { name: 'Apr', completed: 75, target: 85 },
-    { name: 'May', completed: 88, target: 85 },
-    { name: 'Jun', completed: 92, target: 90 },
-  ];
+  // Admin-only: All doers performance with filtering
+  const { data: doersPerformance, isLoading: doersLoading } = useQuery({
+    queryKey: ["/api/analytics/doers-performance", doerFilters],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      Object.entries(doerFilters).forEach(([key, value]) => {
+        if (value) params.append(key, value);
+      });
+      const response = await fetch(`/api/analytics/doers-performance?${params}`);
+      if (!response.ok) throw new Error('Failed to fetch doers performance');
+      return response.json();
+    },
+    enabled: isAuthenticated && (user as any)?.role === 'admin',
+  });
+
+  const handleFilterChange = (key: string, value: string) => {
+    setDoerFilters(prev => ({ ...prev, [key]: value }));
+  };
 
   const taskDistributionData = [
     { name: 'Completed', value: metrics?.completedTasks || 0, color: '#10B981' },
@@ -85,36 +106,15 @@ export default function Analytics() {
     { name: 'Overdue', value: metrics?.overdueTasks || 0, color: '#EF4444' },
   ];
 
-  const performanceByDayData = [
-    { day: 'Mon', tasks: 12, onTime: 10 },
-    { day: 'Tue', tasks: 15, onTime: 13 },
-    { day: 'Wed', tasks: 8, onTime: 7 },
-    { day: 'Thu', tasks: 18, onTime: 16 },
-    { day: 'Fri', tasks: 11, onTime: 9 },
-    { day: 'Sat', tasks: 6, onTime: 6 },
-    { day: 'Sun', tasks: 4, onTime: 4 },
-  ];
-
-  if (isLoading) {
+  if (isLoading || !isAuthenticated) {
     return (
       <div className="flex h-screen bg-neutral">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto">
-          <Header title="Analytics" description="Performance insights and metrics" />
-          <div className="p-6">
-            <div className="animate-pulse space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {[...Array(4)].map((_, i) => (
-                  <div key={i} className="bg-white rounded-xl p-6 shadow-sm border">
-                    <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
-                    <div className="h-8 bg-gray-200 rounded w-1/3 mb-4"></div>
-                    <div className="h-3 bg-gray-200 rounded w-3/4"></div>
-                  </div>
-                ))}
-              </div>
-            </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading analytics...</p>
           </div>
-        </main>
+        </div>
       </div>
     );
   }
@@ -161,224 +161,266 @@ export default function Analytics() {
             />
           </div>
 
-          {/* Charts Section */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Completion Trends */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <TrendingUp className="w-5 h-5 mr-2" />
-                  Completion Trends
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={completionTrendData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="name" />
-                      <YAxis />
-                      <Tooltip />
-                      <Line 
-                        type="monotone" 
-                        dataKey="completed" 
-                        stroke="hsl(var(--primary))" 
-                        strokeWidth={3}
-                        dot={{ fill: "hsl(var(--primary))", strokeWidth: 2, r: 5 }}
-                        name="Completed"
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="target" 
-                        stroke="#94A3B8" 
-                        strokeWidth={2}
-                        strokeDasharray="5 5"
-                        dot={{ fill: "#94A3B8", strokeWidth: 2, r: 4 }}
-                        name="Target"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
+          {/* Tabs for different views */}
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className={`grid w-full ${(user as any)?.role === 'admin' ? 'grid-cols-3' : 'grid-cols-2'}`}>
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="weekly">Weekly Scoring</TabsTrigger>
+              {(user as any)?.role === 'admin' && <TabsTrigger value="doers">All Doers Performance</TabsTrigger>}
+            </TabsList>
 
-            {/* Task Distribution */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Users className="w-5 h-5 mr-2" />
-                  Task Distribution
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={taskDistributionData}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                        outerRadius={100}
-                        fill="#8884d8"
-                        dataKey="value"
-                      >
-                        {taskDistributionData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+            <TabsContent value="overview" className="space-y-6">
+              {/* Charts Section */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Flow Performance Chart */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5" />
+                      Flow Performance
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {flowPerformance?.map((flow: any, index: number) => (
+                        <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div>
+                            <h4 className="font-medium">{flow.system}</h4>
+                            <p className="text-sm text-gray-600">
+                              Avg: {flow.avgCompletionTime} days
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-lg font-semibold text-green-600">
+                              {flow.onTimeRate}%
+                            </div>
+                            <div className="text-xs text-gray-500">On-time</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
 
-          {/* Performance Analysis */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Daily Performance */}
-            <div className="lg:col-span-2">
+                {/* Task Distribution */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Users className="h-5 w-5" />
+                      Task Distribution
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={taskDistributionData}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={80}
+                            dataKey="value"
+                            label={({ name, value }) => `${name}: ${value}`}
+                          >
+                            {taskDistributionData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="weekly" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <Calendar className="w-5 h-5 mr-2" />
-                    Daily Performance
+                  <CardTitle className="flex items-center gap-2">
+                    <Calendar className="h-5 w-5" />
+                    My Weekly Performance
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={performanceByDayData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis dataKey="day" />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="tasks" fill="hsl(var(--primary))" name="Total Tasks" />
-                        <Bar dataKey="onTime" fill="hsl(var(--success))" name="On Time" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                  {weeklyLoading ? (
+                    <div className="flex items-center justify-center p-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {weeklyScoring && weeklyScoring.length > 0 ? (
+                        <>
+                          {/* Weekly Chart */}
+                          <div className="h-64 mb-6">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={weeklyScoring}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis 
+                                  dataKey="weekStart" 
+                                  tickFormatter={(value) => format(new Date(value), "MMM dd")}
+                                />
+                                <YAxis />
+                                <Tooltip 
+                                  labelFormatter={(value) => `Week of ${format(new Date(value), "MMM dd, yyyy")}`}
+                                />
+                                <Bar dataKey="onTimeRate" fill="#10B981" name="On-Time Rate %" />
+                                <Bar dataKey="completedTasks" fill="#3B82F6" name="Completed Tasks" />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+
+                          {/* Weekly Table */}
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Week</TableHead>
+                                <TableHead>Total Tasks</TableHead>
+                                <TableHead>Completed</TableHead>
+                                <TableHead>On-Time Rate</TableHead>
+                                <TableHead>Avg Days</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {weeklyScoring.map((week: any, index: number) => (
+                                <TableRow key={index}>
+                                  <TableCell>
+                                    {format(new Date(week.weekStart), "MMM dd")} - {format(new Date(week.weekEnd), "MMM dd")}
+                                  </TableCell>
+                                  <TableCell>{week.totalTasks}</TableCell>
+                                  <TableCell>{week.completedTasks}</TableCell>
+                                  <TableCell>
+                                    <Badge variant={week.onTimeRate >= 80 ? "default" : week.onTimeRate >= 60 ? "secondary" : "destructive"}>
+                                      {week.onTimeRate}%
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell>{week.avgCompletionDays.toFixed(1)}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </>
+                      ) : (
+                        <div className="text-center py-8 text-gray-500">
+                          No weekly data available yet
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
-            </div>
+            </TabsContent>
 
-            {/* Top Performers */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Top Performers</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-sm">Sarah Johnson</p>
-                      <p className="text-xs text-gray-600">Sales Executive</p>
+            {(user as any)?.role === 'admin' && (
+              <TabsContent value="doers" className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="flex items-center gap-2">
+                        <Users className="h-5 w-5" />
+                        All Doers Performance
+                      </CardTitle>
+                      <Button variant="outline" size="sm">
+                        <Download className="h-4 w-4 mr-2" />
+                        Export
+                      </Button>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium">94%</p>
-                      <p className="text-xs text-gray-600">On-time</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-sm">Mike Chen</p>
-                      <p className="text-xs text-gray-600">Account Manager</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium">91%</p>
-                      <p className="text-xs text-gray-600">On-time</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-sm">Emma Davis</p>
-                      <p className="text-xs text-gray-600">Quality Analyst</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium">89%</p>
-                      <p className="text-xs text-gray-600">On-time</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-sm">David Wilson</p>
-                      <p className="text-xs text-gray-600">Project Manager</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium">87%</p>
-                      <p className="text-xs text-gray-600">On-time</p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Flow Performance Details */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Flow Performance Analysis</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {flowLoading ? (
-                  [...Array(3)].map((_, i) => (
-                    <div key={i} className="animate-pulse">
-                      <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                        <div className="h-4 bg-gray-200 rounded w-1/3"></div>
-                        <div className="h-4 bg-gray-200 rounded w-16"></div>
+                  </CardHeader>
+                  <CardContent>
+                    {/* Filters */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+                      <div>
+                        <Label htmlFor="startDate">Start Date</Label>
+                        <Input
+                          id="startDate"
+                          type="date"
+                          value={doerFilters.startDate}
+                          onChange={(e) => handleFilterChange('startDate', e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="endDate">End Date</Label>
+                        <Input
+                          id="endDate"
+                          type="date"
+                          value={doerFilters.endDate}
+                          onChange={(e) => handleFilterChange('endDate', e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="doerName">Doer Name</Label>
+                        <Input
+                          id="doerName"
+                          placeholder="Search by name..."
+                          value={doerFilters.doerName}
+                          onChange={(e) => handleFilterChange('doerName', e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="doerEmail">Doer Email</Label>
+                        <Input
+                          id="doerEmail"
+                          placeholder="Search by email..."
+                          value={doerFilters.doerEmail}
+                          onChange={(e) => handleFilterChange('doerEmail', e.target.value)}
+                        />
                       </div>
                     </div>
-                  ))
-                ) : flowPerformance?.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    No flow performance data available
-                  </div>
-                ) : (
-                  flowPerformance?.map((flow: any) => (
-                    <div key={flow.system} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-4">
-                          <div>
-                            <p className="font-medium text-gray-900">{flow.system}</p>
-                            <p className="text-sm text-gray-600">
-                              Avg completion: {flow.avgCompletionTime} days
-                            </p>
-                          </div>
-                          <Badge variant={flow.onTimeRate >= 80 ? "default" : "secondary"}>
-                            {flow.onTimeRate >= 90 ? "Excellent" : 
-                             flow.onTimeRate >= 80 ? "Good" : 
-                             flow.onTimeRate >= 70 ? "Fair" : "Needs Improvement"}
-                          </Badge>
-                        </div>
+
+                    {/* Doers Performance Table */}
+                    {doersLoading ? (
+                      <div className="flex items-center justify-center p-8">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                       </div>
-                      <div className="flex items-center space-x-4">
-                        <div className="w-32">
-                          <div className="flex justify-between text-xs mb-1">
-                            <span>On-time Rate</span>
-                            <span>{flow.onTimeRate}%</span>
-                          </div>
-                          <Progress 
-                            value={flow.onTimeRate} 
-                            className="h-2"
-                          />
-                        </div>
-                        <div className="text-right">
-                          <p className="text-lg font-bold text-gray-900">{flow.onTimeRate}%</p>
-                          <p className="text-xs text-gray-600">Success Rate</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Doer</TableHead>
+                            <TableHead>Total Tasks</TableHead>
+                            <TableHead>Completed</TableHead>
+                            <TableHead>On-Time Rate</TableHead>
+                            <TableHead>Avg Days</TableHead>
+                            <TableHead>Last Task</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {doersPerformance?.map((doer: any, index: number) => (
+                            <TableRow key={index}>
+                              <TableCell>
+                                <div>
+                                  <div className="font-medium">{doer.doerName}</div>
+                                  <div className="text-sm text-gray-500">{doer.doerEmail}</div>
+                                </div>
+                              </TableCell>
+                              <TableCell>{doer.totalTasks}</TableCell>
+                              <TableCell>{doer.completedTasks}</TableCell>
+                              <TableCell>
+                                <Badge variant={doer.onTimeRate >= 80 ? "default" : doer.onTimeRate >= 60 ? "secondary" : "destructive"}>
+                                  {doer.onTimeRate}%
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{doer.avgCompletionDays.toFixed(1)}</TableCell>
+                              <TableCell>
+                                {doer.lastTaskDate ? format(new Date(doer.lastTaskDate), "MMM dd, yyyy") : 'Never'}
+                              </TableCell>
+                            </TableRow>
+                          )) || (
+                            <TableRow>
+                              <TableCell colSpan={6} className="text-center py-8 text-gray-500">
+                                No doers data available
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            )}
+          </Tabs>
         </div>
       </main>
     </div>

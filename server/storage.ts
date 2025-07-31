@@ -442,6 +442,156 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
+  // Weekly scoring for users
+  async getUserWeeklyScoring(userEmail: string): Promise<{
+    weekStart: string;
+    weekEnd: string;
+    totalTasks: number;
+    completedTasks: number;
+    onTimeRate: number;
+    avgCompletionDays: number;
+  }[]> {
+    const results = await db.execute(sql`
+      WITH weekly_data AS (
+        SELECT 
+          DATE_TRUNC('week', planned_time) as week_start,
+          DATE_TRUNC('week', planned_time) + INTERVAL '6 days' as week_end,
+          COUNT(*) as total_tasks,
+          COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_tasks,
+          COUNT(CASE WHEN status = 'completed' AND actual_completion_time <= planned_time THEN 1 END) as on_time_tasks,
+          AVG(CASE WHEN status = 'completed' THEN EXTRACT(EPOCH FROM (actual_completion_time - planned_time)) / 86400 END) as avg_completion_days
+        FROM tasks 
+        WHERE doer_email = ${userEmail}
+          AND planned_time >= NOW() - INTERVAL '12 weeks'
+        GROUP BY DATE_TRUNC('week', planned_time)
+        ORDER BY week_start DESC
+      )
+      SELECT 
+        week_start,
+        week_end,
+        total_tasks,
+        completed_tasks,
+        CASE 
+          WHEN completed_tasks > 0 THEN ROUND((on_time_tasks * 100.0) / completed_tasks, 2)
+          ELSE 0 
+        END as on_time_rate,
+        COALESCE(ROUND(avg_completion_days, 2), 0) as avg_completion_days
+      FROM weekly_data
+    `);
+
+    return (results.rows as any[]).map((row) => ({
+      weekStart: row.week_start,
+      weekEnd: row.week_end,
+      totalTasks: Number(row.total_tasks),
+      completedTasks: Number(row.completed_tasks),
+      onTimeRate: Number(row.on_time_rate),
+      avgCompletionDays: Number(row.avg_completion_days),
+    }));
+  }
+
+  // Admin view: All doers' performance with filtering
+  async getAllDoersPerformance(filters: {
+    startDate?: string;
+    endDate?: string;
+    doerName?: string;
+    doerEmail?: string;
+  } = {}): Promise<{
+    doerEmail: string;
+    doerName: string;
+    totalTasks: number;
+    completedTasks: number;
+    onTimeRate: number;
+    avgCompletionDays: number;
+    lastTaskDate: string | null;
+  }[]> {
+    let whereConditions = sql`1=1`;
+    
+    if (filters.startDate) {
+      whereConditions = sql`${whereConditions} AND planned_time >= ${filters.startDate}`;
+    }
+    if (filters.endDate) {
+      whereConditions = sql`${whereConditions} AND planned_time <= ${filters.endDate}`;
+    }
+    if (filters.doerEmail) {
+      whereConditions = sql`${whereConditions} AND doer_email ILIKE ${`%${filters.doerEmail}%`}`;
+    }
+    if (filters.doerName) {
+      whereConditions = sql`${whereConditions} AND doer_email ILIKE ${`%${filters.doerName}%`}`;
+    }
+
+    const results = await db.execute(sql`
+      SELECT 
+        doer_email,
+        doer_email as doer_name,
+        COUNT(*) as total_tasks,
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_tasks,
+        COUNT(CASE WHEN status = 'completed' AND actual_completion_time <= planned_time THEN 1 END) as on_time_tasks,
+        AVG(CASE WHEN status = 'completed' THEN EXTRACT(EPOCH FROM (actual_completion_time - planned_time)) / 86400 END) as avg_completion_days,
+        MAX(planned_time) as last_task_date
+      FROM tasks 
+      WHERE ${whereConditions}
+      GROUP BY doer_email
+      ORDER BY doer_email
+    `);
+
+    return (results.rows as any[]).map((row) => ({
+      doerEmail: row.doer_email,
+      doerName: row.doer_name,
+      totalTasks: Number(row.total_tasks),
+      completedTasks: Number(row.completed_tasks),
+      onTimeRate: row.completed_tasks > 0 ? Math.round((Number(row.on_time_tasks) / Number(row.completed_tasks)) * 100) : 0,
+      avgCompletionDays: Number(row.avg_completion_days) || 0,
+      lastTaskDate: row.last_task_date,
+    }));
+  }
+
+  // Admin view: Detailed weekly performance for a specific doer
+  async getDoerWeeklyPerformance(doerEmail: string, weeks: number = 12): Promise<{
+    weekStart: string;
+    weekEnd: string;
+    totalTasks: number;
+    completedTasks: number;
+    onTimeRate: number;
+    avgCompletionDays: number;
+  }[]> {
+    const results = await db.execute(sql`
+      WITH weekly_data AS (
+        SELECT 
+          DATE_TRUNC('week', planned_time) as week_start,
+          DATE_TRUNC('week', planned_time) + INTERVAL '6 days' as week_end,
+          COUNT(*) as total_tasks,
+          COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_tasks,
+          COUNT(CASE WHEN status = 'completed' AND actual_completion_time <= planned_time THEN 1 END) as on_time_tasks,
+          AVG(CASE WHEN status = 'completed' THEN EXTRACT(EPOCH FROM (actual_completion_time - planned_time)) / 86400 END) as avg_completion_days
+        FROM tasks 
+        WHERE doer_email = ${doerEmail}
+          AND planned_time >= NOW() - INTERVAL '${weeks} weeks'
+        GROUP BY DATE_TRUNC('week', planned_time)
+        ORDER BY week_start DESC
+      )
+      SELECT 
+        week_start,
+        week_end,
+        total_tasks,
+        completed_tasks,
+        CASE 
+          WHEN completed_tasks > 0 THEN ROUND((on_time_tasks * 100.0) / completed_tasks, 2)
+          ELSE 0 
+        END as on_time_rate,
+        COALESCE(ROUND(avg_completion_days, 2), 0) as avg_completion_days
+      FROM weekly_data
+    `);
+
+    return (results.rows as any[]).map((row) => ({
+      weekStart: row.week_start,
+      weekEnd: row.week_end,
+      totalTasks: Number(row.total_tasks),
+      completedTasks: Number(row.completed_tasks),
+      onTimeRate: Number(row.on_time_rate),
+      avgCompletionDays: Number(row.avg_completion_days),
+    }));
+  }
+
   async upsertTATConfig(configData: any): Promise<any> {
     const existing = await this.getTATConfig();
     
