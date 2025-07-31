@@ -46,11 +46,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Auth routes are now handled in firebaseAuth.ts
 
-  // Flow Rules API (Admin only)
-  app.get("/api/flow-rules", isAuthenticated, requireAdmin, async (req, res) => {
+  // Flow Rules API (Organization-specific, Admin only)
+  app.get("/api/flow-rules", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
+      const user = req.currentUser;
       const { system } = req.query;
-      const flowRules = await storage.getFlowRules(system as string);
+      const flowRules = await storage.getFlowRulesByOrganization(user.organizationId, system as string);
       res.json(flowRules);
     } catch (error) {
       console.error("Error fetching flow rules:", error);
@@ -122,7 +123,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Tasks API (User-specific for regular users, all tasks for admins)
+  // Tasks API (Organization-specific data isolation)
   app.get("/api/tasks", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const user = req.currentUser;
@@ -130,11 +131,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       let tasks;
       if (user.role === 'admin') {
-        // Admins see all tasks
-        tasks = await storage.getAllTasks(status as string);
+        // Admins see all tasks in their organization only
+        tasks = await storage.getTasksByOrganization(user.organizationId, status as string);
       } else {
-        // Regular users only see their own tasks
-        tasks = await storage.getTasks(user.email, status as string);
+        // Regular users only see their own tasks within their organization
+        tasks = await storage.getUserTasksInOrganization(user.email, user.organizationId, status as string);
       }
       
       res.json(tasks);
@@ -442,19 +443,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Form Templates API
-  app.get("/api/form-templates", isAuthenticated, async (req: any, res) => {
+  // Form Templates API (Organization-specific)
+  app.get("/api/form-templates", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
-      const userId = req.user.id;
-      const currentUser = await storage.getUser(userId);
-      const userRole = currentUser?.role || "user";
-      
-      // For regular users, get all form templates they need for their tasks
-      // For admins, get all templates they created
-      const templates = userRole === "admin" 
-        ? await storage.getFormTemplates(userId)
-        : await storage.getAllFormTemplates(); // Users need access to all templates for their tasks
-      
+      const user = req.currentUser;
+      const templates = await storage.getFormTemplatesByOrganization(user.organizationId);
       res.json(templates);
     } catch (error) {
       console.error("Error fetching form templates:", error);
@@ -535,11 +528,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Form Responses API
-  app.get("/api/form-responses", isAuthenticated, async (req, res) => {
+  // Form Responses API (Organization-specific)
+  app.get("/api/form-responses", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
+      const user = req.currentUser;
       const { flowId, taskId } = req.query;
-      const responses = await storage.getFormResponses(flowId as string, taskId as string);
+      const responses = await storage.getFormResponsesByOrganization(user.organizationId, flowId as string, taskId as string);
       res.json(responses);
     } catch (error) {
       console.error("Error fetching form responses:", error);

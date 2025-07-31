@@ -42,29 +42,34 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
 
-  // Flow Rules operations
+  // Flow Rules operations (organization-specific)
   getFlowRules(system?: string): Promise<FlowRule[]>;
+  getFlowRulesByOrganization(organizationId: string, system?: string): Promise<FlowRule[]>;
   createFlowRule(flowRule: InsertFlowRule): Promise<FlowRule>;
   updateFlowRule(id: string, flowRule: Partial<InsertFlowRule>): Promise<FlowRule>;
   deleteFlowRule(id: string): Promise<void>;
 
-  // Task operations
+  // Task operations (organization-specific)
   getTasks(userId?: string, status?: string): Promise<Task[]>;
+  getTasksByOrganization(organizationId: string, status?: string): Promise<Task[]>;
+  getUserTasksInOrganization(userEmail: string, organizationId: string, status?: string): Promise<Task[]>;
   getTaskById(id: string): Promise<Task | undefined>;
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: string, task: Partial<InsertTask>): Promise<Task>;
   getTasksByFlowId(flowId: string): Promise<Task[]>;
 
-  // Form Template operations
+  // Form Template operations (organization-specific)
   getFormTemplates(createdBy?: string): Promise<FormTemplate[]>;
+  getFormTemplatesByOrganization(organizationId: string): Promise<FormTemplate[]>;
   getAllFormTemplates(): Promise<FormTemplate[]>;
   getFormTemplateByFormId(formId: string): Promise<FormTemplate | undefined>;
   createFormTemplate(template: InsertFormTemplate): Promise<FormTemplate>;
   updateFormTemplate(id: string, template: Partial<InsertFormTemplate>): Promise<FormTemplate>;
   deleteFormTemplate(id: string): Promise<void>;
 
-  // Form Response operations
+  // Form Response operations (organization-specific)
   getFormResponses(flowId?: string, taskId?: string): Promise<FormResponse[]>;
+  getFormResponsesByOrganization(organizationId: string, flowId?: string, taskId?: string): Promise<FormResponse[]>;
   createFormResponse(response: InsertFormResponse): Promise<FormResponse>;
   getFormResponsesByFlowId(flowId: string): Promise<FormResponse[]>;
 
@@ -188,6 +193,15 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(flowRules).orderBy(asc(flowRules.system));
   }
 
+  async getFlowRulesByOrganization(organizationId: string, system?: string): Promise<FlowRule[]> {
+    if (system) {
+      return await db.select().from(flowRules).where(
+        and(eq(flowRules.organizationId, organizationId), eq(flowRules.system, system))
+      );
+    }
+    return await db.select().from(flowRules).where(eq(flowRules.organizationId, organizationId)).orderBy(asc(flowRules.system));
+  }
+
   async createFlowRule(flowRule: InsertFlowRule): Promise<FlowRule> {
     const [rule] = await db.insert(flowRules).values(flowRule).returning();
     return rule;
@@ -207,6 +221,29 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Task operations
+  async getTasksByOrganization(organizationId: string, status?: string): Promise<Task[]> {
+    const conditions = [eq(tasks.organizationId, organizationId)];
+    
+    if (status) {
+      conditions.push(eq(tasks.status, status));
+    }
+    
+    return await db.select().from(tasks).where(and(...conditions)).orderBy(desc(tasks.createdAt));
+  }
+
+  async getUserTasksInOrganization(userEmail: string, organizationId: string, status?: string): Promise<Task[]> {
+    const conditions = [
+      eq(tasks.organizationId, organizationId),
+      eq(tasks.doerEmail, userEmail)
+    ];
+    
+    if (status) {
+      conditions.push(eq(tasks.status, status));
+    }
+    
+    return await db.select().from(tasks).where(and(...conditions)).orderBy(desc(tasks.createdAt));
+  }
+
   async getTasks(userId?: string, status?: string): Promise<Task[]> {
     let whereConditions = [];
     
@@ -312,6 +349,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Form Template operations
+  async getFormTemplatesByOrganization(organizationId: string): Promise<FormTemplate[]> {
+    return await db
+      .select()
+      .from(formTemplates)
+      .where(eq(formTemplates.organizationId, organizationId))
+      .orderBy(desc(formTemplates.createdAt));
+  }
+
   async getFormTemplates(createdBy?: string): Promise<FormTemplate[]> {
     if (createdBy) {
       return await db
@@ -354,6 +399,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Form Response operations
+  async getFormResponsesByOrganization(organizationId: string, flowId?: string, taskId?: string): Promise<FormResponse[]> {
+    const conditions = [eq(formResponses.organizationId, organizationId)];
+    
+    if (flowId) {
+      conditions.push(eq(formResponses.flowId, flowId));
+    }
+    if (taskId) {
+      conditions.push(eq(formResponses.taskId, taskId));
+    }
+    
+    return await db.select().from(formResponses).where(and(...conditions)).orderBy(desc(formResponses.timestamp));
+  }
+
   async getFormResponses(flowId?: string, taskId?: string): Promise<FormResponse[]> {
     if (flowId && taskId) {
       return await db.select().from(formResponses).where(and(eq(formResponses.flowId, flowId), eq(formResponses.taskId, taskId))).orderBy(desc(formResponses.timestamp));
