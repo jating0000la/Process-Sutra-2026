@@ -22,7 +22,8 @@ import {
   CheckCircle,
   AlertTriangle,
   Timer,
-  Coffee
+  Coffee,
+  Settings
 } from "lucide-react";
 import { format, addHours, addMinutes, isAfter, isBefore, parseISO } from "date-fns";
 
@@ -61,6 +62,14 @@ export default function FlowSimulator() {
   const [selectedSystem, setSelectedSystem] = useState<string>("");
   const [simulation, setSimulation] = useState<FlowSimulation | null>(null);
   const [simulationInterval, setSimulationInterval] = useState<NodeJS.Timeout | null>(null);
+  
+  // Enhanced simulation parameters
+  const [eventSpeed, setEventSpeed] = useState<number>(100); // Normal processing speed percentage
+  const [teamCount, setTeamCount] = useState<number>(1); // Number of people per task
+  const [peakTimeStart, setPeakTimeStart] = useState<string>("10:00"); // Peak time start
+  const [peakTimeEnd, setPeakTimeEnd] = useState<string>("16:00"); // Peak time end
+  const [peakSpeed, setPeakSpeed] = useState<number>(60); // Reduced speed during peak time
+  const [userSpeedMultipliers, setUserSpeedMultipliers] = useState<Record<string, number>>({}); // User-specific speeds
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -90,28 +99,61 @@ export default function FlowSimulator() {
   // Get unique systems for simulation
   const availableSystems = Array.from(new Set((flowRules as any[])?.map(rule => rule.system) || []));
 
-  // Calculate TAT with lunch break consideration
-  const calculateTATWithLunch = (startTime: Date, tat: number, tatType: string) => {
+  // Check if current time is in peak hours
+  const isInPeakTime = (currentTime: Date): boolean => {
+    const timeStr = format(currentTime, 'HH:mm');
+    return timeStr >= peakTimeStart && timeStr <= peakTimeEnd;
+  };
+
+  // Calculate effective speed considering all factors
+  const calculateEffectiveSpeed = (doerEmail: string, currentTime: Date): number => {
+    let baseSpeed = eventSpeed / 100; // Convert percentage to multiplier
+    
+    // Apply peak time reduction
+    if (isInPeakTime(currentTime)) {
+      baseSpeed *= (peakSpeed / 100);
+    }
+    
+    // Apply user-specific speed
+    const userSpeed = (userSpeedMultipliers[doerEmail] || 100) / 100;
+    baseSpeed *= userSpeed;
+    
+    // Apply team count benefit (more people = faster completion, but with diminishing returns)
+    const teamMultiplier = 1 + (teamCount - 1) * 0.3; // Each additional person adds 30% efficiency
+    baseSpeed *= teamMultiplier;
+    
+    return Math.max(0.1, baseSpeed); // Minimum 10% speed to prevent infinite times
+  };
+
+  // Calculate TAT with all enhancement factors
+  const calculateTATWithEnhancements = (startTime: Date, tat: number, tatType: string, doerEmail: string) => {
     const config = (tatConfig as any) || { officeStartHour: 9, officeEndHour: 18 };
-    let endTime = new Date(startTime);
+    let baseEndTime = new Date(startTime);
     
     switch (tatType) {
       case 'hourtat':
-        endTime = addHours(startTime, tat);
+        baseEndTime = addHours(startTime, tat);
         break;
       case 'daytat':
-        endTime = addHours(startTime, tat * 8); // 8 working hours per day
+        baseEndTime = addHours(startTime, tat * 8); // 8 working hours per day
         break;
       case 'beforetat':
         // Complete before specific time (assumes next day at specified hour)
-        endTime = new Date(startTime);
-        endTime.setDate(endTime.getDate() + 1);
-        endTime.setHours(config.officeStartHour + tat, 0, 0, 0);
+        baseEndTime = new Date(startTime);
+        baseEndTime.setDate(baseEndTime.getDate() + 1);
+        baseEndTime.setHours(config.officeStartHour + tat, 0, 0, 0);
         break;
       case 'specifytat':
-        endTime = addMinutes(startTime, tat * 60); // Assuming hours for specify
+        baseEndTime = addMinutes(startTime, tat * 60); // Assuming hours for specify
         break;
     }
+    
+    // Calculate effective duration considering speed factors
+    const baseDurationMs = baseEndTime.getTime() - startTime.getTime();
+    const effectiveSpeed = calculateEffectiveSpeed(doerEmail, startTime);
+    const adjustedDurationMs = baseDurationMs / effectiveSpeed;
+    
+    let endTime = new Date(startTime.getTime() + adjustedDurationMs);
     
     // Add 1 hour lunch break if the task spans lunch time (12:00-13:00)
     const lunchStart = new Date(startTime);
@@ -138,7 +180,7 @@ export default function FlowSimulator() {
     let taskTime = new Date(currentTime);
     
     // Create first task
-    const firstTaskEndTime = calculateTATWithLunch(taskTime, startRule.tat, startRule.tatType);
+    const firstTaskEndTime = calculateTATWithEnhancements(taskTime, startRule.tat, startRule.tatType, startRule.email);
     const firstTask: SimulationTask = {
       id: `sim-${Date.now()}-1`,
       taskName: startRule.nextTask,
@@ -166,7 +208,7 @@ export default function FlowSimulator() {
       
       if (!nextRule) break;
       
-      const taskEndTime = calculateTATWithLunch(taskTime, nextRule.tat, nextRule.tatType);
+      const taskEndTime = calculateTATWithEnhancements(taskTime, nextRule.tat, nextRule.tatType, nextRule.email);
       const nextTask: SimulationTask = {
         id: `sim-${Date.now()}-${taskCounter}`,
         taskName: nextRule.nextTask,
@@ -407,6 +449,171 @@ export default function FlowSimulator() {
             </CardContent>
           </Card>
 
+          {/* Enhanced Simulation Parameters */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="w-5 h-5" />
+                Performance Parameters
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                
+                {/* Event Speed */}
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Event Speed (%)
+                  </label>
+                  <Select value={eventSpeed.toString()} onValueChange={(value) => setEventSpeed(Number(value))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="50">50% - Slow</SelectItem>
+                      <SelectItem value="75">75% - Below Average</SelectItem>
+                      <SelectItem value="100">100% - Normal</SelectItem>
+                      <SelectItem value="125">125% - Fast</SelectItem>
+                      <SelectItem value="150">150% - Very Fast</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Team Count */}
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Team Count per Task
+                  </label>
+                  <Select value={teamCount.toString()} onValueChange={(value) => setTeamCount(Number(value))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1 Person</SelectItem>
+                      <SelectItem value="2">2 People</SelectItem>
+                      <SelectItem value="3">3 People</SelectItem>
+                      <SelectItem value="4">4 People</SelectItem>
+                      <SelectItem value="5">5 People</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Peak Time Start */}
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Peak Time Start
+                  </label>
+                  <Select value={peakTimeStart} onValueChange={setPeakTimeStart}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="09:00">09:00 AM</SelectItem>
+                      <SelectItem value="10:00">10:00 AM</SelectItem>
+                      <SelectItem value="11:00">11:00 AM</SelectItem>
+                      <SelectItem value="12:00">12:00 PM</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Peak Time End */}
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Peak Time End
+                  </label>
+                  <Select value={peakTimeEnd} onValueChange={setPeakTimeEnd}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="14:00">02:00 PM</SelectItem>
+                      <SelectItem value="15:00">03:00 PM</SelectItem>
+                      <SelectItem value="16:00">04:00 PM</SelectItem>
+                      <SelectItem value="17:00">05:00 PM</SelectItem>
+                      <SelectItem value="18:00">06:00 PM</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Peak Speed */}
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Speed in Peak Time (%)
+                  </label>
+                  <Select value={peakSpeed.toString()} onValueChange={(value) => setPeakSpeed(Number(value))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="40">40% - Very Slow</SelectItem>
+                      <SelectItem value="50">50% - Slow</SelectItem>
+                      <SelectItem value="60">60% - Reduced</SelectItem>
+                      <SelectItem value="70">70% - Slightly Reduced</SelectItem>
+                      <SelectItem value="80">80% - Minor Impact</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Simulation Speed Multiplier */}
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Simulation Speed
+                  </label>
+                  <Select value={(simulation?.speed || 1).toString()} onValueChange={(value) => {
+                    setSimulation(prev => prev ? {...prev, speed: Number(value)} : null);
+                  }}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1x - Real Time</SelectItem>
+                      <SelectItem value="2">2x - Fast</SelectItem>
+                      <SelectItem value="5">5x - Very Fast</SelectItem>
+                      <SelectItem value="10">10x - Ultra Fast</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* User Speed Configuration */}
+              {selectedSystem && (
+                <div className="mt-6">
+                  <h4 className="text-sm font-medium text-gray-700 mb-3">User-Specific Speed Multipliers</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-40 overflow-y-auto">
+                    {Array.from(new Set(
+                      (flowRules as any[])?.filter(rule => rule.system === selectedSystem)
+                        .map(rule => rule.email) || []
+                    )).map((email: string) => (
+                      <div key={email} className="flex items-center gap-2">
+                        <span className="text-xs text-gray-600 flex-1 truncate">{email.split('@')[0]}</span>
+                        <Select 
+                          value={(userSpeedMultipliers[email] || 100).toString()} 
+                          onValueChange={(value) => {
+                            setUserSpeedMultipliers(prev => ({
+                              ...prev,
+                              [email]: Number(value)
+                            }));
+                          }}
+                        >
+                          <SelectTrigger className="w-24">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="50">50%</SelectItem>
+                            <SelectItem value="75">75%</SelectItem>
+                            <SelectItem value="100">100%</SelectItem>
+                            <SelectItem value="125">125%</SelectItem>
+                            <SelectItem value="150">150%</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {simulation && (
             <>
               {/* Simulation Status */}
@@ -542,6 +749,42 @@ export default function FlowSimulator() {
                               </div>
                             </div>
                             
+                            {/* Enhanced Performance Metrics */}
+                            <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                                <div>
+                                  <span className="text-gray-500">Current Speed:</span>
+                                  <p className="font-medium text-blue-600">
+                                    {Math.round(calculateEffectiveSpeed(task.doerEmail, simulation.currentTime) * 100)}%
+                                  </p>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Team Size:</span>
+                                  <p className="font-medium">{teamCount} {teamCount === 1 ? 'person' : 'people'}</p>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Peak Impact:</span>
+                                  <p className={`font-medium ${isInPeakTime(simulation.currentTime) ? 'text-orange-600' : 'text-green-600'}`}>
+                                    {isInPeakTime(simulation.currentTime) ? `${peakSpeed}% (Peak)` : `${eventSpeed}% (Normal)`}
+                                  </p>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">User Speed:</span>
+                                  <p className="font-medium">
+                                    {userSpeedMultipliers[task.doerEmail] || 100}%
+                                  </p>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Wait Time:</span>
+                                  <p className="font-medium text-yellow-600">{task.waitingTime.toFixed(1)}m</p>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Process Time:</span>
+                                  <p className="font-medium text-green-600">{task.processingTime.toFixed(1)}m</p>
+                                </div>
+                              </div>
+                            </div>
+                            
                             {/* Progress Bar */}
                             {task.status === 'in_progress' && (
                               <div className="mt-3">
@@ -574,7 +817,7 @@ export default function FlowSimulator() {
               </Card>
 
               {/* Performance Summary */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <Card>
                   <CardHeader>
                     <CardTitle>Throughput Analysis</CardTitle>
@@ -604,6 +847,51 @@ export default function FlowSimulator() {
                         <span className="text-gray-600">Total Cycle Time:</span>
                         <span className="font-semibold text-blue-600">
                           {simulation.totalThroughputTime.toFixed(1)} hours
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Enhanced Performance Factors */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4" />
+                      Performance Factors
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Base Speed:</span>
+                        <span className="font-semibold text-blue-600">{eventSpeed}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Team Benefit:</span>
+                        <span className="font-semibold text-green-600">
+                          {Math.round((1 + (teamCount - 1) * 0.3) * 100)}%
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Peak Impact:</span>
+                        <span className={`font-semibold ${isInPeakTime(simulation.currentTime) ? 'text-orange-600' : 'text-green-600'}`}>
+                          {isInPeakTime(simulation.currentTime) ? `${peakSpeed}% (Active)` : 'No Impact'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Current Period:</span>
+                        <span className="font-medium">
+                          {isInPeakTime(simulation.currentTime) ? '🔴 Peak Hours' : '🟢 Normal Hours'}
+                        </span>
+                      </div>
+                      <Separator />
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Effective Speed:</span>
+                        <span className="font-semibold text-purple-600">
+                          {Math.round(simulation.tasks.reduce((avg, task) => 
+                            avg + calculateEffectiveSpeed(task.doerEmail, simulation.currentTime), 0
+                          ) / Math.max(1, simulation.tasks.length) * 100)}%
                         </span>
                       </div>
                     </div>
