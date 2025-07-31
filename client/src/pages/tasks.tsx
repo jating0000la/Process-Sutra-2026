@@ -660,7 +660,19 @@ export default function Tasks() {
                             {/* Initial Form Data - Always Visible */}
                             {task.flowInitialFormData && (
                               <div className="pt-2 border-t border-blue-200 dark:border-blue-700 task-initial-data">
-                                <div className="font-medium text-blue-700 dark:text-blue-300 text-xs mb-1">📄 Initial Data:</div>
+                                <div className="font-medium text-blue-700 dark:text-blue-300 text-xs mb-2">📄 Initial Data</div>
+                                
+                                {/* Form Name Section */}
+                                <div className="mb-3 p-2 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                                  <div className="flex items-center space-x-2">
+                                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                    <div className="font-semibold text-green-800 dark:text-green-200 text-xs">
+                                      Form: {task.formId || 'Unknown Form'}
+                                    </div>
+                                  </div>
+                                </div>
+                                
+                                {/* Form Data Section */}
                                 <div className="bg-white dark:bg-gray-800 rounded p-2 text-xs border border-gray-200 dark:border-gray-600 shadow-sm max-h-40 overflow-y-auto">
                                   {Object.entries(task.flowInitialFormData).map(([key, value]) => {
                                     // Get the original form template to determine if this is a table field
