@@ -22,47 +22,40 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  const syncUserWithBackend = async (firebaseUser: any) => {
+    try {
+      console.log('Syncing user with backend:', firebaseUser.email);
+      const idToken = await firebaseUser.getIdToken(true); // Force refresh
+      
+      const response = await fetch('/api/auth/firebase-login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName,
+          photoURL: firebaseUser.photoURL,
+          idToken: idToken,
+        }),
+      });
+      
+      if (response.ok) {
+        console.log('Successfully authenticated with backend');
+        const data = await response.json();
+        console.log('Backend response:', data);
+      } else {
+        const errorData = await response.json();
+        console.error('Backend authentication failed:', errorData);
+      }
+    } catch (error) {
+      console.error('Error syncing user with backend:', error);
+    }
+  };
 
   useEffect(() => {
-    let isHandlingAuth = false;
-    
-    const syncUserWithBackend = async (firebaseUser: any) => {
-      if (isHandlingAuth) return;
-      isHandlingAuth = true;
-      
-      try {
-        console.log('Syncing user with backend:', firebaseUser.email);
-        const idToken = await firebaseUser.getIdToken(true); // Force refresh
-        
-        const response = await fetch('/api/auth/firebase-login', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName,
-            photoURL: firebaseUser.photoURL,
-            idToken: idToken,
-          }),
-        });
-        
-        if (response.ok) {
-          console.log('Successfully authenticated with backend');
-          const data = await response.json();
-          console.log('Backend response:', data);
-        } else {
-          const errorData = await response.json();
-          console.error('Backend authentication failed:', errorData);
-        }
-      } catch (error) {
-        console.error('Error syncing user with backend:', error);
-      }
-      
-      isHandlingAuth = false;
-    };
-
     // Handle redirect result on app load
     const handleRedirect = async () => {
       try {
