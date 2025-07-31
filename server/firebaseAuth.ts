@@ -40,13 +40,16 @@ export function getSession() {
 
 async function upsertUser(userData: any) {
   try {
-    await storage.upsertUser({
-      id: userData.uid,
+    // Don't pass ID for upsert to avoid constraint violations
+    const userPayload = {
       email: userData.email,
       firstName: userData.displayName ? userData.displayName.split(' ')[0] : '',
       lastName: userData.displayName ? userData.displayName.split(' ').slice(1).join(' ') : '',
       profileImageUrl: userData.photoURL,
-    });
+      lastLoginAt: new Date(),
+    };
+    
+    await storage.upsertUser(userPayload);
   } catch (error) {
     console.error("Error upserting user:", error);
     throw error;

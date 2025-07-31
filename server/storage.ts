@@ -105,7 +105,7 @@ export class DatabaseStorage implements IStorage {
 
   async upsertUser(userData: UpsertUser): Promise<User> {
     try {
-      // First try to find existing user by email or id
+      // First try to find existing user by email
       const existingUser = await db
         .select()
         .from(users)
@@ -113,11 +113,14 @@ export class DatabaseStorage implements IStorage {
         .limit(1);
       
       if (existingUser.length > 0) {
-        // Update existing user
+        // Update existing user - EXCLUDE id from update to prevent constraint violations
+        const updateData = { ...userData };
+        delete updateData.id; // Don't update the ID
+        
         const [user] = await db
           .update(users)
           .set({
-            ...userData,
+            ...updateData,
             updatedAt: new Date(),
           })
           .where(eq(users.email, userData.email))
@@ -130,7 +133,7 @@ export class DatabaseStorage implements IStorage {
       }
     } catch (error) {
       console.error("Error in upsertUser:", error);
-      // If there's still a conflict, try to find and update the user
+      // If there's still a conflict, try to find and return the existing user
       const [existingUser] = await db
         .select()
         .from(users)
@@ -138,15 +141,7 @@ export class DatabaseStorage implements IStorage {
         .limit(1);
       
       if (existingUser) {
-        const [user] = await db
-          .update(users)
-          .set({
-            ...userData,
-            updatedAt: new Date(),
-          })
-          .where(eq(users.email, userData.email))
-          .returning();
-        return user;
+        return existingUser;
       }
       throw error;
     }
