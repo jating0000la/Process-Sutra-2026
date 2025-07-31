@@ -133,3 +133,6 @@ Preferred communication style: Simple, everyday language.
 - ✓ Implemented configurable TAT settings with new TAT Configuration page
 - ✓ Added support for multiple TAT calculation methods (hourtat, daytat, beforetat, specifytat)
 - ✓ System now handles timezone-aware calculations and office hour constraints
+- ✓ Added "View Flow Data" button in task completion popup to display all form data for entire workflow
+- ✓ Removed manual status dropdown options from task cards to prevent user errors and simplify interface
+- ✓ Tasks now display status as read-only badges instead of editable dropdowns

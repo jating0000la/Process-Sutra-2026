@@ -192,36 +192,7 @@ export default function Tasks() {
     }
   };
 
-  const statusChangeMutation = useMutation({
-    mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
-      await apiRequest("PATCH", `/api/tasks/${taskId}/status`, { status });
-    },
-    onSuccess: () => {
-      toast({
-        title: "Success",
-        description: "Task status updated successfully",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-    },
-    onError: (error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
-      toast({
-        title: "Error",
-        description: "Failed to update task status",
-        variant: "destructive",
-      });
-    },
-  });
+
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -234,18 +205,7 @@ export default function Tasks() {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "completed":
-        return "bg-green-100 text-green-800";
-      case "overdue":
-        return "bg-red-100 text-red-800";
-      case "in_progress":
-        return "bg-blue-100 text-blue-800";
-      default:
-        return "bg-yellow-100 text-yellow-800";
-    }
-  };
+
 
   if (isLoading) {
     return (
@@ -354,20 +314,13 @@ export default function Tasks() {
                         </div>
                       </div>
                       <div className="flex items-center space-x-3">
-                        <Select 
-                          value={task.status} 
-                          onValueChange={(value) => statusChangeMutation.mutate({ taskId: task.id, status: value })}
-                        >
-                          <SelectTrigger className="w-36">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="pending">Pending</SelectItem>
-                            <SelectItem value="in_progress">In Progress</SelectItem>
-                            <SelectItem value="completed">Completed</SelectItem>
-                            <SelectItem value="overdue">Overdue</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <Badge variant={
+                          task.status === 'completed' ? 'default' :
+                          task.status === 'in_progress' ? 'secondary' :
+                          task.status === 'overdue' ? 'destructive' : 'outline'
+                        }>
+                          {task.status}
+                        </Badge>
                         <Dialog>
                           <DialogTrigger asChild>
                             <Button 
@@ -410,7 +363,11 @@ export default function Tasks() {
                                   </div>
                                   <div>
                                     <Label className="text-sm text-gray-600">Status</Label>
-                                    <Badge className={getStatusColor(selectedTask.status)}>
+                                    <Badge variant={
+                                      selectedTask.status === 'completed' ? 'default' :
+                                      selectedTask.status === 'in_progress' ? 'secondary' :
+                                      selectedTask.status === 'overdue' ? 'destructive' : 'outline'
+                                    }>
                                       {selectedTask.status.replace('_', ' ')}
                                     </Badge>
                                   </div>
