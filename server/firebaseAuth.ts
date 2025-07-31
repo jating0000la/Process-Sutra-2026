@@ -49,7 +49,7 @@ async function upsertUser(userData: any) {
       lastLoginAt: new Date(),
     };
     
-    await storage.upsertUser(userPayload);
+    return await storage.upsertUser(userPayload);
   } catch (error) {
     console.error("Error upserting user:", error);
     throw error;
@@ -84,29 +84,30 @@ export async function setupAuth(app: Express) {
         return res.status(401).json({ message: 'Token UID mismatch' });
       }
 
-      // Upsert user in database
-      await upsertUser({
+      // Upsert user in database and get the database user
+      const dbUser = await upsertUser({
         uid: decodedToken.uid,
         email: decodedToken.email || email,
         displayName: displayName,
         photoURL: photoURL,
       });
 
-      // Create session
+      // Create session with database user ID
       (req.session as any).user = {
-        id: decodedToken.uid,
-        email: decodedToken.email || email,
+        id: dbUser.id, // Use database ID, not Firebase UID
+        email: dbUser.email,
         claims: decodedToken,
       };
 
       res.json({ 
         success: true, 
         user: {
-          id: decodedToken.uid,
-          email: decodedToken.email || email,
-          firstName: displayName ? displayName.split(' ')[0] : '',
-          lastName: displayName ? displayName.split(' ').slice(1).join(' ') : '',
-          profileImageUrl: photoURL,
+          id: dbUser.id,
+          email: dbUser.email,
+          firstName: dbUser.firstName,
+          lastName: dbUser.lastName,
+          profileImageUrl: dbUser.profileImageUrl,
+          role: dbUser.role,
         }
       });
 
