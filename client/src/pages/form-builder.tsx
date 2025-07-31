@@ -276,17 +276,24 @@ export default function FormBuilder() {
   };
 
   const saveForm = () => {
+    // Make sure to update all questions with their current state
+    let updatedQuestions = [...questions];
+    
     // Update current selected question with table columns before saving
     if (selectedQuestion?.type === "table") {
-      updateQuestion(selectedQuestion.id, { tableColumns });
+      updatedQuestions = updatedQuestions.map(q => 
+        q.id === selectedQuestion.id ? { ...q, tableColumns: [...tableColumns] } : q
+      );
     }
     
     const formData = {
       formId: form.getValues("formId"),
       title: form.getValues("title"),
       description: form.getValues("description"),
-      questions,
+      questions: updatedQuestions,
     };
+
+    console.log("Saving form data:", JSON.stringify(formData, null, 2));
 
     if (currentForm) {
       updateTemplateMutation.mutate({ id: currentForm.id, data: formData });
@@ -298,7 +305,8 @@ export default function FormBuilder() {
   const editTemplate = (template: any) => {
     setCurrentForm(template);
     setQuestions(template.questions || []);
-    setTableColumns([]);
+    setSelectedQuestion(null); // Reset selected question
+    setTableColumns([]); // Reset table columns
     form.reset({
       formId: template.formId,
       title: template.title,
@@ -509,7 +517,7 @@ export default function FormBuilder() {
                     <div className="space-y-2 mb-4">
                       <p className="text-sm text-gray-500">Form ID: {template.formId}</p>
                       <p className="text-sm text-gray-500">
-                        {template.questions?.length || 0} questions
+                        {Array.isArray(template.questions) ? template.questions.length : 0} questions
                       </p>
                     </div>
                     <div className="flex space-x-2">
