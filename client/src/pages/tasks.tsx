@@ -84,15 +84,29 @@ export default function Tasks() {
     
     // Find the form template that matches this form ID
     const template = (formTemplates as any[])?.find((t: any) => t.formId === formId);
-    if (!template?.fields) return formData;
+    if (!template?.questions) return formData; // Use 'questions' not 'fields'
     
     const readableData: Record<string, any> = {};
     
     // Map question IDs to labels
     Object.entries(formData).forEach(([key, value]) => {
-      const field = template.fields.find((f: any) => f.id === key);
+      const field = template.questions.find((f: any) => f.id === key);
       const label = field?.label || key; // Use label if found, otherwise keep original key
-      readableData[label] = value;
+      
+      // Handle special formatting for table data
+      if (field?.type === 'table' && Array.isArray(value)) {
+        const tableData = value.map((row: any, index: number) => {
+          const rowData = Object.entries(row).map(([colKey, colValue]) => {
+            const column = field.tableColumns?.find((col: any) => col.id === colKey);
+            const colLabel = column?.label || colKey;
+            return `${colLabel}: ${colValue}`;
+          }).join(', ');
+          return `Row ${index + 1}: ${rowData}`;
+        }).join(' | ');
+        readableData[label] = tableData;
+      } else {
+        readableData[label] = value;
+      }
     });
     
     return readableData;
@@ -606,9 +620,9 @@ export default function Tasks() {
                                 <div className="font-medium text-blue-700 dark:text-blue-300 text-xs mb-1">Initial Data:</div>
                                 <div className="bg-white dark:bg-gray-800 rounded p-1 text-xs">
                                   {Object.entries(getReadableFormData(task.flowInitialFormData, task.formId)).map(([key, value]) => (
-                                    <div key={key} className="flex">
-                                      <span className="font-medium text-gray-600 dark:text-gray-400">{key}:</span>
-                                      <span className="text-gray-800 dark:text-gray-200 ml-1">{String(value)}</span>
+                                    <div key={key} className="flex flex-wrap mb-1">
+                                      <span className="font-medium text-gray-600 dark:text-gray-400 mr-1">{key}:</span>
+                                      <span className="text-gray-800 dark:text-gray-200 break-words">{String(value)}</span>
                                     </div>
                                   ))}
                                 </div>
