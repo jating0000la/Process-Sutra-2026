@@ -155,7 +155,7 @@ export async function trackLogin(userId: string) {
   try {
     const deviceInfo = getDeviceInfo();
     // Temporarily disable location fetching to prevent errors
-    const locationInfo = {}; // await getLocationInfo();
+    const locationInfo: LocationInfo = {}; // await getLocationInfo();
     
     // Register/update device
     await fetch('/api/devices', {
@@ -185,7 +185,7 @@ export async function trackLogin(userId: string) {
         browserName: deviceInfo.browserName,
         browserVersion: deviceInfo.browserVersion,
         operatingSystem: deviceInfo.operatingSystem,
-        ipAddress: locationInfo.ip,
+        ipAddress: locationInfo.ip || null,
         location: locationInfo.country ? {
           country: locationInfo.country,
           region: locationInfo.region,

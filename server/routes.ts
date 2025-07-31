@@ -318,7 +318,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const { toEmail, reason } = req.body;
-      const userId = req.user?.claims?.sub;
+      const userId = (req.user as any)?.claims?.sub;
       
       if (!toEmail) {
         return res.status(400).json({ message: "Transfer email is required" });
@@ -357,7 +357,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/flows/start", isAuthenticated, async (req, res) => {
     try {
       const { system, orderNumber, description, initialFormData } = req.body;
-      const userId = req.user?.claims?.sub;
+      const userId = (req.user as any)?.claims?.sub;
       
       if (!system) {
         return res.status(400).json({ message: "System is required" });
@@ -387,7 +387,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           parsedInitialFormData = JSON.parse(initialFormData);
         } catch (error) {
-          return res.status(400).json({ message: "Invalid JSON format for initial form data" });
+          console.error("JSON parse error:", error);
+          return res.status(400).json({ message: `Invalid JSON format for initial form data: ${error.message}` });
         }
       }
       
@@ -466,7 +467,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id: response.id,
         taskId: response.taskId,
         formData: response.formData,
-        submittedAt: new Date(response.timestamp).toISOString(),
+        submittedAt: response.timestamp ? new Date(response.timestamp).toISOString() : new Date().toISOString(),
       })).sort((a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime());
       
       res.json(responses);
