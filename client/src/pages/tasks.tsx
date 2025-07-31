@@ -75,6 +75,26 @@ export default function Tasks() {
     enabled: isAuthenticated,
   });
 
+  // Helper function to convert question IDs to readable labels
+  const getReadableFormData = (formData: any, formId?: string): Record<string, any> => {
+    if (!formData || !formTemplates) return formData;
+    
+    // Find the form template that matches this form ID
+    const template = (formTemplates as any[])?.find((t: any) => t.formId === formId);
+    if (!template?.fields) return formData;
+    
+    const readableData: Record<string, any> = {};
+    
+    // Map question IDs to labels
+    Object.entries(formData).forEach(([key, value]) => {
+      const field = template.fields.find((f: any) => f.id === key);
+      const label = field?.label || key; // Use label if found, otherwise keep original key
+      readableData[label] = value;
+    });
+    
+    return readableData;
+  };
+
   const handleFillForm = async (task: any) => {
     if (!task.formId) return;
     
@@ -584,7 +604,7 @@ export default function Tasks() {
                               <div className="pt-2 border-t border-blue-200 dark:border-blue-700">
                                 <div className="font-medium text-blue-700 dark:text-blue-300 text-xs mb-1">Initial Data:</div>
                                 <div className="bg-white dark:bg-gray-800 rounded p-1 text-xs">
-                                  {Object.entries(task.flowInitialFormData).map(([key, value]) => (
+                                  {Object.entries(getReadableFormData(task.flowInitialFormData, task.formId)).map(([key, value]) => (
                                     <div key={key} className="flex">
                                       <span className="font-medium text-gray-600 dark:text-gray-400">{key}:</span>
                                       <span className="text-gray-800 dark:text-gray-200 ml-1">{String(value)}</span>
@@ -854,7 +874,7 @@ export default function Tasks() {
                     <span className="ml-2 text-xs text-blue-600">({flowDataForTask.firstTask?.taskName})</span>
                   </div>
                   <div className="space-y-2">
-                    {Object.entries(flowDataForTask.firstFormData).map(([key, value]) => (
+                    {Object.entries(getReadableFormData(flowDataForTask.firstFormData, flowDataForTask.firstTask?.formId)).map(([key, value]) => (
                       <div key={key} className="flex items-start">
                         <span className="font-medium text-blue-800 mr-3 min-w-0 flex-shrink-0 text-sm">
                           {key}:
@@ -953,7 +973,7 @@ export default function Tasks() {
                             </span>
                           </div>
                           <div className="text-xs space-y-1">
-                            {Object.entries(response.data || {}).map(([key, value]) => (
+                            {Object.entries(getReadableFormData(response.data || {}, response.formId)).map(([key, value]) => (
                               <div key={key} className="flex">
                                 <span className="font-medium text-gray-600 mr-2 min-w-0 flex-shrink-0">
                                   {key}:
