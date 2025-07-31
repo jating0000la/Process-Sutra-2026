@@ -84,7 +84,27 @@ export default function Tasks() {
     
     // Find the form template that matches this form ID
     const template = (formTemplates as any[])?.find((t: any) => t.formId === formId);
-    if (!template?.questions) return formData; // Use 'questions' not 'fields'
+    
+    if (!template?.questions) {
+      // If no template found, still try to format table data if we can detect it
+      const readableData: Record<string, any> = {};
+      Object.entries(formData).forEach(([key, value]) => {
+        if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
+          // This looks like table data, format it
+          const tableRows = value.map((row: any, index: number) => {
+            const rowEntries = Object.entries(row).map(([colKey, colValue]) => {
+              const colLabel = colKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
+              return `${colLabel}: ${colValue}`;
+            });
+            return `Item ${index + 1} - ${rowEntries.join(', ')}`;
+          });
+          readableData[key] = tableRows.join(' • ');
+        } else {
+          readableData[key] = value;
+        }
+      });
+      return readableData;
+    }
     
     const readableData: Record<string, any> = {};
     
@@ -95,7 +115,7 @@ export default function Tasks() {
       
       // Handle special formatting for table data
       if (field?.type === 'table' && Array.isArray(value)) {
-        // Create a more readable table format
+        // Create a more readable table format with proper column mapping
         const tableRows = value.map((row: any, index: number) => {
           const rowEntries = Object.entries(row).map(([colKey, colValue]) => {
             const column = field.tableColumns?.find((col: any) => col.id === colKey);
@@ -105,6 +125,19 @@ export default function Tasks() {
           return `Item ${index + 1} - ${rowEntries.join(', ')}`;
         });
         readableData[label] = tableRows.join(' • ');
+      } else if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
+        // Handle table data even without field definition (fallback)
+        const tableRows = value.map((row: any, index: number) => {
+          const rowEntries = Object.entries(row).map(([colKey, colValue]) => {
+            const colLabel = colKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
+            return `${colLabel}: ${colValue}`;
+          });
+          return `Item ${index + 1} - ${rowEntries.join(', ')}`;
+        });
+        readableData[label] = tableRows.join(' • ');
+      } else if (Array.isArray(value)) {
+        // Handle other arrays by joining them
+        readableData[label] = value.join(', ');
       } else if (typeof value === 'object' && value !== null) {
         // Handle other object types by stringifying them properly
         readableData[label] = JSON.stringify(value);
