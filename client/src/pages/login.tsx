@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import AuthDebug from "@/components/auth-debug";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -51,6 +52,7 @@ export default function LoginPage() {
           </div>
         </CardContent>
       </Card>
+      <AuthDebug />
     </div>
   );
 }
