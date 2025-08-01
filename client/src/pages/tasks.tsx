@@ -803,310 +803,196 @@ export default function Tasks() {
           }
         />
 
-        <div className="p-6">
-          {/* Filters */}
-          <div className="mb-6 flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Label htmlFor="status-filter">Filter by status:</Label>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <Button 
-                variant="outline" 
-                onClick={handleExportData}
-                disabled={isExporting}
-                size="sm"
-              >
-                <Download className="w-4 h-4 mr-2" />
-                {isExporting ? "Exporting..." : "Export Data"}
-              </Button>
-              
-              <Button variant="outline" size="sm" onClick={() => window.location.href = '/flow-data'}>
-                <Database className="w-4 h-4 mr-2" />
-                View Flow Data
-              </Button>
+        <div className="p-6 bg-gradient-to-br from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 min-h-screen">
+          {/* Enhanced Filters Section */}
+          <div className="mb-8">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-6">
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <div className="flex items-center space-x-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                      <Clock className="w-4 h-4 text-white" />
+                    </div>
+                    <div>
+                      <Label htmlFor="status-filter" className="text-sm font-semibold text-gray-900 dark:text-white">
+                        Filter Tasks
+                      </Label>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Choose status to filter</p>
+                    </div>
+                  </div>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-48 h-11 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-600 border-2 border-gray-200 dark:border-gray-600 rounded-xl shadow-sm hover:shadow-md transition-all">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl border-2">
+                      <SelectItem value="all" className="rounded-lg">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                          <span>All Status</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="pending" className="rounded-lg">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-yellow-400 rounded-full"></div>
+                          <span>Pending</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="completed" className="rounded-lg">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                          <span>Completed</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="flex items-center space-x-3">
+                  <Button 
+                    variant="outline" 
+                    onClick={handleExportData}
+                    disabled={isExporting}
+                    className="h-11 px-6 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 border-2 border-emerald-200 dark:border-emerald-700 hover:from-emerald-100 hover:to-teal-100 dark:hover:from-emerald-900/30 dark:hover:to-teal-900/30 text-emerald-700 dark:text-emerald-300 rounded-xl shadow-sm hover:shadow-md transition-all"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    {isExporting ? "Exporting..." : "Export Data"}
+                  </Button>
+                  
+                  <Button 
+                    variant="outline" 
+                    onClick={() => window.location.href = '/flow-data'}
+                    className="h-11 px-6 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-2 border-blue-200 dark:border-blue-700 hover:from-blue-100 hover:to-indigo-100 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30 text-blue-700 dark:text-blue-300 rounded-xl shadow-sm hover:shadow-md transition-all"
+                  >
+                    <Database className="w-4 h-4 mr-2" />
+                    View Flow Data
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Task List */}
-          <div className="space-y-4">
+          {/* Enhanced Task List */}
+          <div className="space-y-6">
             {tasksLoading ? (
               [...Array(5)].map((_, i) => (
-                <Card key={i} className="animate-pulse">
-                  <CardContent className="p-6">
-                    <div className="flex items-center space-x-4">
-                      <div className="w-10 h-10 bg-gray-200 rounded-lg"></div>
+                <Card key={i} className="animate-pulse bg-white dark:bg-gray-800 rounded-2xl shadow-lg border-0">
+                  <CardContent className="p-8">
+                    <div className="flex items-center space-x-6">
+                      <div className="w-16 h-16 bg-gradient-to-br from-gray-200 to-gray-300 rounded-2xl"></div>
                       <div className="flex-1">
-                        <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
-                        <div className="h-3 bg-gray-200 rounded w-3/4"></div>
+                        <div className="h-5 bg-gray-200 rounded-lg w-1/2 mb-3"></div>
+                        <div className="h-4 bg-gray-200 rounded-lg w-3/4 mb-2"></div>
+                        <div className="h-3 bg-gray-200 rounded-lg w-1/3"></div>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
               ))
             ) : (tasks as any[])?.length === 0 ? (
-              <Card>
-                <CardContent className="p-12 text-center">
-                  <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No tasks found</h3>
-                  <p className="text-gray-500 mb-4">
+              <Card className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border-0 overflow-hidden">
+                <CardContent className="p-16 text-center">
+                  <div className="w-24 h-24 bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <Clock className="w-12 h-12 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">No tasks found</h3>
+                  <p className="text-gray-500 dark:text-gray-400 mb-8 text-lg">
                     {statusFilter === "all" 
-                      ? "You don't have any tasks assigned yet."
+                      ? "You don't have any tasks assigned yet. Create a new flow to get started!"
                       : `No ${statusFilter} tasks found. Try selecting "All Status" to see all tasks.`
                     }
                   </p>
-                  <Button onClick={() => window.location.href = '/flows'}>
+                  <Button 
+                    onClick={() => window.location.href = '/flows'}
+                    className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all transform hover:scale-105"
+                  >
+                    <Plus className="w-5 h-5 mr-2" />
                     Create New Flow
                   </Button>
                 </CardContent>
               </Card>
             ) : (
               (tasks as any[])?.map((task: any) => (
-                <Card key={task.id} className="hover:shadow-md transition-shadow">
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-4">
-                        <div className="bg-blue-100 p-2 rounded-lg">
-                          {getStatusIcon(task.status)}
+                <Card key={task.id} className="group bg-white dark:bg-gray-800 rounded-2xl shadow-lg border-0 hover:shadow-2xl hover:scale-[1.02] transition-all duration-300 overflow-hidden">
+                  <CardContent className="p-0">
+                    {/* Task Header with Status Indicator */}
+                    <div className="p-6 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 dark:from-blue-900/20 dark:via-indigo-900/20 dark:to-purple-900/20 border-b border-blue-100 dark:border-blue-800/30">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-4">
+                          <div className={`relative p-4 rounded-2xl shadow-lg transform group-hover:scale-110 transition-transform ${
+                            task.status === 'completed' 
+                              ? 'bg-gradient-to-br from-green-400 to-emerald-500' 
+                              : task.status === 'overdue'
+                              ? 'bg-gradient-to-br from-red-400 to-pink-500'
+                              : 'bg-gradient-to-br from-yellow-400 to-orange-500'
+                          }`}>
+                            {getStatusIcon(task.status)}
+                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-white dark:bg-gray-800 rounded-full flex items-center justify-center">
+                              <div className={`w-2 h-2 rounded-full ${
+                                task.status === 'completed' ? 'bg-green-500' 
+                                : task.status === 'overdue' ? 'bg-red-500' 
+                                : 'bg-yellow-500'
+                              } animate-pulse`}></div>
+                            </div>
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                              {task.taskName}
+                            </h3>
+                            <div className="flex items-center space-x-2 mt-1">
+                              <div className="px-3 py-1 bg-gradient-to-r from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 rounded-full">
+                                <p className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                                  System: {task.system}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                        <div>
-                          <h3 className="text-sm font-medium text-gray-900">{task.taskName}</h3>
-                          <p className="text-sm text-gray-600">System: {task.system}</p>
-                          
-                          {/* Flow Context Information - WHO, WHAT, WHEN, HOW */}
-                          <div className="mt-2 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                            <div className="text-xs font-semibold text-blue-800 dark:text-blue-200 mb-2">📋 Flow Context</div>
-                            
-                            {/* WHO, WHAT, WHEN */}
-                            <div className="grid grid-cols-1 gap-1 text-xs mb-2">
-                              {task.flowInitiatedBy && (
-                                <div>
-                                  <span className="font-medium text-blue-700 dark:text-blue-300">WHO:</span>
-                                  <span className="text-blue-600 dark:text-blue-400 ml-1">Started by {task.flowInitiatedBy}</span>
-                                </div>
-                              )}
-                              
-                              {task.flowDescription && (
-                                <div>
-                                  <span className="font-medium text-blue-700 dark:text-blue-300">WHAT:</span>
-                                  <span className="text-blue-600 dark:text-blue-400 ml-1">{task.flowDescription}</span>
-                                </div>
-                              )}
-                              
-                              {task.flowInitiatedAt && (
-                                <div>
-                                  <span className="font-medium text-blue-700 dark:text-blue-300">WHEN:</span>
-                                  <span className="text-blue-600 dark:text-blue-400 ml-1">{format(new Date(task.flowInitiatedAt), 'MMM dd, yyyy HH:mm')}</span>
-                                </div>
-                              )}
-                              
-                              <div>
-                                <span className="font-medium text-blue-700 dark:text-blue-300">ORDER:</span>
-                                <span className="text-blue-600 dark:text-blue-400 ml-1 font-mono">{task.orderNumber}</span>
-                              </div>
-                            </div>
-                            
-                            {/* Data View Button and Flow Data */}
-                            <div className="pt-2 border-t border-blue-200 dark:border-blue-700">
-                              {/* Data View Button */}
-                              <div className="flex justify-between items-center mb-2">
-                                <div className="font-medium text-blue-700 dark:text-blue-300 text-xs">📄 Flow Data</div>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    const newExpanded = new Set(expandedDataTasks);
-                                    if (newExpanded.has(task.id)) {
-                                      newExpanded.delete(task.id);
-                                    } else {
-                                      newExpanded.add(task.id);
-                                    }
-                                    setExpandedDataTasks(newExpanded);
-                                  }}
-                                  className="h-6 px-2 text-xs"
-                                >
-                                  <Database className="h-3 w-3 mr-1" />
-                                  {expandedDataTasks.has(task.id) ? 'Hide Data' : 'View Data'}
-                                </Button>
-                              </div>
-                              
-                              {/* Expandable Data Section */}
-                              {expandedDataTasks.has(task.id) && (
-                                <div className="bg-white dark:bg-gray-800 rounded p-2 text-xs border border-gray-200 dark:border-gray-600 shadow-sm max-h-60 overflow-y-auto">
-                                  {(() => {
-                                    // Get all tasks from the same flow, sorted by creation date
-                                    const flowTasks = (tasks as any[])?.filter(t => t.flowId === task.flowId && t.status === 'completed')
-                                      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) || [];
-                                    
-                                    // Get all form responses for this flow
-                                    const flowResponses = (formResponses as any[])?.filter(fr => 
-                                      flowTasks.some(ft => ft.id === fr.taskId)
-                                    ) || [];
-                                    
-                                    const allFormData: { formName: string, data: any, taskName: string, order: number }[] = [];
-                                    
-                                    // Add initial form data if available
-                                    if (task.flowInitialFormData) {
-                                      allFormData.push({
-                                        formName: task.formId || 'Initial Form',
-                                        data: task.flowInitialFormData,
-                                        taskName: 'Initial Task',
-                                        order: 0
-                                      });
-                                    }
-                                    
-                                    // Add completed task responses
-                                    flowTasks.forEach((flowTask, index) => {
-                                      const taskResponse = flowResponses.find(fr => fr.taskId === flowTask.id);
-                                      if (taskResponse && taskResponse.formData) {
-                                        allFormData.push({
-                                          formName: flowTask.formId || `Task ${index + 1} Form`,
-                                          data: taskResponse.formData,
-                                          taskName: flowTask.taskName || `Task ${index + 1}`,
-                                          order: index + 1
-                                        });
-                                      }
-                                    });
-                                    
-                                    return allFormData.map((formItem, formIndex) => (
-                                      <div key={formIndex} className="mb-3 border-b border-gray-200 dark:border-gray-600 last:border-b-0 pb-3 last:pb-0">
-                                        {/* Form Name Section */}
-                                        <div className="mb-2 p-2 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded border border-green-200 dark:border-green-800">
-                                          <div className="flex items-center justify-between">
-                                            <div className="flex items-center space-x-2">
-                                              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                                              <div className="font-semibold text-green-800 dark:text-green-200 text-xs">
-                                                Form: {formItem.formName}
-                                              </div>
-                                            </div>
-                                            <div className="text-xs text-green-700 dark:text-green-300">
-                                              {formItem.taskName}
-                                            </div>
-                                          </div>
-                                        </div>
-                                        
-                                        {/* Form Data Section */}
-                                        <div className="space-y-2">
-                                          {Object.entries(getReadableFormData(formItem.data, formItem.formName)).map(([key, value]) => {
-                                            // Get the original form template to determine if this is a table field
-                                            const template = (formTemplates as any[])?.find((t: any) => t.formId === formItem.formName);
-                                            const questions = template?.questions ? (typeof template.questions === 'string' ? JSON.parse(template.questions) : template.questions) : [];
-                                            const field = questions?.find((f: any) => f.id === key);
-                                            const label = key; // Already processed by getReadableFormData
-                                            
-                                            return (
-                                              <div key={key} className="mb-2 p-1 bg-gray-50 dark:bg-gray-700 rounded">
-                                                <div className="font-semibold text-gray-800 dark:text-gray-200 mb-1 text-xs bg-blue-100 dark:bg-blue-900 px-2 py-0.5 rounded">
-                                                  {label}
-                                                </div>
-                                                
-                                                {/* Check if this is HTML table data */}
-                                                {typeof value === 'string' && value.includes('<table') ? (
-                                                  <div dangerouslySetInnerHTML={{ __html: value }} />
-                                                ) : (
-                                                  <div className="text-gray-900 dark:text-gray-100 text-xs pl-1">
-                                                    {Array.isArray(value) ? value.join(', ') : String(value)}
-                                                  </div>
-                                                )}
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    ));
-                                  })()}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          
-                          {/* Time Tracking Information */}
-                          <div className="mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border text-xs space-y-1">
-                            <div className="font-medium text-gray-700 dark:text-gray-300 mb-1">⏱️ Timing</div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <span className="font-medium text-gray-700 dark:text-gray-300">Created:</span>
-                                <div className="text-gray-600 dark:text-gray-400">{format(new Date(task.createdAt), 'MMM dd, HH:mm')}</div>
-                              </div>
-                              <div>
-                                <span className="font-medium text-gray-700 dark:text-gray-300">Due:</span>
-                                <div className="text-gray-600 dark:text-gray-400">{format(new Date(task.plannedTime), 'MMM dd, HH:mm')}</div>
-                              </div>
-                              {task.actualCompletionTime && (
-                                <div className="col-span-2">
-                                  <span className="font-medium text-gray-700 dark:text-gray-300">Completed:</span>
-                                  <div className="text-gray-600 dark:text-gray-400">{format(new Date(task.actualCompletionTime), 'MMM dd, HH:mm')}</div>
-                                </div>
-                              )}
-                            </div>
-                            
-                            {/* Performance Status */}
-                            <div className="pt-1 border-t border-gray-200 dark:border-gray-700">
-                              {task.actualCompletionTime ? (
-                                <div>
-                                  {new Date(task.actualCompletionTime) <= new Date(task.plannedTime) ? (
-                                    <span className="text-green-600 font-medium">✅ Completed On Time</span>
-                                  ) : (
-                                    <span className="text-red-600 font-medium">⚠️ Completed Late</span>
-                                  )}
-                                </div>
-                              ) : (
-                                <div>
-                                  {new Date() > new Date(task.plannedTime) ? (
-                                    <span className="text-red-600 font-medium">⚠️ Overdue</span>
-                                  ) : (
-                                    <span className="text-blue-600 font-medium">⏳ In Progress</span>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center space-x-4 mt-2">
-                            <span className="text-xs text-gray-500">Flow ID: {task.flowId}</span>
-                            <span className="text-xs text-gray-500">Order: {task.orderNumber}</span>
-                          </div>
+                        
+                        {/* Status Badge */}
+                        <div className={`px-4 py-2 rounded-full text-sm font-semibold uppercase tracking-wide shadow-lg ${
+                          task.status === 'completed' 
+                            ? 'bg-gradient-to-r from-green-100 to-emerald-100 dark:from-green-900/30 dark:to-emerald-900/30 text-green-800 dark:text-green-300' 
+                            : task.status === 'overdue'
+                            ? 'bg-gradient-to-r from-red-100 to-pink-100 dark:from-red-900/30 dark:to-pink-900/30 text-red-800 dark:text-red-300'
+                            : 'bg-gradient-to-r from-yellow-100 to-orange-100 dark:from-yellow-900/30 dark:to-orange-900/30 text-yellow-800 dark:text-yellow-300'
+                        }`}>
+                          {task.status}
                         </div>
                       </div>
-                      <div className="flex items-center space-x-3">
-                        <Badge variant={
-                          task.status === 'completed' ? 'default' :
-                          task.status === 'in_progress' ? 'secondary' :
-                          task.status === 'overdue' ? 'destructive' : 'outline'
-                        }>
-                          {task.status}
-                        </Badge>
-                        {task.formId && task.formId.trim() !== "" && (
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleFillForm(task)}
-                          >
-                            <Edit className="w-4 h-4 mr-2" />
-                            Fill Form
-                          </Button>
-                        )}
-                        <Dialog>
-                          <DialogTrigger asChild>
+                    </div>
+                    
+                    {/* Action Buttons Section */}
+                    <div className="p-6 bg-gray-50 dark:bg-gray-900/30 border-t border-gray-100 dark:border-gray-700">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div className="text-sm text-gray-600 dark:text-gray-400">
+                            Order #{task.orderNumber} • Flow: {task.flowId?.slice(-8)}
+                          </div>
+                        </div>
+                        
+                          {task.formId && task.formId.trim() !== "" && (
                             <Button 
-                              variant="ghost" 
+                              variant="outline" 
                               size="sm"
-                              onClick={() => setSelectedTask(task)}
+                              onClick={() => handleFillForm(task)}
+                              className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border-2 border-purple-200 dark:border-purple-700 hover:from-purple-100 hover:to-pink-100 dark:hover:from-purple-900/30 dark:hover:to-pink-900/30 text-purple-700 dark:text-purple-300 rounded-xl shadow-sm hover:shadow-md transition-all"
                             >
-                              <Eye className="w-4 h-4" />
+                              <Edit className="w-4 h-4 mr-2" />
+                              Fill Form
                             </Button>
-                          </DialogTrigger>
-                          <DialogContent className="max-w-2xl">
+                          )}
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => setSelectedTask(task)}
+                                className="bg-gradient-to-r from-gray-50 to-slate-50 dark:from-gray-800 dark:to-slate-800 border-2 border-gray-200 dark:border-gray-600 hover:from-gray-100 hover:to-slate-100 dark:hover:from-gray-700 dark:hover:to-slate-700 text-gray-700 dark:text-gray-300 rounded-xl shadow-sm hover:shadow-md transition-all"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-2xl">
                             <DialogHeader>
                               <DialogTitle>Task Details</DialogTitle>
                             </DialogHeader>
@@ -1187,10 +1073,10 @@ export default function Tasks() {
                                 </div>
                               </div>
                             )}
-                          </DialogContent>
-                        </Dialog>
+                            </DialogContent>
+                          </Dialog>
+                        </div>
                       </div>
-                    </div>
                   </CardContent>
                 </Card>
               ))
