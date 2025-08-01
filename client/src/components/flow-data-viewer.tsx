@@ -95,64 +95,98 @@ export default function FlowDataViewer({
           </div>
         )}
         <div className="p-4 space-y-3">
-          {Object.entries(formResponse).map(([key, value]) => (
-            <div key={key} className="grid grid-cols-3 gap-4 py-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
-              <div className="font-medium text-sm text-gray-700 dark:text-gray-300 capitalize">
-                {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-              </div>
-              <div className="col-span-2 text-sm">
-                {typeof value === 'object' && value !== null ? (
-                  Array.isArray(value) ? (
-                    value.length > 0 ? (
-                      <div className="space-y-1">
-                        {value.map((item, index) => (
-                          <div key={index} className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded border border-blue-200 dark:border-blue-800">
-                            {typeof item === 'object' ? (
-                              <div className="space-y-1">
-                                {Object.entries(item).map(([itemKey, itemValue]) => (
-                                  <div key={itemKey} className="flex justify-between text-xs">
-                                    <span className="font-medium text-blue-700 dark:text-blue-300">
-                                      {itemKey}:
-                                    </span>
-                                    <span className="text-blue-900 dark:text-blue-100">
-                                      {String(itemValue)}
-                                    </span>
-                                  </div>
-                                ))}
+          {Object.entries(formResponse)
+            .filter(([key]) => 
+              !key.toLowerCase().includes('questionid') && 
+              !key.toLowerCase().includes('questiontitle')
+            ) // Hide question IDs and titles (they'll be used as labels)
+            .map(([key, value]) => {
+              // Try to find corresponding questionTitle
+              const titleKey = key.replace(/answer/i, 'questionTitle');
+              const displayKey = formResponse[titleKey] || 
+                               key.replace(/([A-Z])/g, ' $1')
+                                  .replace(/^./, str => str.toUpperCase())
+                                  .replace(/answer/i, '')
+                                  .trim();
+              
+              return (
+                <div key={key} className="grid grid-cols-3 gap-4 py-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
+                  <div className="font-medium text-sm text-gray-700 dark:text-gray-300">
+                    {displayKey}
+                  </div>
+                  <div className="col-span-2 text-sm">
+                    {typeof value === 'object' && value !== null ? (
+                      Array.isArray(value) ? (
+                        value.length > 0 ? (
+                          // Check if array contains objects (table data)
+                          typeof value[0] === 'object' ? (
+                            <div className="bg-white dark:bg-gray-900 border rounded overflow-hidden">
+                              <div className="bg-gray-50 dark:bg-gray-800 px-3 py-1 border-b">
+                                <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Table Data</span>
                               </div>
-                            ) : (
-                              <span className="text-blue-900 dark:text-blue-100">{String(item)}</span>
-                            )}
+                              <div className="max-h-64 overflow-auto">
+                                <table className="w-full text-xs">
+                                  <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0">
+                                    <tr>
+                                      {Object.keys(value[0]).map((header) => (
+                                        <th key={header} className="px-2 py-1 text-left font-medium text-gray-700 dark:text-gray-300 border-r last:border-r-0">
+                                          {header}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {value.map((row, index) => (
+                                      <tr key={index} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800">
+                                        {Object.values(row).map((cell, cellIndex) => (
+                                          <td key={cellIndex} className="px-2 py-1 border-r last:border-r-0 text-gray-900 dark:text-gray-100">
+                                            {String(cell)}
+                                          </td>
+                                        ))}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          ) : (
+                            // Simple array items
+                            <div className="space-y-1">
+                              {value.map((item, index) => (
+                                <div key={index} className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded border border-blue-200 dark:border-blue-800">
+                                  <span className="text-blue-900 dark:text-blue-100">{String(item)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )
+                        ) : (
+                          <span className="text-gray-500 italic">Empty list</span>
+                        )
+                      ) : (
+                        <div className="bg-gray-50 dark:bg-gray-800 p-2 rounded border">
+                          <div className="space-y-1">
+                            {Object.entries(value).map(([objKey, objValue]) => (
+                              <div key={objKey} className="flex justify-between text-xs">
+                                <span className="font-medium text-gray-700 dark:text-gray-300">
+                                  {objKey}:
+                                </span>
+                                <span className="text-gray-900 dark:text-gray-100">
+                                  {String(objValue)}
+                                </span>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        </div>
+                      )
                     ) : (
-                      <span className="text-gray-500 italic">Empty list</span>
-                    )
-                  ) : (
-                    <div className="bg-gray-50 dark:bg-gray-800 p-2 rounded border">
-                      <div className="space-y-1">
-                        {Object.entries(value).map(([objKey, objValue]) => (
-                          <div key={objKey} className="flex justify-between text-xs">
-                            <span className="font-medium text-gray-700 dark:text-gray-300">
-                              {objKey}:
-                            </span>
-                            <span className="text-gray-900 dark:text-gray-100">
-                              {String(objValue)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )
-                ) : (
-                  <span className="text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded border">
-                    {String(value)}
-                  </span>
-                )}
-              </div>
-            </div>
-          ))}
+                      <span className="text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded border">
+                        {String(value)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
         </div>
       </div>
     );
