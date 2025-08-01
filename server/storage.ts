@@ -80,8 +80,8 @@ export interface IStorage {
   getFormResponsesByFlowId(flowId: string): Promise<FormResponse[]>;
 
   // TAT Configuration operations
-  getTATConfig(): Promise<any>;
-  upsertTATConfig(config: any): Promise<any>;
+  getTATConfig(organizationId: string): Promise<any>;
+  upsertTATConfig(organizationId: string, config: any): Promise<any>;
 
   // Analytics operations
   getTaskMetrics(): Promise<{
@@ -117,11 +117,13 @@ export interface IStorage {
   // Login Log operations
   createLoginLog(loginLog: InsertUserLoginLog): Promise<UserLoginLog>;
   getLoginLogs(userId?: string): Promise<UserLoginLog[]>;
+  getOrganizationLoginLogs(organizationId: string): Promise<UserLoginLog[]>;
   updateLoginLog(id: string, data: Partial<UserLoginLog>): Promise<UserLoginLog>;
   
   // Device operations
   createOrUpdateDevice(device: InsertUserDevice): Promise<UserDevice>;
   getUserDevices(userId: string): Promise<UserDevice[]>;
+  getOrganizationDevices(organizationId: string): Promise<UserDevice[]>;
   updateDeviceTrust(deviceId: string, isTrusted: boolean): Promise<UserDevice>;
   
   // Password history operations
@@ -1074,6 +1076,22 @@ export class DatabaseStorage implements IStorage {
       .where(eq(userLoginLogs.id, id))
       .returning();
     return log;
+  }
+
+  async getOrganizationLoginLogs(organizationId: string): Promise<UserLoginLog[]> {
+    return await db
+      .select()
+      .from(userLoginLogs)
+      .where(eq(userLoginLogs.organizationId, organizationId))
+      .orderBy(desc(userLoginLogs.loginTime));
+  }
+
+  async getOrganizationDevices(organizationId: string): Promise<UserDevice[]> {
+    return await db
+      .select()
+      .from(userDevices)
+      .where(eq(userDevices.organizationId, organizationId))
+      .orderBy(desc(userDevices.lastSeenAt));
   }
 
   // Device operations

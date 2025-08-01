@@ -7,6 +7,7 @@ import {
   insertTaskSchema,
   insertFormTemplateSchema,
   insertFormResponseSchema,
+  insertOrganizationSchema,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { calculateTAT, TATConfig } from "./tatCalculator";
@@ -810,9 +811,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // TAT Configuration API
-  app.get("/api/tat-config", isAuthenticated, async (req, res) => {
+  app.get("/api/tat-config", isAuthenticated, async (req: any, res) => {
     try {
-      const config = await storage.getTATConfig();
+      const currentUser = await storage.getUser(req.user.id);
+      const config = await storage.getTATConfig(currentUser?.organizationId || "");
       res.json(config || {
         officeStartHour: 9,
         officeEndHour: 18,
@@ -825,10 +827,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/tat-config", isAuthenticated, requireAdmin, async (req, res) => {
+  app.post("/api/tat-config", isAuthenticated, requireAdmin, async (req: any, res) => {
     try {
+      const currentUser = await storage.getUser(req.user.id);
       const { officeStartHour, officeEndHour, timezone, skipWeekends } = req.body;
-      const config = await storage.upsertTATConfig({
+      const config = await storage.upsertTATConfig(currentUser?.organizationId || "", {
         officeStartHour,
         officeEndHour,
         timezone,
@@ -913,8 +916,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let logs;
       
       if (currentUser?.role === "admin") {
-        logs = await storage.getLoginLogs();
+        // Admin sees all logs in their organization
+        logs = await storage.getOrganizationLoginLogs(currentUser.organizationId || "");
       } else {
+        // Regular user sees only their own logs
         logs = await storage.getLoginLogs(currentUser?.id);
       }
       
@@ -927,9 +932,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/login-logs", isAuthenticated, async (req: any, res) => {
     try {
+      const currentUser = await storage.getUser(req.user.id);
       const log = await storage.createLoginLog({
         ...req.body,
-        userId: req.user.id
+        userId: req.user.id,
+        organizationId: currentUser?.organizationId || ""
       });
       res.json(log);
     } catch (error) {
@@ -942,8 +949,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/devices", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.id);
-      const devices = await storage.getUserDevices(currentUser?.id || "");
-      res.json(devices);
+      if (currentUser?.role === "admin") {
+        // Admin sees all devices in their organization
+        const devices = await storage.getOrganizationDevices(currentUser.organizationId || "");
+        res.json(devices);
+      } else {
+        // Regular user sees only their own devices
+        const devices = await storage.getUserDevices(currentUser?.id || "");
+        res.json(devices);
+      }
     } catch (error) {
       console.error("Error fetching devices:", error);
       res.status(500).json({ message: "Failed to fetch devices" });
@@ -952,9 +966,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/devices", isAuthenticated, async (req: any, res) => {
     try {
+      const currentUser = await storage.getUser(req.user.id);
       const device = await storage.createOrUpdateDevice({
         ...req.body,
-        userId: req.user.id
+        userId: req.user.id,
+        organizationId: currentUser?.organizationId || ""
       });
       res.json(device);
     } catch (error) {
