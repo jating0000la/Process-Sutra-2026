@@ -34,7 +34,6 @@ function Router() {
       {!user ? (
         <>
           <Route path="/" component={LoginPage} />
-          <Route component={NotFound} />
         </>
       ) : (
         <>
@@ -79,8 +78,6 @@ function Router() {
               <OrganizationSettings />
             </ProtectedRoute>
           </Route>
-          
-          <Route component={NotFound} />
         </>
       )}
     </Switch>
