@@ -582,11 +582,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/form-responses", isAuthenticated, async (req: any, res) => {
+  app.post("/api/form-responses", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
+      const user = req.currentUser;
       const validatedData = insertFormResponseSchema.parse({
         ...req.body,
+        organizationId: user.organizationId,
         submittedBy: userId,
         responseId: randomUUID(),
       });
