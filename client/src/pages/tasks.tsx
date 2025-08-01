@@ -81,53 +81,21 @@ export default function Tasks() {
 
   // Helper function to convert question IDs to readable labels
   const getReadableFormData = (formData: any, formId?: string): Record<string, any> => {
-    if (!formData || !formTemplates) return formData;
-    
-    // Find the form template that matches this form ID
-    const template = (formTemplates as any[])?.find((t: any) => t.formId === formId);
-    
-    if (!template) {
-      // If no template found, still try to format table data if we can detect it
-      const readableData: Record<string, any> = {};
-      Object.entries(formData).forEach(([key, value]) => {
-        if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
-          // This looks like table data, format it
-          const tableRows = value.map((row: any, index: number) => {
-            const rowEntries = Object.entries(row).map(([colKey, colValue]) => {
-              const colLabel = colKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
-              return `${colLabel}: ${colValue}`;
-            });
-            return `Item ${index + 1} - ${rowEntries.join(', ')}`;
-          });
-          readableData[key] = tableRows.join(' • ');
-        } else {
-          readableData[key] = value;
-        }
-      });
-      return readableData;
-    }
-    
-    // Parse questions if it's a JSON string
-    const questions = typeof template.questions === 'string' 
-      ? JSON.parse(template.questions) 
-      : template.questions;
-    
-    if (!questions || !Array.isArray(questions)) {
-      return formData;
-    }
+    if (!formData) return {};
     
     const readableData: Record<string, any> = {};
     
-    // Map question IDs to labels
     Object.entries(formData).forEach(([key, value]) => {
-      const field = questions.find((f: any) => f.id === key);
-      const label = field?.label || key; // Use label if found, otherwise keep original key
-      
-      // Handle special formatting for table data
-      if (field?.type === 'table' && Array.isArray(value)) {
-        // Create an HTML table format for better display
-        if (value.length > 0) {
-          const columns = field.tableColumns || Object.keys(value[0]).map(key => ({ id: key, label: key.replace(/_/g, ' ') }));
+      // Check if this is the new format with questionTitle and answer
+      if (value && typeof value === 'object' && 'questionTitle' in value && 'answer' in value) {
+        const formValue = value as { questionTitle: string; answer: any };
+        
+        // Special handling for table data in the answer
+        if (Array.isArray(formValue.answer) && formValue.answer.length > 0 && typeof formValue.answer[0] === 'object') {
+          const columns = Object.keys(formValue.answer[0]).map(key => ({
+            id: key,
+            label: key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()
+          }));
           
           let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full border border-gray-300 text-xs">';
           
@@ -140,7 +108,7 @@ export default function Tasks() {
           
           // Table rows
           tableHtml += '<tbody>';
-          value.forEach((row: any, index: number) => {
+          formValue.answer.forEach((row: any, index: number) => {
             tableHtml += `<tr class="${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">`;
             columns.forEach((col: any) => {
               const cellValue = row[col.id] || '';
@@ -150,47 +118,105 @@ export default function Tasks() {
           });
           tableHtml += '</tbody></table></div>';
           
-          readableData[label] = tableHtml;
+          readableData[formValue.questionTitle] = tableHtml;
         } else {
-          readableData[label] = 'No data';
+          readableData[formValue.questionTitle] = formValue.answer;
         }
-      } else if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
-        // Handle table data even without field definition (fallback) - Create HTML table
-        const columns = Object.keys(value[0]).map(key => ({
-          id: key,
-          label: key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()
-        }));
-        
-        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full border border-gray-300 text-xs">';
-        
-        // Table headers
-        tableHtml += '<thead class="bg-gray-50"><tr>';
-        columns.forEach((col: any) => {
-          tableHtml += `<th class="border border-gray-300 px-2 py-1 text-left font-medium">${col.label}</th>`;
-        });
-        tableHtml += '</tr></thead>';
-        
-        // Table rows
-        tableHtml += '<tbody>';
-        value.forEach((row: any, index: number) => {
-          tableHtml += `<tr class="${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">`;
-          columns.forEach((col: any) => {
-            const cellValue = row[col.id] || '';
-            tableHtml += `<td class="border border-gray-300 px-2 py-1">${cellValue}</td>`;
-          });
-          tableHtml += '</tr>';
-        });
-        tableHtml += '</tbody></table></div>';
-        
-        readableData[label] = tableHtml;
-      } else if (Array.isArray(value)) {
-        // Handle other arrays by joining them
-        readableData[label] = value.join(', ');
-      } else if (typeof value === 'object' && value !== null) {
-        // Handle other object types by stringifying them properly
-        readableData[label] = JSON.stringify(value);
       } else {
-        readableData[label] = value;
+        // Legacy format - try to map using form template if available
+        if (!formTemplates) {
+          // Simple formatting for legacy data without template
+          if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
+            const tableRows = value.map((row: any, index: number) => {
+              const rowEntries = Object.entries(row).map(([colKey, colValue]) => {
+                const colLabel = colKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
+                return `${colLabel}: ${colValue}`;
+              });
+              return `Item ${index + 1} - ${rowEntries.join(', ')}`;
+            });
+            readableData[key] = tableRows.join(' • ');
+          } else {
+            readableData[key] = value;
+          }
+          return;
+        }
+        
+        // Find the form template that matches this form ID
+        const template = (formTemplates as any[])?.find((t: any) => t.formId === formId);
+        
+        if (!template) {
+          readableData[key] = value;
+          return;
+        }
+        
+        // Parse questions if it's a JSON string
+        const questions = typeof template.questions === 'string' 
+          ? JSON.parse(template.questions) 
+          : template.questions;
+        
+        if (!questions || !Array.isArray(questions)) {
+          readableData[key] = value;
+          return;
+        }
+        
+        // Create a mapping of question ID to question text
+        const questionMap: Record<string, string> = {};
+        questions.forEach((question: any) => {
+          if (question.id && question.question) {
+            questionMap[question.id] = question.question;
+          }
+        });
+        
+        const questionText = questionMap[key] || key;
+        
+        // Special handling for table data
+        if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
+          const tableQuestion = questions.find((q: any) => q.id === key && q.type === 'table');
+          
+          if (tableQuestion && tableQuestion.columns) {
+            const columnMap: Record<string, string> = {};
+            tableQuestion.columns.forEach((col: any) => {
+              if (col.id && col.label) {
+                columnMap[col.id] = col.label;
+              }
+            });
+            
+            let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full border border-gray-300 text-xs">';
+            
+            // Table headers
+            tableHtml += '<thead class="bg-gray-50"><tr>';
+            Object.values(columnMap).forEach((label: string) => {
+              tableHtml += `<th class="border border-gray-300 px-2 py-1 text-left font-medium">${label}</th>`;
+            });
+            tableHtml += '</tr></thead>';
+            
+            // Table rows
+            tableHtml += '<tbody>';
+            value.forEach((row: any, index: number) => {
+              tableHtml += `<tr class="${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">`;
+              Object.entries(columnMap).forEach(([colId, colLabel]) => {
+                const cellValue = row[colId] || '';
+                tableHtml += `<td class="border border-gray-300 px-2 py-1">${cellValue}</td>`;
+              });
+              tableHtml += '</tr>';
+            });
+            tableHtml += '</tbody></table></div>';
+            
+            readableData[questionText] = tableHtml;
+          } else {
+            // Fallback formatting
+            const tableRows = value.map((row: any, index: number) => {
+              const rowEntries = Object.entries(row).map(([colKey, colValue]) => {
+                const colLabel = colKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
+                return `${colLabel}: ${colValue}`;
+              });
+              return `Item ${index + 1} - ${rowEntries.join(', ')}`;
+            });
+            readableData[questionText] = tableRows.join(' • ');
+          }
+        } else {
+          readableData[questionText] = value;
+        }
       }
     });
     
@@ -224,13 +250,46 @@ export default function Tasks() {
         formId: formTemplate?.formId 
       });
       
+      // Create enhanced form data with question titles
+      let enhancedFormData = { ...formData };
+      
+      if (formTemplate?.questions) {
+        // Parse questions if it's a JSON string
+        const questions = typeof formTemplate.questions === 'string' 
+          ? JSON.parse(formTemplate.questions) 
+          : formTemplate.questions;
+        
+        if (Array.isArray(questions)) {
+          // Create a mapping of question ID to question text
+          const questionMap: Record<string, string> = {};
+          questions.forEach((question: any) => {
+            if (question.id && question.question) {
+              questionMap[question.id] = question.question;
+            }
+          });
+          
+          // Transform form data to include question titles
+          const enhancedData: Record<string, any> = {};
+          Object.entries(formData).forEach(([key, value]) => {
+            const questionTitle = questionMap[key] || key;
+            enhancedData[questionTitle] = {
+              questionId: key,
+              questionTitle: questionTitle,
+              answer: value
+            };
+          });
+          
+          enhancedFormData = enhancedData;
+        }
+      }
+      
       await apiRequest("POST", "/api/form-responses", {
         responseId: `resp_${Date.now()}`, // Generate unique ID
         flowId: selectedTask?.flowId,
         taskId: selectedTask?.id,
         taskName: selectedTask?.taskName,
         formId: formTemplate?.formId,
-        formData: formData,
+        formData: enhancedFormData,
       });
       
       toast({
