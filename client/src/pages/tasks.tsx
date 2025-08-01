@@ -104,6 +104,21 @@ export default function Tasks() {
       if (value && typeof value === 'object' && 'questionTitle' in value && 'answer' in value) {
         const formValue = value as { questionTitle: string; answer: any };
         
+        // Try to get a better title from form template if current title looks like a question ID
+        let displayTitle = formValue.questionTitle;
+        if (formTemplates && displayTitle.startsWith('q_')) {
+          const template = (formTemplates as any[])?.find((t: any) => t.formId === formId);
+          if (template) {
+            const questions = typeof template.questions === 'string' ? JSON.parse(template.questions) : template.questions;
+            if (Array.isArray(questions)) {
+              const question = questions.find((q: any) => q.id === displayTitle);
+              if (question && question.label) {
+                displayTitle = question.label;
+              }
+            }
+          }
+        }
+        
         // Special handling for table data in the answer
         if (Array.isArray(formValue.answer) && formValue.answer.length > 0 && typeof formValue.answer[0] === 'object') {
           const columns = Object.keys(formValue.answer[0]).map(key => ({
@@ -132,9 +147,9 @@ export default function Tasks() {
           });
           tableHtml += '</tbody></table></div>';
           
-          readableData[formValue.questionTitle] = tableHtml;
+          readableData[displayTitle] = tableHtml;
         } else {
-          readableData[formValue.questionTitle] = formValue.answer;
+          readableData[displayTitle] = formValue.answer;
         }
       } else {
         // Legacy format - try to map using form template if available
@@ -176,8 +191,8 @@ export default function Tasks() {
         // Create a mapping of question ID to question text
         const questionMap: Record<string, string> = {};
         questions.forEach((question: any) => {
-          if (question.id && question.question) {
-            questionMap[question.id] = question.question;
+          if (question.id && question.label) {
+            questionMap[question.id] = question.label;
           }
         });
         
@@ -277,8 +292,8 @@ export default function Tasks() {
           // Create a mapping of question ID to question text
           const questionMap: Record<string, string> = {};
           questions.forEach((question: any) => {
-            if (question.id && question.question) {
-              questionMap[question.id] = question.question;
+            if (question.id && question.label) {
+              questionMap[question.id] = question.label;
             }
           });
           
