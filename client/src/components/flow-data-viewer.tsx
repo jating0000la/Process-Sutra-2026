@@ -80,9 +80,11 @@ export default function FlowDataViewer({
     );
   };
 
-  const renderFormData = (formResponse: Record<string, any> | undefined, title?: string): React.ReactElement => {
+  const renderFormData = (formResponse: any, title?: string): React.ReactElement => {
+    // Emergency fallback for any rendering errors
     try {
-      if (!formResponse || typeof formResponse !== 'object' || Object.keys(formResponse).length === 0) {
+      // Null/undefined check
+      if (!formResponse) {
         return (
           <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border">
             <div className="text-sm text-gray-500 italic text-center">No data available</div>
@@ -90,93 +92,52 @@ export default function FlowDataViewer({
         );
       }
 
-      // Ultra-safe function to convert ANY value to string
-      const toSafeString = (val: any): string => {
+      // Convert anything to a safe display string
+      const convertToDisplayString = (data: any): string => {
+        if (data === null || data === undefined) return 'No data';
+        if (typeof data === 'string') return data;
+        if (typeof data === 'number' || typeof data === 'boolean') return String(data);
+        
+        // Handle the problematic {answer, questionId, questionTitle} objects
+        if (typeof data === 'object' && data.answer !== undefined) {
+          return convertToDisplayString(data.answer);
+        }
+        
+        // For any other object, stringify safely
         try {
-          if (val === null || val === undefined) return '';
-          if (typeof val === 'string') return val;
-          if (typeof val === 'number' || typeof val === 'boolean') return String(val);
-          if (typeof val === 'object') {
-            // Handle the specific {answer, questionId, questionTitle} pattern
-            if (val && typeof val === 'object' && 'answer' in val) {
-              return toSafeString(val.answer);
-            }
-            try {
-              return JSON.stringify(val, null, 2);
-            } catch {
-              return '[Object]';
-            }
+          if (Array.isArray(data)) {
+            return data.map(item => convertToDisplayString(item)).join(', ');
           }
-          return String(val);
+          return JSON.stringify(data, null, 2);
         } catch {
-          return '[Error]';
+          return 'Complex data structure';
         }
       };
 
-      // Convert the entire formResponse to safe strings
-      const safeFormResponse: Record<string, string | string[]> = {};
-      
-      Object.entries(formResponse).forEach(([key, value]) => {
-        if (key.toLowerCase().includes('questionid') || key.toLowerCase().includes('questiontitle')) {
-          return; // Skip these keys
-        }
-        
-        if (Array.isArray(value)) {
-          safeFormResponse[key] = value.map(item => toSafeString(item));
-        } else {
-          safeFormResponse[key] = toSafeString(value);
-        }
-      });
+      // Convert entire response to a simple display string
+      const displayText = convertToDisplayString(formResponse);
 
-    return (
-      <div className="bg-white dark:bg-gray-900 border rounded-lg overflow-hidden">
-        {title && (
-          <div className="bg-gray-50 dark:bg-gray-800 px-4 py-2 border-b">
-            <h4 className="font-medium text-sm text-gray-900 dark:text-white">{title}</h4>
+      return (
+        <div className="bg-white dark:bg-gray-900 border rounded-lg overflow-hidden">
+          {title && (
+            <div className="bg-gray-50 dark:bg-gray-800 px-4 py-2 border-b">
+              <h4 className="font-medium text-sm text-gray-900 dark:text-white">{String(title)}</h4>
+            </div>
+          )}
+          <div className="p-4">
+            <div className="text-sm text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-3 py-2 rounded border">
+              <pre className="whitespace-pre-wrap font-mono text-xs">
+                {displayText}
+              </pre>
+            </div>
           </div>
-        )}
-        <div className="p-4 space-y-3">
-          {Object.entries(safeFormResponse).map(([key, value]) => {
-              const titleKey = key.replace(/answer/i, 'questionTitle');
-              const displayKey = formResponse[titleKey] || 
-                               key.replace(/([A-Z])/g, ' $1')
-                                  .replace(/^./, str => str.toUpperCase())
-                                  .replace(/answer/i, '')
-                                  .trim();
-              
-              return (
-                <div key={key} className="grid grid-cols-3 gap-4 py-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
-                  <div className="font-medium text-sm text-gray-700 dark:text-gray-300">
-                    {displayKey}
-                  </div>
-                  <div className="col-span-2 text-sm">
-                    {Array.isArray(value) ? (
-                      // Array display - now guaranteed to be strings
-                      <div className="space-y-1">
-                        {value.map((item, index) => (
-                          <div key={index} className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded border border-blue-200 dark:border-blue-800">
-                            <span className="text-blue-900 dark:text-blue-100">{item}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      // Simple string display - guaranteed to be safe
-                      <span className="text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded border">
-                        {value}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
         </div>
-      </div>
-    );
+      );
     } catch (error) {
-      // Fallback for any rendering errors
+      console.error('Form data rendering error:', error);
       return (
         <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
-          <div className="text-sm text-red-600 dark:text-red-400 text-center">Error displaying form data</div>
+          <div className="text-sm text-red-600 dark:text-red-400 text-center">Unable to display form data</div>
         </div>
       );
     }
