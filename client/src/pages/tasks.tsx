@@ -102,7 +102,7 @@ export default function Tasks() {
     Object.entries(formData).forEach(([key, value]) => {
       // Check if this is the new format with questionTitle and answer
       if (value && typeof value === 'object' && 'questionTitle' in value && 'answer' in value) {
-        const formValue = value as { questionTitle: string; answer: any };
+        const formValue = value as { questionTitle: string; questionId?: string; answer: any };
         
         // Try to get a better title from form template if current title looks like a question ID
         let displayTitle = formValue.questionTitle;
@@ -121,10 +121,37 @@ export default function Tasks() {
         
         // Special handling for table data in the answer
         if (Array.isArray(formValue.answer) && formValue.answer.length > 0 && typeof formValue.answer[0] === 'object') {
-          const columns = Object.keys(formValue.answer[0]).map(key => ({
+          // Try to get proper column labels from form template
+          let columns = Object.keys(formValue.answer[0]).map(key => ({
             id: key,
             label: key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()
           }));
+          
+          // Check if we can get better column labels from the form template
+          if (formTemplates && formId) {
+            const template = (formTemplates as any[])?.find((t: any) => t.formId === formId);
+            if (template) {
+              const questions = typeof template.questions === 'string' ? JSON.parse(template.questions) : template.questions;
+              if (Array.isArray(questions)) {
+                // Find the table question that matches this data
+                const tableQuestion = questions.find((q: any) => 
+                  q.type === 'table' && (q.id === formValue.questionId || q.label === displayTitle)
+                );
+                
+                if (tableQuestion && tableQuestion.tableColumns) {
+                  // Create a mapping of form template column labels by order
+                  const templateColumns = tableQuestion.tableColumns;
+                  const dataColumnKeys = Object.keys(formValue.answer[0]);
+                  
+                  // Map data columns to template column labels by position
+                  columns = dataColumnKeys.map((dataKey, index) => ({
+                    id: dataKey,
+                    label: templateColumns[index]?.label || dataKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()
+                  }));
+                }
+              }
+            }
+          }
           
           let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full border border-gray-300 text-xs">';
           
@@ -202,20 +229,23 @@ export default function Tasks() {
         if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
           const tableQuestion = questions.find((q: any) => q.id === key && q.type === 'table');
           
-          if (tableQuestion && tableQuestion.columns) {
-            const columnMap: Record<string, string> = {};
-            tableQuestion.columns.forEach((col: any) => {
-              if (col.id && col.label) {
-                columnMap[col.id] = col.label;
-              }
-            });
+          if (tableQuestion && tableQuestion.tableColumns) {
+            // Map data columns to template column labels by position
+            const templateColumns = tableQuestion.tableColumns;
+            const dataColumnKeys = Object.keys(value[0]);
+            
+            // Create columns mapping
+            const columns = dataColumnKeys.map((dataKey, index) => ({
+              id: dataKey,
+              label: templateColumns[index]?.label || dataKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()
+            }));
             
             let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full border border-gray-300 text-xs">';
             
             // Table headers
             tableHtml += '<thead class="bg-gray-50"><tr>';
-            Object.values(columnMap).forEach((label: string) => {
-              tableHtml += `<th class="border border-gray-300 px-2 py-1 text-left font-medium">${label}</th>`;
+            columns.forEach((col: any) => {
+              tableHtml += `<th class="border border-gray-300 px-2 py-1 text-left font-medium">${col.label}</th>`;
             });
             tableHtml += '</tr></thead>';
             
@@ -223,8 +253,8 @@ export default function Tasks() {
             tableHtml += '<tbody>';
             value.forEach((row: any, index: number) => {
               tableHtml += `<tr class="${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">`;
-              Object.entries(columnMap).forEach(([colId, colLabel]) => {
-                const cellValue = row[colId] || '';
+              columns.forEach((col: any) => {
+                const cellValue = row[col.id] || '';
                 tableHtml += `<td class="border border-gray-300 px-2 py-1">${cellValue}</td>`;
               });
               tableHtml += '</tr>';
