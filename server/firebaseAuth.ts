@@ -61,15 +61,28 @@ async function getOrCreateOrganization(email: string) {
     let organization = await storage.getOrganizationByDomain(domain);
     
     if (!organization) {
-      // Create new organization for this domain
-      organization = await storage.createOrganization({
-        name: orgName,
-        domain: domain,
-        isActive: true,
-        maxUsers: 50,
-        planType: 'free'
-      });
-      console.log(`✅ Created new organization: ${orgName} for domain: ${domain}`);
+      try {
+        // Create new organization for this domain
+        organization = await storage.createOrganization({
+          name: orgName,
+          domain: domain,
+          isActive: true,
+          maxUsers: 50,
+          planType: 'free'
+        });
+        console.log(`✅ Created new organization: ${orgName} for domain: ${domain}`);
+      } catch (createError: any) {
+        // Handle race condition: if organization was created by another request simultaneously
+        if (createError.code === '23505' && createError.constraint === 'organizations_domain_key') {
+          console.log(`⚠️ Organization already exists for domain: ${domain}, fetching existing one`);
+          organization = await storage.getOrganizationByDomain(domain);
+          if (!organization) {
+            throw new Error(`Failed to retrieve organization for domain: ${domain}`);
+          }
+        } else {
+          throw createError;
+        }
+      }
     }
     
     return organization;

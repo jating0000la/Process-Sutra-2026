@@ -15,6 +15,7 @@ interface AuthContextType {
   user: User | null;
   dbUser: DatabaseUser | null;
   loading: boolean;
+  error: string | null;
   login: () => void;
   logout: () => void;
 }
@@ -33,6 +34,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [dbUser, setDbUser] = useState<DatabaseUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
   const syncUserWithBackend = async (firebaseUser: any) => {
     try {
@@ -58,6 +60,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const data = await response.json();
         console.log('Backend response:', data);
         
+        // Clear any previous errors
+        setError(null);
+        
         // Store database user info
         if (data.user) {
           setDbUser(data.user);
@@ -65,9 +70,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       } else {
         const errorData = await response.json();
         console.error('Backend authentication failed:', errorData);
+        setError(errorData.message || 'Authentication failed. Please try again.');
+        // Don't set user if backend authentication fails
+        setUser(null);
+        setDbUser(null);
       }
     } catch (error) {
       console.error('Error syncing user with backend:', error);
+      setError('Authentication error. Please try again.');
+      setUser(null);
+      setDbUser(null);
     }
   };
 
@@ -154,6 +166,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     user,
     dbUser,
     loading,
+    error,
     login,
     logout,
   };
