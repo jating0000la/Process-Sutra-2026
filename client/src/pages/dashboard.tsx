@@ -139,9 +139,9 @@ export default function Dashboard() {
             />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-6">
             {/* Task List */}
-            <div className="lg:col-span-2">
+            <div>
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
@@ -185,88 +185,7 @@ export default function Dashboard() {
               </Card>
             </div>
 
-            {/* Quick Actions & Progress */}
-            <div className="space-y-6">
-              {/* Quick Actions */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Quick Actions</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Button className="w-full" onClick={() => window.location.href = '/flows'}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create New Task
-                  </Button>
-                  <Button variant="outline" className="w-full" onClick={() => window.location.href = '/form-builder'}>
-                    <FileText className="w-4 h-4 mr-2" />
-                    Build Form
-                  </Button>
-                  <Button variant="outline" className="w-full" onClick={() => window.location.href = '/flows'}>
-                    <Workflow className="w-4 h-4 mr-2" />
-                    Design Flow
-                  </Button>
-                </CardContent>
-              </Card>
 
-              {/* Team Performance */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Team Performance</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <Avatar>
-                        <AvatarImage src="https://images.unsplash.com/photo-1494790108755-2616b612b786?w=40&h=40&fit=crop&crop=face" />
-                        <AvatarFallback>SJ</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Sarah Johnson</p>
-                        <p className="text-xs text-gray-600">Sales Executive</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-gray-900">94%</p>
-                      <p className="text-xs text-gray-600">On-time</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <Avatar>
-                        <AvatarImage src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=40&h=40&fit=crop&crop=face" />
-                        <AvatarFallback>MC</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Mike Chen</p>
-                        <p className="text-xs text-gray-600">Account Manager</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-gray-900">87%</p>
-                      <p className="text-xs text-gray-600">On-time</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <Avatar>
-                        <AvatarImage src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=40&h=40&fit=crop&crop=face" />
-                        <AvatarFallback>ED</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Emma Davis</p>
-                        <p className="text-xs text-gray-600">Quality Analyst</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-gray-900">91%</p>
-                      <p className="text-xs text-gray-600">On-time</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
           </div>
 
           {/* Analytics Section */}
