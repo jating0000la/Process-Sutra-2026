@@ -154,7 +154,7 @@ export default function Analytics() {
             />
             <MetricCard
               title="Avg Resolution Time"
-              value="2.4 days"
+              value={`${metrics?.avgResolutionTime || 0} days`}
               icon={<Award className="text-purple-500" />}
               trend={{ value: 12, isPositive: false }}
               description="from last month"

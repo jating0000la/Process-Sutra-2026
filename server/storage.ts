@@ -89,12 +89,14 @@ export interface IStorage {
     completedTasks: number;
     overdueTasks: number;
     onTimeRate: number;
+    avgResolutionTime: number;
   }>;
   getOrganizationTaskMetrics(organizationId: string): Promise<{
     totalTasks: number;
     completedTasks: number;
     overdueTasks: number;
     onTimeRate: number;
+    avgResolutionTime: number;
   }>;
   getFlowPerformance(): Promise<{
     system: string;
@@ -583,17 +585,26 @@ export class DatabaseStorage implements IStorage {
         )
       );
 
+    const avgResolutionResult = await db
+      .select({
+        avgTime: sql<number>`AVG(EXTRACT(EPOCH FROM (${tasks.actualCompletionTime} - ${tasks.plannedTime})) / 86400)`
+      })
+      .from(tasks)
+      .where(eq(tasks.status, "completed"));
+
     const totalTasks = totalResult[0].count;
     const completedTasks = completedResult[0].count;
     const overdueTasks = overdueResult[0].count;
     const onTimeTasks = onTimeResult[0].count;
     const onTimeRate = completedTasks > 0 ? (onTimeTasks / completedTasks) * 100 : 0;
+    const avgResolutionTime = avgResolutionResult[0]?.avgTime || 0;
 
     return {
       totalTasks,
       completedTasks,
       overdueTasks,
       onTimeRate: Math.round(onTimeRate),
+      avgResolutionTime: Math.round(avgResolutionTime * 10) / 10,
     };
   }
 
@@ -629,17 +640,26 @@ export class DatabaseStorage implements IStorage {
         )
       );
 
+    const avgResolutionResult = await db
+      .select({
+        avgTime: sql<number>`AVG(EXTRACT(EPOCH FROM (${tasks.actualCompletionTime} - ${tasks.plannedTime})) / 86400)`
+      })
+      .from(tasks)
+      .where(and(eq(tasks.organizationId, organizationId), eq(tasks.status, "completed")));
+
     const totalTasks = totalResult[0].count;
     const completedTasks = completedResult[0].count;
     const overdueTasks = overdueResult[0].count;
     const onTimeTasks = onTimeResult[0].count;
     const onTimeRate = completedTasks > 0 ? (onTimeTasks / completedTasks) * 100 : 0;
+    const avgResolutionTime = avgResolutionResult[0]?.avgTime || 0;
 
     return {
       totalTasks,
       completedTasks,
       overdueTasks,
       onTimeRate: Math.round(onTimeRate),
+      avgResolutionTime: Math.round(avgResolutionTime * 10) / 10,
     };
   }
 
@@ -700,6 +720,7 @@ export class DatabaseStorage implements IStorage {
     completedTasks: number;
     overdueTasks: number;
     onTimeRate: number;
+    avgResolutionTime: number;
   }> {
     const totalResult = await db
       .select({ count: count() })
@@ -727,17 +748,26 @@ export class DatabaseStorage implements IStorage {
         )
       );
 
+    const avgResolutionResult = await db
+      .select({
+        avgTime: sql<number>`AVG(EXTRACT(EPOCH FROM (${tasks.actualCompletionTime} - ${tasks.plannedTime})) / 86400)`
+      })
+      .from(tasks)
+      .where(and(eq(tasks.doerEmail, userEmail), eq(tasks.status, "completed")));
+
     const totalTasks = totalResult[0].count;
     const completedTasks = completedResult[0].count;
     const overdueTasks = overdueResult[0].count;
     const onTimeTasks = onTimeResult[0].count;
     const onTimeRate = completedTasks > 0 ? (onTimeTasks / completedTasks) * 100 : 0;
+    const avgResolutionTime = avgResolutionResult[0]?.avgTime || 0;
 
     return {
       totalTasks,
       completedTasks,
       overdueTasks,
       onTimeRate: Math.round(onTimeRate),
+      avgResolutionTime: Math.round(avgResolutionTime * 10) / 10,
     };
   }
 
