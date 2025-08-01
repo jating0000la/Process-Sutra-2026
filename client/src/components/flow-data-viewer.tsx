@@ -139,8 +139,8 @@ export default function FlowDataViewer({
                                     {value.map((row, index) => (
                                       <tr key={index} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800">
                                         {Object.values(row).map((cell, cellIndex) => (
-                                          <td key={cellIndex} className="px-2 py-1 border-r last:border-r-0 text-gray-900 dark:text-gray-100">
-                                            {String(cell)}
+                                          <td key={`${index}-${cellIndex}`} className="px-2 py-1 border-r last:border-r-0 text-gray-900 dark:text-gray-100">
+                                            {typeof cell === 'object' && cell !== null ? JSON.stringify(cell) : String(cell)}
                                           </td>
                                         ))}
                                       </tr>
@@ -171,7 +171,7 @@ export default function FlowDataViewer({
                                   {objKey}:
                                 </span>
                                 <span className="text-gray-900 dark:text-gray-100">
-                                  {String(objValue)}
+                                  {typeof objValue === 'object' && objValue !== null ? JSON.stringify(objValue) : String(objValue)}
                                 </span>
                               </div>
                             ))}
@@ -180,7 +180,7 @@ export default function FlowDataViewer({
                       )
                     ) : (
                       <span className="text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded border">
-                        {String(value)}
+                        {typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)}
                       </span>
                     )}
                   </div>
