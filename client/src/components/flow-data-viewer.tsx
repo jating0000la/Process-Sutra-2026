@@ -81,27 +81,106 @@ export default function FlowDataViewer({
   };
 
   const renderFormData = (formResponse: any, title?: string): React.ReactElement => {
-    console.log('DEBUG: renderFormData called with:', {
-      formResponse: formResponse,
-      type: typeof formResponse,
-      keys: formResponse && typeof formResponse === 'object' ? Object.keys(formResponse) : 'not an object'
-    });
-    
-    // Always return a safe fallback
-    return (
-      <div className="bg-white dark:bg-gray-900 border rounded-lg overflow-hidden">
-        {title && (
-          <div className="bg-gray-50 dark:bg-gray-800 px-4 py-2 border-b">
-            <h4 className="font-medium text-sm text-gray-900 dark:text-white">{String(title || 'Data')}</h4>
+    try {
+      // Handle null/undefined
+      if (!formResponse) {
+        return (
+          <div className="bg-white dark:bg-gray-900 border rounded-lg overflow-hidden">
+            {title && (
+              <div className="bg-gray-50 dark:bg-gray-800 px-4 py-2 border-b">
+                <h4 className="font-medium text-sm text-gray-900 dark:text-white">{String(title)}</h4>
+              </div>
+            )}
+            <div className="p-4">
+              <div className="text-sm text-gray-500 italic text-center">No data available</div>
+            </div>
           </div>
-        )}
-        <div className="p-4">
-          <div className="text-sm text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-3 py-2 rounded border">
-            Data display temporarily disabled for debugging
+        );
+      }
+
+      // Safe conversion function that handles the {answer, questionId, questionTitle} objects
+      const convertToSafeDisplay = (data: any): string => {
+        if (data === null || data === undefined) return 'No data';
+        if (typeof data === 'string') return data;
+        if (typeof data === 'number' || typeof data === 'boolean') return String(data);
+        
+        // Handle form response objects with answer property
+        if (typeof data === 'object' && data.answer !== undefined) {
+          return convertToSafeDisplay(data.answer);
+        }
+        
+        // Handle arrays
+        if (Array.isArray(data)) {
+          return data.map(item => convertToSafeDisplay(item)).join(', ');
+        }
+        
+        // Handle other objects
+        try {
+          return JSON.stringify(data, null, 2);
+        } catch {
+          return '[Complex data structure]';
+        }
+      };
+
+      // Check if it's an object with keys
+      const isObjectWithData = typeof formResponse === 'object' && !Array.isArray(formResponse);
+      
+      if (isObjectWithData && Object.keys(formResponse).length > 0) {
+        return (
+          <div className="bg-white dark:bg-gray-900 border rounded-lg overflow-hidden">
+            {title && (
+              <div className="bg-gray-50 dark:bg-gray-800 px-4 py-2 border-b">
+                <h4 className="font-medium text-sm text-gray-900 dark:text-white">{String(title)}</h4>
+              </div>
+            )}
+            <div className="p-4 space-y-3">
+              {Object.entries(formResponse).map(([key, value], index) => {
+                // Skip questionId fields to hide them as requested
+                if (key.toLowerCase().includes('questionid')) return null;
+                
+                const displayValue = convertToSafeDisplay(value);
+                const displayKey = String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                
+                return (
+                  <div key={`${key}-${index}`} className="border-b border-gray-100 dark:border-gray-700 pb-2 last:border-b-0">
+                    <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      {displayKey}
+                    </div>
+                    <div className="text-sm text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-3 py-2 rounded">
+                      {displayValue}
+                    </div>
+                  </div>
+                );
+              }).filter(Boolean)}
+            </div>
+          </div>
+        );
+      }
+
+      // Handle non-object data
+      const displayValue = convertToSafeDisplay(formResponse);
+      return (
+        <div className="bg-white dark:bg-gray-900 border rounded-lg overflow-hidden">
+          {title && (
+            <div className="bg-gray-50 dark:bg-gray-800 px-4 py-2 border-b">
+              <h4 className="font-medium text-sm text-gray-900 dark:text-white">{String(title)}</h4>
+            </div>
+          )}
+          <div className="p-4">
+            <div className="text-sm text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-3 py-2 rounded">
+              {displayValue}
+            </div>
           </div>
         </div>
-      </div>
-    );
+      );
+    } catch (error) {
+      console.error('Form data rendering error:', error);
+      return (
+        <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
+          <div className="text-sm text-red-600 dark:text-red-400 text-center">Unable to display form data</div>
+        </div>
+      );
+    }
   };
 
   return (
@@ -198,7 +277,18 @@ export default function FlowDataViewer({
                     <TableRow key={`expanded-${taskId}`}>
                       <TableCell colSpan={7} className="bg-gray-50 dark:bg-gray-800 p-4">
                         <div className="space-y-4">
-                          <div className="text-sm text-gray-600">Task data temporarily disabled for debugging</div>
+                          {/* Display Initial Flow Data for first task */}
+                          {index === 0 && task.initialData && (() => {
+                            try {
+                              return Object.keys(task.initialData).length > 0 ? 
+                                renderFormData(task.initialData, "Initial Flow Data") : null;
+                            } catch {
+                              return null;
+                            }
+                          })()}
+                          
+                          {/* Display Form Response Data */}
+                          {renderFormData(task.formResponse, "Form Response Data")}
                         </div>
                       </TableCell>
                     </TableRow>
