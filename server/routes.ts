@@ -612,6 +612,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get comprehensive flow data with tasks and form responses
+  app.get("/api/flows/:flowId/data", isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const { flowId } = req.params;
+      const user = req.currentUser;
+      
+      // Get all tasks for this flow - organization-specific
+      const allTasks = await storage.getTasksByOrganization(user.organizationId);
+      const flowTasks = allTasks.filter(task => task.flowId === flowId);
+      
+      // Get all form responses for this flow - organization-specific
+      const allResponses = await storage.getFormResponsesByOrganization(user.organizationId);
+      const flowResponses = allResponses.filter(response => response.flowId === flowId);
+      
+      // Combine task data with form responses
+      const tasksWithFormData = flowTasks.map(task => {
+        // Find corresponding form response for this task
+        const formResponse = flowResponses.find(response => 
+          response.taskId === task.id || 
+          (response.formData && task.taskName && (response.formData as any)[task.taskName])
+        );
+        
+        return {
+          ...task,
+          formResponse: formResponse?.formData || null
+        };
+      });
+      
+      // Sort tasks by creation time to show flow progression
+      tasksWithFormData.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateA - dateB;
+      });
+      
+      // Get flow metadata from first task
+      const firstTask = tasksWithFormData[0];
+      const flowData = {
+        flowId,
+        tasks: tasksWithFormData,
+        flowDescription: firstTask?.flowDescription,
+        flowInitiatedAt: firstTask?.flowInitiatedAt,
+        flowInitiatedBy: firstTask?.flowInitiatedBy,
+        orderNumber: firstTask?.orderNumber,
+        system: firstTask?.system
+      };
+      
+      res.json(flowData);
+    } catch (error) {
+      console.error("Error fetching flow data:", error);
+      res.status(500).json({ message: "Failed to fetch flow data" });
+    }
+  });
+
   // Export API with comprehensive data
   app.get("/api/export/flow-data", isAuthenticated, async (req, res) => {
     try {

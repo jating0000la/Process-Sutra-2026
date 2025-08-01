@@ -2,36 +2,41 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { isUnauthorizedError } from "@/lib/authUtils";
 import Header from "@/components/header";
 import Sidebar from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, ChevronRight, Search, Download, Eye } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search, Eye, Filter } from "lucide-react";
+import FlowDataViewer from "@/components/flow-data-viewer";
 
-interface FlowData {
+interface FlowSummary {
   flowId: string;
   system: string;
   orderNumber?: string;
-  tasks: any[];
-  formResponses: any[];
-  createdAt: string;
+  description?: string;
+  initiatedAt?: string;
+  initiatedBy?: string;
+  taskCount: number;
+  completedTasks: number;
+  status: 'completed' | 'in-progress' | 'pending';
 }
 
 export default function FlowData() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
-  const [expandedFlows, setExpandedFlows] = useState<Set<string>>(new Set());
+  const [systemFilter, setSystemFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [selectedFlowId, setSelectedFlowId] = useState<string | null>(null);
 
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       toast({
-        title: "Unauthorized",
+        title: "Unauthorized", 
         description: "You are logged out. Logging in again...",
         variant: "destructive",
       });
@@ -42,45 +47,21 @@ export default function FlowData() {
     }
   }, [isAuthenticated, isLoading, toast]);
 
-  const { data: tasks, isLoading: tasksLoading } = useQuery({
+  // Get all tasks to extract unique flow IDs
+  const { data: tasks, isLoading: tasksLoading } = useQuery<any[]>({
     queryKey: ["/api/tasks"],
     enabled: isAuthenticated,
   });
 
-  const { data: formResponses, isLoading: responsesLoading } = useQuery({
-    queryKey: ["/api/form-responses"],
-    enabled: isAuthenticated,
+  // Get comprehensive flow data for selected flow
+  const { data: selectedFlowData, isLoading: flowDataLoading } = useQuery<any>({
+    queryKey: ["/api/flows", selectedFlowId, "data"],
+    enabled: isAuthenticated && !!selectedFlowId,
   });
 
-  // Fetch form templates for readable labels
-  const { data: formTemplates } = useQuery({
-    queryKey: ["/api/form-templates"],
-    enabled: isAuthenticated,
-  });
-
-  // Helper function to convert question IDs to readable labels
-  const getReadableFormData = (formData: any, formId?: string): Record<string, any> => {
-    if (!formData || !formTemplates) return formData;
-    
-    // Find the form template that matches this form ID
-    const template = (formTemplates as any[])?.find((t: any) => t.formId === formId);
-    if (!template?.fields) return formData;
-    
-    const readableData: Record<string, any> = {};
-    
-    // Map question IDs to labels
-    Object.entries(formData).forEach(([key, value]) => {
-      const field = template.fields.find((f: any) => f.id === key);
-      const label = field?.label || key; // Use label if found, otherwise keep original key
-      readableData[label] = value;
-    });
-    
-    return readableData;
-  };
-
-  if (isLoading || tasksLoading || responsesLoading) {
+  if (isLoading || tasksLoading) {
     return (
-      <div className="flex min-h-screen bg-gray-50">
+      <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900">
         <Sidebar />
         <div className="flex-1 flex flex-col">
           <Header />
@@ -92,238 +73,219 @@ export default function FlowData() {
     );
   }
 
-  // Group data by flow ID
-  const flowData: Record<string, FlowData> = {};
-  
-  // Group tasks by flow ID
+  // Create flow summaries from tasks
+  const flowSummaries: FlowSummary[] = [];
+  const flowMap = new Map<string, FlowSummary>();
+
   (tasks || []).forEach((task: any) => {
-    if (!flowData[task.flowId]) {
-      flowData[task.flowId] = {
+    if (!flowMap.has(task.flowId)) {
+      const status = task.status === 'completed' ? 'completed' : 
+                   task.status === 'pending' ? 'in-progress' : 'pending';
+      
+      flowMap.set(task.flowId, {
         flowId: task.flowId,
         system: task.system,
         orderNumber: task.orderNumber,
-        tasks: [],
-        formResponses: [],
-        createdAt: task.createdAt,
-      };
-    }
-    flowData[task.flowId].tasks.push(task);
-  });
-
-  // Group form responses by flow ID
-  (formResponses || []).forEach((response: any) => {
-    const task = (tasks || []).find((t: any) => t.id === response.taskId);
-    if (task && flowData[task.flowId]) {
-      flowData[task.flowId].formResponses.push({
-        ...response,
-        taskName: task.taskName,
+        description: task.flowDescription,
+        initiatedAt: task.flowInitiatedAt,
+        initiatedBy: task.flowInitiatedBy,
+        taskCount: 1,
+        completedTasks: task.status === 'completed' ? 1 : 0,
+        status
       });
+    } else {
+      const flow = flowMap.get(task.flowId)!;
+      flow.taskCount++;
+      if (task.status === 'completed') {
+        flow.completedTasks++;
+      }
+      // Update status based on completion
+      if (flow.completedTasks === flow.taskCount) {
+        flow.status = 'completed';
+      } else if (flow.completedTasks > 0) {
+        flow.status = 'in-progress';
+      }
     }
   });
 
-  const flows = Object.values(flowData).sort((a: FlowData, b: FlowData) => 
-    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
+  flowSummaries.push(...Array.from(flowMap.values()));
 
-  // Filter flows based on search term
-  const filteredFlows = flows.filter((flow: FlowData) => 
-    flow.flowId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    flow.orderNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    flow.system.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filter flows
+  const filteredFlows = flowSummaries.filter(flow => {
+    const matchesSearch = searchTerm === "" || 
+      flow.system.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      flow.orderNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      flow.description?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesSystem = systemFilter === "all" || flow.system === systemFilter;
+    const matchesStatus = statusFilter === "all" || flow.status === statusFilter;
+    
+    return matchesSearch && matchesSystem && matchesStatus;
+  });
 
-  const toggleFlow = (flowId: string) => {
-    const newExpanded = new Set(expandedFlows);
-    if (newExpanded.has(flowId)) {
-      newExpanded.delete(flowId);
-    } else {
-      newExpanded.add(flowId);
-    }
-    setExpandedFlows(newExpanded);
-  };
+  // Get unique systems for filter
+  const uniqueSystems = Array.from(new Set(flowSummaries.map(flow => flow.system)));
 
-  const exportFlowData = (flow: FlowData) => {
-    const data = {
-      flowId: flow.flowId,
-      system: flow.system,
-      orderNumber: flow.orderNumber,
-      createdAt: flow.createdAt,
-      tasks: flow.tasks.map((task: any) => ({
-        taskName: task.taskName,
-        status: task.status,
-        doer: task.doer,
-        createdAt: task.createdAt,
-        completedAt: task.completedAt,
-      })),
-      formResponses: flow.formResponses.map((response: any) => ({
-        taskName: response.taskName,
-        submittedAt: response.submittedAt,
-        data: response.data,
-      })),
+  const getStatusBadge = (status: string) => {
+    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+      completed: "default",
+      "in-progress": "secondary", 
+      pending: "outline"
     };
-
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `flow-${flow.flowId}-${flow.orderNumber || 'data'}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    return (
+      <Badge variant={variants[status] || "outline"} className="capitalize">
+        {status.replace('-', ' ')}
+      </Badge>
+    );
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900">
       <Sidebar />
       <div className="flex-1 flex flex-col">
         <Header />
-        <main className="flex-1 p-6">
-          <div className="max-w-7xl mx-auto">
-            <div className="mb-6">
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">Flow Data Viewer</h1>
-              <p className="text-gray-600">View all form data organized by Order Number and Flow ID</p>
-            </div>
-
-            {/* Search and filters */}
-            <div className="mb-6">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  placeholder="Search by Flow ID, Order Number, or System..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </div>
-
-            {/* Flow data cards */}
-            <div className="space-y-4">
-              {filteredFlows.length === 0 ? (
-                <Card>
-                  <CardContent className="p-6 text-center">
-                    <p className="text-gray-500">No flow data found</p>
-                  </CardContent>
-                </Card>
-              ) : (
-                filteredFlows.map((flow: FlowData) => (
-                  <Card key={flow.flowId}>
-                    <Collapsible 
-                      open={expandedFlows.has(flow.flowId)}
-                      onOpenChange={() => toggleFlow(flow.flowId)}
-                    >
-                      <CollapsibleTrigger asChild>
-                        <CardHeader className="cursor-pointer hover:bg-gray-50">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-4">
-                              {expandedFlows.has(flow.flowId) ? (
-                                <ChevronDown className="w-4 h-4" />
-                              ) : (
-                                <ChevronRight className="w-4 h-4" />
-                              )}
-                              <div>
-                                <CardTitle className="text-lg">
-                                  {flow.orderNumber ? `Order: ${flow.orderNumber}` : `Flow: ${flow.flowId.slice(0, 8)}`}
-                                </CardTitle>
-                                <div className="flex items-center space-x-2 mt-1">
-                                  <Badge variant="outline">{flow.system}</Badge>
-                                  <span className="text-sm text-gray-500">
-                                    {flow.tasks.length} tasks, {flow.formResponses.length} forms
-                                  </span>
-                                  <span className="text-sm text-gray-500">
-                                    Created: {new Date(flow.createdAt).toLocaleDateString()}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  exportFlowData(flow);
-                                }}
-                              >
-                                <Download className="w-4 h-4 mr-1" />
-                                Export
-                              </Button>
-                            </div>
-                          </div>
-                        </CardHeader>
-                      </CollapsibleTrigger>
-
-                      <CollapsibleContent>
-                        <CardContent className="pt-0">
-                          <div className="grid md:grid-cols-2 gap-6">
-                            {/* Tasks */}
-                            <div>
-                              <h3 className="font-semibold mb-3">Tasks ({flow.tasks.length})</h3>
-                              <div className="space-y-2">
-                                {flow.tasks.map((task) => (
-                                  <div key={task.id} className="border rounded p-3 bg-white">
-                                    <div className="flex items-center justify-between mb-2">
-                                      <span className="font-medium">{task.taskName}</span>
-                                      <Badge variant={
-                                        task.status === 'Completed' ? 'default' :
-                                        task.status === 'In Progress' ? 'secondary' :
-                                        task.status === 'Overdue' ? 'destructive' : 'outline'
-                                      }>
-                                        {task.status}
-                                      </Badge>
-                                    </div>
-                                    <div className="text-sm text-gray-600">
-                                      <p>Assigned to: {task.doer}</p>
-                                      <p>Created: {new Date(task.createdAt).toLocaleString()}</p>
-                                      {task.completedAt && (
-                                        <p>Completed: {new Date(task.completedAt).toLocaleString()}</p>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-
-                            {/* Form Responses */}
-                            <div>
-                              <h3 className="font-semibold mb-3">Form Data ({flow.formResponses.length})</h3>
-                              <div className="space-y-2">
-                                {flow.formResponses.length === 0 ? (
-                                  <p className="text-gray-500 text-sm">No form data available</p>
-                                ) : (
-                                  flow.formResponses.map((response) => (
-                                    <div key={response.id} className="border rounded p-3 bg-white">
-                                      <div className="flex items-center justify-between mb-2">
-                                        <span className="font-medium">{response.taskName}</span>
-                                        <span className="text-xs text-gray-500">
-                                          {new Date(response.submittedAt).toLocaleString()}
-                                        </span>
-                                      </div>
-                                      <div className="text-sm space-y-1">
-                                        {Object.entries(getReadableFormData(response.data || {}, response.formId)).map(([key, value]) => (
-                                          <div key={key} className="flex">
-                                            <span className="font-medium text-gray-600 mr-2 min-w-0 flex-shrink-0">
-                                              {key}:
-                                            </span>
-                                            <span className="text-gray-800 break-words">
-                                              {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                                            </span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  ))
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </CollapsibleContent>
-                    </Collapsible>
-                  </Card>
-                ))
-              )}
+        <main className="flex-1 p-6 space-y-6">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Flow Data</h1>
+              <p className="text-gray-600 dark:text-gray-400">
+                Comprehensive view of task flows, form responses, and progress tracking
+              </p>
             </div>
           </div>
+
+          {/* Filters */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Filter className="h-5 w-5" />
+                Filters & Search
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Input
+                    placeholder="Search flows..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <Select value={systemFilter} onValueChange={setSystemFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Filter by system" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Systems</SelectItem>
+                    {uniqueSystems.map(system => (
+                      <SelectItem key={system} value={system}>{system}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="in-progress">In Progress</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="text-sm text-gray-600 dark:text-gray-400 flex items-center">
+                  {filteredFlows.length} flows found
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Flow List */}
+          {!selectedFlowId && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Flow Summary</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {filteredFlows.map((flow) => (
+                    <div 
+                      key={flow.flowId}
+                      className="border rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-colors"
+                      onClick={() => setSelectedFlowId(flow.flowId)}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-3">
+                            <h3 className="font-semibold">{flow.system}</h3>
+                            {getStatusBadge(flow.status)}
+                          </div>
+                          <div className="text-sm text-gray-600 dark:text-gray-400">
+                            <div>Order: {flow.orderNumber}</div>
+                            {flow.description && <div>Description: {flow.description}</div>}
+                            {flow.initiatedAt && (
+                              <div>Started: {new Date(flow.initiatedAt).toLocaleString()}</div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-medium">
+                            {flow.completedTasks}/{flow.taskCount} tasks completed
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {Math.round((flow.completedTasks/flow.taskCount) * 100)}% complete
+                          </div>
+                          <Button variant="outline" size="sm" className="mt-2">
+                            <Eye className="h-4 w-4 mr-1" />
+                            View Details
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {filteredFlows.length === 0 && (
+                    <div className="text-center py-8 text-gray-500">
+                      No flows found matching your criteria
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Detailed Flow View */}
+          {selectedFlowId && (
+            <div className="space-y-4">
+              <Button 
+                variant="outline" 
+                onClick={() => setSelectedFlowId(null)}
+                className="mb-4"
+              >
+                ← Back to Flow List
+              </Button>
+              
+              {flowDataLoading ? (
+                <div className="text-center py-8">Loading detailed flow data...</div>
+              ) : selectedFlowData ? (
+                <FlowDataViewer
+                  flowId={selectedFlowData.flowId}
+                  tasks={selectedFlowData.tasks}
+                  flowDescription={selectedFlowData.flowDescription}
+                  flowInitiatedAt={selectedFlowData.flowInitiatedAt}
+                  flowInitiatedBy={selectedFlowData.flowInitiatedBy}
+                  orderNumber={selectedFlowData.orderNumber}
+                  system={selectedFlowData.system}
+                />
+              ) : (
+                <div className="text-center py-8 text-red-500">
+                  Failed to load flow data
+                </div>
+              )}
+            </div>
+          )}
         </main>
       </div>
     </div>
