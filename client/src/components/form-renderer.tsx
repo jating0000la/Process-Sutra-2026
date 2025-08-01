@@ -93,7 +93,22 @@ export default function FormRenderer({
     field: any; 
     readonly?: boolean;
   }) => {
-    const [tableRows, setTableRows] = useState<Record<string, string>[]>(field.value || []);
+    const [tableRows, setTableRows] = useState<Record<string, string>[]>(() => {
+      // Ensure we always have an array
+      if (Array.isArray(field.value)) {
+        return field.value;
+      }
+      return [];
+    });
+
+    // Sync with field value changes (for pre-populated forms)
+    useEffect(() => {
+      if (Array.isArray(field.value)) {
+        setTableRows(field.value);
+      } else if (field.value === null || field.value === undefined) {
+        setTableRows([]);
+      }
+    }, [field.value]);
 
     const addRow = () => {
       const newRow: Record<string, string> = {};
