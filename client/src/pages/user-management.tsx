@@ -65,6 +65,10 @@ export default function UserManagement() {
   const createUserMutation = useMutation({
     mutationFn: async (data: Partial<User>) => {
       const response = await apiRequest("POST", "/api/users", data);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to create user");
+      }
       return await response.json();
     },
     onSuccess: () => {
@@ -76,10 +80,10 @@ export default function UserManagement() {
       setAddUserDialogOpen(false);
       setNewUserData({});
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message,
+        description: error.message || "Failed to create user",
         variant: "destructive",
       });
     },

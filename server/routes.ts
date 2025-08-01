@@ -859,6 +859,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/users", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
       const currentUser = req.currentUser;
+      
+      // Check if username already exists
+      const existingUser = await storage.getUserByUsername(req.body.username);
+      if (existingUser) {
+        return res.status(400).json({ 
+          message: "Username already exists. Please choose a different username." 
+        });
+      }
+      
       // Ensure new user gets the same organization ID as the admin creating them
       const userData = {
         ...req.body,
@@ -868,7 +877,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(user);
     } catch (error) {
       console.error("Error creating user:", error);
-      res.status(500).json({ message: "Failed to create user" });
+      if (error.code === '23505' && error.constraint === 'users_username_key') {
+        res.status(400).json({ message: "Username already exists. Please choose a different username." });
+      } else {
+        res.status(500).json({ message: "Failed to create user" });
+      }
     }
   });
 
