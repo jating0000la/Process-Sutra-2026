@@ -856,9 +856,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/users", isAuthenticated, requireAdmin, async (req, res) => {
+  app.post("/api/users", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
-      const user = await storage.createUser(req.body);
+      const currentUser = req.currentUser;
+      // Ensure new user gets the same organization ID as the admin creating them
+      const userData = {
+        ...req.body,
+        organizationId: currentUser.organizationId
+      };
+      const user = await storage.createUser(userData);
       res.status(201).json(user);
     } catch (error) {
       console.error("Error creating user:", error);
