@@ -139,6 +139,18 @@ export default function FlowDataViewer({
         );
       };
 
+      // Try to parse JSON strings that might be objects
+      const parseIfJsonString = (data: any): any => {
+        if (typeof data === 'string' && (data.startsWith('{') || data.startsWith('['))) {
+          try {
+            return JSON.parse(data);
+          } catch {
+            return data; // Return original string if parsing fails
+          }
+        }
+        return data;
+      };
+
       // Safe conversion function that handles the {answer, questionId, questionTitle} objects
       const convertToSafeDisplay = (data: any): string => {
         if (data === null || data === undefined) return 'No data';
@@ -163,10 +175,13 @@ export default function FlowDataViewer({
         }
       };
 
-      // Check if it's an object with keys
-      const isObjectWithData = typeof formResponse === 'object' && !Array.isArray(formResponse);
+      // First, try to parse the entire response if it's a JSON string
+      const parsedFormResponse = parseIfJsonString(formResponse);
       
-      if (isObjectWithData && Object.keys(formResponse).length > 0) {
+      // Check if it's an object with keys (after potential parsing)
+      const isObjectWithData = typeof parsedFormResponse === 'object' && !Array.isArray(parsedFormResponse);
+      
+      if (isObjectWithData && Object.keys(parsedFormResponse).length > 0) {
         return (
           <div className="bg-white dark:bg-gray-900 border rounded-lg overflow-hidden">
             {title && (
@@ -175,27 +190,30 @@ export default function FlowDataViewer({
               </div>
             )}
             <div className="p-4">
-              {isTableRowObject(formResponse) ? (
-                renderTableObject(formResponse)
+              {isTableRowObject(parsedFormResponse) ? (
+                renderTableObject(parsedFormResponse)
               ) : (
                 <div className="space-y-3">
-                  {Object.entries(formResponse).map(([key, value], index) => {
+                  {Object.entries(parsedFormResponse).map(([key, value], index) => {
                     // Skip questionId fields to hide them as requested
                     if (key.toLowerCase().includes('questionid')) return null;
                     
-                    // Check if this value is also a table-like object
-                    if (isTableRowObject(value)) {
+                    // Parse JSON strings if they look like objects/arrays
+                    const parsedValue = parseIfJsonString(value);
+                    
+                    // Check if this value is also a table-like object (after parsing)
+                    if (isTableRowObject(parsedValue)) {
                       return (
                         <div key={`${key}-${index}`} className="border-b border-gray-100 dark:border-gray-700 pb-3 last:border-b-0">
                           <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
                             {String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
                           </div>
-                          {renderTableObject(value)}
+                          {renderTableObject(parsedValue)}
                         </div>
                       );
                     }
                     
-                    const displayValue = convertToSafeDisplay(value);
+                    const displayValue = convertToSafeDisplay(parsedValue);
                     const displayKey = String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
                     
                     return (
@@ -217,7 +235,7 @@ export default function FlowDataViewer({
       }
 
       // Handle non-object data
-      const displayValue = convertToSafeDisplay(formResponse);
+      const displayValue = convertToSafeDisplay(parsedFormResponse);
       return (
         <div className="bg-white dark:bg-gray-900 border rounded-lg overflow-hidden">
           {title && (
