@@ -711,15 +711,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Analytics API (User-specific for regular users, all data for admins)
+  // Analytics API (Organization-specific for admins, user-specific for regular users)
   app.get("/api/analytics/metrics", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const user = req.currentUser;
       
       let metrics;
       if (user.role === 'admin') {
-        // Admins see system-wide metrics
-        metrics = await storage.getTaskMetrics();
+        // Admins see organization-specific metrics
+        metrics = await storage.getOrganizationTaskMetrics(user.organizationId);
       } else {
         // Regular users see their own performance metrics
         metrics = await storage.getUserTaskMetrics(user.email);
@@ -738,8 +738,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       let flowPerformance;
       if (user.role === 'admin') {
-        // Admins see all flow performance
-        flowPerformance = await storage.getFlowPerformance();
+        // Admins see organization-specific flow performance
+        flowPerformance = await storage.getOrganizationFlowPerformance(user.organizationId);
       } else {
         // Regular users see their own flow performance
         flowPerformance = await storage.getUserFlowPerformance(user.email);
@@ -764,7 +764,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Admin-only: All doers performance with filtering
+  // Admin-only: Organization doers performance with filtering
   app.get("/api/analytics/doers-performance", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const user = req.currentUser;
@@ -774,13 +774,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const filters = {
+        organizationId: user.organizationId,
         startDate: req.query.startDate as string,
         endDate: req.query.endDate as string,
         doerName: req.query.doerName as string,
         doerEmail: req.query.doerEmail as string,
       };
 
-      const doersPerformance = await storage.getAllDoersPerformance(filters);
+      const doersPerformance = await storage.getOrganizationDoersPerformance(filters);
       res.json(doersPerformance);
     } catch (error) {
       console.error("Error fetching doers performance:", error);

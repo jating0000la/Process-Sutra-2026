@@ -90,7 +90,18 @@ export interface IStorage {
     overdueTasks: number;
     onTimeRate: number;
   }>;
+  getOrganizationTaskMetrics(organizationId: string): Promise<{
+    totalTasks: number;
+    completedTasks: number;
+    overdueTasks: number;
+    onTimeRate: number;
+  }>;
   getFlowPerformance(): Promise<{
+    system: string;
+    avgCompletionTime: number;
+    onTimeRate: number;
+  }[]>;
+  getOrganizationFlowPerformance(organizationId: string): Promise<{
     system: string;
     avgCompletionTime: number;
     onTimeRate: number;
@@ -586,6 +597,52 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  async getOrganizationTaskMetrics(organizationId: string): Promise<{
+    totalTasks: number;
+    completedTasks: number;
+    overdueTasks: number;
+    onTimeRate: number;
+  }> {
+    const totalResult = await db
+      .select({ count: count() })
+      .from(tasks)
+      .where(eq(tasks.organizationId, organizationId));
+    
+    const completedResult = await db
+      .select({ count: count() })
+      .from(tasks)
+      .where(and(eq(tasks.organizationId, organizationId), eq(tasks.status, "completed")));
+    
+    const overdueResult = await db
+      .select({ count: count() })
+      .from(tasks)
+      .where(and(eq(tasks.organizationId, organizationId), eq(tasks.status, "overdue")));
+    
+    const onTimeResult = await db
+      .select({ count: count() })
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.organizationId, organizationId),
+          eq(tasks.status, "completed"),
+          sql`${tasks.actualCompletionTime} <= ${tasks.plannedTime}`
+        )
+      );
+
+    const totalTasks = totalResult[0].count;
+    const completedTasks = completedResult[0].count;
+    const overdueTasks = overdueResult[0].count;
+    const onTimeTasks = onTimeResult[0].count;
+    const onTimeRate = completedTasks > 0 ? (onTimeTasks / completedTasks) * 100 : 0;
+
+    return {
+      totalTasks,
+      completedTasks,
+      overdueTasks,
+      onTimeRate: Math.round(onTimeRate),
+    };
+  }
+
   async getFlowPerformance(): Promise<{
     system: string;
     avgCompletionTime: number;
@@ -600,6 +657,29 @@ export class DatabaseStorage implements IStorage {
       })
       .from(tasks)
       .where(eq(tasks.status, "completed"))
+      .groupBy(tasks.system);
+
+    return results.map(result => ({
+      system: result.system,
+      avgCompletionTime: Math.round(result.avgTime * 10) / 10,
+      onTimeRate: Math.round((result.onTimeCount / result.totalCompleted) * 100),
+    }));
+  }
+
+  async getOrganizationFlowPerformance(organizationId: string): Promise<{
+    system: string;
+    avgCompletionTime: number;
+    onTimeRate: number;
+  }[]> {
+    const results = await db
+      .select({
+        system: tasks.system,
+        avgTime: sql<number>`AVG(EXTRACT(EPOCH FROM (${tasks.actualCompletionTime} - ${tasks.plannedTime})) / 86400)`,
+        totalCompleted: count(),
+        onTimeCount: sql<number>`COUNT(CASE WHEN ${tasks.actualCompletionTime} <= ${tasks.plannedTime} THEN 1 END)`,
+      })
+      .from(tasks)
+      .where(and(eq(tasks.organizationId, organizationId), eq(tasks.status, "completed")))
       .groupBy(tasks.system);
 
     return results.map(result => ({
@@ -747,6 +827,62 @@ export class DatabaseStorage implements IStorage {
     lastTaskDate: string | null;
   }[]> {
     let whereConditions = sql`1=1`;
+    
+    if (filters.startDate) {
+      whereConditions = sql`${whereConditions} AND planned_time >= ${filters.startDate}`;
+    }
+    if (filters.endDate) {
+      whereConditions = sql`${whereConditions} AND planned_time <= ${filters.endDate}`;
+    }
+    if (filters.doerEmail) {
+      whereConditions = sql`${whereConditions} AND doer_email ILIKE ${`%${filters.doerEmail}%`}`;
+    }
+    if (filters.doerName) {
+      whereConditions = sql`${whereConditions} AND doer_email ILIKE ${`%${filters.doerName}%`}`;
+    }
+
+    const results = await db.execute(sql`
+      SELECT 
+        doer_email,
+        doer_email as doer_name,
+        COUNT(*) as total_tasks,
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_tasks,
+        COUNT(CASE WHEN status = 'completed' AND actual_completion_time <= planned_time THEN 1 END) as on_time_tasks,
+        AVG(CASE WHEN status = 'completed' THEN EXTRACT(EPOCH FROM (actual_completion_time - planned_time)) / 86400 END) as avg_completion_days,
+        MAX(planned_time) as last_task_date
+      FROM tasks 
+      WHERE ${whereConditions}
+      GROUP BY doer_email
+      ORDER BY doer_email
+    `);
+
+    return (results.rows as any[]).map((row) => ({
+      doerEmail: row.doer_email,
+      doerName: row.doer_name,
+      totalTasks: Number(row.total_tasks),
+      completedTasks: Number(row.completed_tasks),
+      onTimeRate: row.completed_tasks > 0 ? Math.round((Number(row.on_time_tasks) / Number(row.completed_tasks)) * 100) : 0,
+      avgCompletionDays: Number(row.avg_completion_days) || 0,
+      lastTaskDate: row.last_task_date,
+    }));
+  }
+
+  async getOrganizationDoersPerformance(filters: {
+    organizationId: string;
+    startDate?: string;
+    endDate?: string;
+    doerName?: string;
+    doerEmail?: string;
+  }): Promise<{
+    doerEmail: string;
+    doerName: string;
+    totalTasks: number;
+    completedTasks: number;
+    onTimeRate: number;
+    avgCompletionDays: number;
+    lastTaskDate: string | null;
+  }[]> {
+    let whereConditions = sql`organization_id = ${filters.organizationId}`;
     
     if (filters.startDate) {
       whereConditions = sql`${whereConditions} AND planned_time >= ${filters.startDate}`;
