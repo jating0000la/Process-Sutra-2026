@@ -90,25 +90,43 @@ export default function FlowDataViewer({
         );
       }
 
-      // Safe function to render any value as a string
-      const renderValue = (val: any): string => {
+      // Ultra-safe function to convert ANY value to string
+      const toSafeString = (val: any): string => {
         try {
           if (val === null || val === undefined) return '';
-          if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
-            return String(val);
-          }
+          if (typeof val === 'string') return val;
+          if (typeof val === 'number' || typeof val === 'boolean') return String(val);
           if (typeof val === 'object') {
+            // Handle the specific {answer, questionId, questionTitle} pattern
+            if (val && typeof val === 'object' && 'answer' in val) {
+              return toSafeString(val.answer);
+            }
             try {
               return JSON.stringify(val, null, 2);
             } catch {
-              return '[Complex Object]';
+              return '[Object]';
             }
           }
           return String(val);
         } catch {
-          return '[Error displaying value]';
+          return '[Error]';
         }
       };
+
+      // Convert the entire formResponse to safe strings
+      const safeFormResponse: Record<string, string | string[]> = {};
+      
+      Object.entries(formResponse).forEach(([key, value]) => {
+        if (key.toLowerCase().includes('questionid') || key.toLowerCase().includes('questiontitle')) {
+          return; // Skip these keys
+        }
+        
+        if (Array.isArray(value)) {
+          safeFormResponse[key] = value.map(item => toSafeString(item));
+        } else {
+          safeFormResponse[key] = toSafeString(value);
+        }
+      });
 
     return (
       <div className="bg-white dark:bg-gray-900 border rounded-lg overflow-hidden">
@@ -118,12 +136,7 @@ export default function FlowDataViewer({
           </div>
         )}
         <div className="p-4 space-y-3">
-          {Object.entries(formResponse)
-            .filter(([key]) => 
-              !key.toLowerCase().includes('questionid') && 
-              !key.toLowerCase().includes('questiontitle')
-            )
-            .map(([key, value]) => {
+          {Object.entries(safeFormResponse).map(([key, value]) => {
               const titleKey = key.replace(/answer/i, 'questionTitle');
               const displayKey = formResponse[titleKey] || 
                                key.replace(/([A-Z])/g, ' $1')
@@ -131,84 +144,25 @@ export default function FlowDataViewer({
                                   .replace(/answer/i, '')
                                   .trim();
               
-              // Additional safety check - convert any object to safe display
-              const safeValue = (() => {
-                if (value === null || value === undefined) return '';
-                if (typeof value === 'object' && !Array.isArray(value)) {
-                  // Handle objects with answer/questionId/questionTitle pattern
-                  if (value.hasOwnProperty('answer') && value.hasOwnProperty('questionId')) {
-                    return value.answer || '';
-                  }
-                }
-                return value;
-              })();
-              
               return (
                 <div key={key} className="grid grid-cols-3 gap-4 py-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
                   <div className="font-medium text-sm text-gray-700 dark:text-gray-300">
                     {displayKey}
                   </div>
                   <div className="col-span-2 text-sm">
-                    {Array.isArray(safeValue) && safeValue.length > 0 && typeof safeValue[0] === 'object' ? (
-                      // Table display for array of objects
-                      <div className="bg-white dark:bg-gray-900 border rounded overflow-hidden">
-                        <div className="bg-gray-50 dark:bg-gray-800 px-3 py-1 border-b">
-                          <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Table Data</span>
-                        </div>
-                        <div className="max-h-64 overflow-auto">
-                          <table className="w-full text-xs">
-                            <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0">
-                              <tr>
-                                {Object.keys(safeValue[0] || {}).map((header) => (
-                                  <th key={header} className="px-2 py-1 text-left font-medium text-gray-700 dark:text-gray-300 border-r last:border-r-0">
-                                    {String(header)}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {safeValue.map((row, index) => (
-                                <tr key={index} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800">
-                                  {Object.values(row || {}).map((cell, cellIndex) => (
-                                    <td key={`${index}-${cellIndex}`} className="px-2 py-1 border-r last:border-r-0 text-gray-900 dark:text-gray-100">
-                                      {renderValue(cell)}
-                                    </td>
-                                  ))}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    ) : Array.isArray(safeValue) ? (
-                      // Simple array display
+                    {Array.isArray(value) ? (
+                      // Array display - now guaranteed to be strings
                       <div className="space-y-1">
-                        {safeValue.map((item, index) => (
+                        {value.map((item, index) => (
                           <div key={index} className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded border border-blue-200 dark:border-blue-800">
-                            <span className="text-blue-900 dark:text-blue-100">{renderValue(item)}</span>
+                            <span className="text-blue-900 dark:text-blue-100">{item}</span>
                           </div>
                         ))}
                       </div>
-                    ) : typeof safeValue === 'object' && safeValue !== null ? (
-                      // Object display - ensure safe rendering
-                      <div className="bg-gray-50 dark:bg-gray-800 p-2 rounded border">
-                        <div className="space-y-1">
-                          {Object.entries(safeValue).map(([objKey, objValue]) => (
-                            <div key={objKey} className="flex justify-between text-xs">
-                              <span className="font-medium text-gray-700 dark:text-gray-300">
-                                {String(objKey)}:
-                              </span>
-                              <span className="text-gray-900 dark:text-gray-100">
-                                {renderValue(objValue)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
                     ) : (
-                      // Simple value display - ensure safe rendering
+                      // Simple string display - guaranteed to be safe
                       <span className="text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded border">
-                        {renderValue(safeValue)}
+                        {value}
                       </span>
                     )}
                   </div>
