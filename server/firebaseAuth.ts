@@ -39,8 +39,22 @@ export function getSession() {
 }
 
 async function getOrCreateOrganization(email: string) {
-  // Extract domain from email (e.g., "muxro.com" from "user@muxro.com")
-  const domain = email.split('@')[1];
+  // Extract domain from email with special handling for Gmail
+  const emailParts = email.split('@');
+  const emailDomain = emailParts[1];
+  
+  let domain: string;
+  let orgName: string;
+  
+  // For Gmail addresses, use the complete email as the domain
+  if (emailDomain === 'gmail.com' || emailDomain === 'googlemail.com') {
+    domain = email; // Use full email as domain for Gmail users
+    orgName = emailParts[0].charAt(0).toUpperCase() + emailParts[0].slice(1); // e.g., "John" from "john@gmail.com"
+  } else {
+    // For other domains, use the actual domain
+    domain = emailDomain;
+    orgName = emailDomain.split('.')[0].charAt(0).toUpperCase() + emailDomain.split('.')[0].slice(1); // e.g., "Muxro" from "muxro.com"
+  }
   
   try {
     // Check if organization exists for this domain
@@ -48,7 +62,6 @@ async function getOrCreateOrganization(email: string) {
     
     if (!organization) {
       // Create new organization for this domain
-      const orgName = domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1); // e.g., "Muxro"
       organization = await storage.createOrganization({
         name: orgName,
         domain: domain,
