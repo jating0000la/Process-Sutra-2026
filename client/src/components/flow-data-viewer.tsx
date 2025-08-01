@@ -81,66 +81,27 @@ export default function FlowDataViewer({
   };
 
   const renderFormData = (formResponse: any, title?: string): React.ReactElement => {
-    // Emergency fallback for any rendering errors
-    try {
-      // Null/undefined check
-      if (!formResponse) {
-        return (
-          <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border">
-            <div className="text-sm text-gray-500 italic text-center">No data available</div>
+    console.log('DEBUG: renderFormData called with:', {
+      formResponse: formResponse,
+      type: typeof formResponse,
+      keys: formResponse && typeof formResponse === 'object' ? Object.keys(formResponse) : 'not an object'
+    });
+    
+    // Always return a safe fallback
+    return (
+      <div className="bg-white dark:bg-gray-900 border rounded-lg overflow-hidden">
+        {title && (
+          <div className="bg-gray-50 dark:bg-gray-800 px-4 py-2 border-b">
+            <h4 className="font-medium text-sm text-gray-900 dark:text-white">{String(title || 'Data')}</h4>
           </div>
-        );
-      }
-
-      // Convert anything to a safe display string
-      const convertToDisplayString = (data: any): string => {
-        if (data === null || data === undefined) return 'No data';
-        if (typeof data === 'string') return data;
-        if (typeof data === 'number' || typeof data === 'boolean') return String(data);
-        
-        // Handle the problematic {answer, questionId, questionTitle} objects
-        if (typeof data === 'object' && data.answer !== undefined) {
-          return convertToDisplayString(data.answer);
-        }
-        
-        // For any other object, stringify safely
-        try {
-          if (Array.isArray(data)) {
-            return data.map(item => convertToDisplayString(item)).join(', ');
-          }
-          return JSON.stringify(data, null, 2);
-        } catch {
-          return 'Complex data structure';
-        }
-      };
-
-      // Convert entire response to a simple display string
-      const displayText = convertToDisplayString(formResponse);
-
-      return (
-        <div className="bg-white dark:bg-gray-900 border rounded-lg overflow-hidden">
-          {title && (
-            <div className="bg-gray-50 dark:bg-gray-800 px-4 py-2 border-b">
-              <h4 className="font-medium text-sm text-gray-900 dark:text-white">{String(title)}</h4>
-            </div>
-          )}
-          <div className="p-4">
-            <div className="text-sm text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-3 py-2 rounded border">
-              <pre className="whitespace-pre-wrap font-mono text-xs">
-                {displayText}
-              </pre>
-            </div>
+        )}
+        <div className="p-4">
+          <div className="text-sm text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-3 py-2 rounded border">
+            Data display temporarily disabled for debugging
           </div>
         </div>
-      );
-    } catch (error) {
-      console.error('Form data rendering error:', error);
-      return (
-        <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
-          <div className="text-sm text-red-600 dark:text-red-400 text-center">Unable to display form data</div>
-        </div>
-      );
-    }
+      </div>
+    );
   };
 
   return (
@@ -198,12 +159,12 @@ export default function FlowDataViewer({
                       <div className="flex items-center gap-2">
                         {getStatusIcon(task.status)}
                         <div>
-                          <div className="font-medium">Step {index + 1}: {task.taskName}</div>
+                          <div className="font-medium">Step {index + 1}: {String(task.taskName || '')}</div>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell>{getStatusBadge(task.status)}</TableCell>
-                    <TableCell className="text-sm">{task.doerEmail}</TableCell>
+                    <TableCell className="text-sm">{String(task.doerEmail || '')}</TableCell>
                     <TableCell className="text-sm">
                       {formatDateTime(task.plannedTime)}
                     </TableCell>
@@ -235,15 +196,32 @@ export default function FlowDataViewer({
                       <TableCell colSpan={7} className="bg-gray-50 dark:bg-gray-800 p-4">
                         <div className="space-y-4">
                           {/* Display Initial Flow Data for first task */}
-                          {index === 0 && task.initialData && Object.keys(task.initialData).length > 0 && (
-                            <div key="initial-data">
-                              {renderFormData(task.initialData, "Initial Flow Data")}
-                            </div>
-                          )}
+                          {index === 0 && task.initialData && (() => {
+                            try {
+                              return Object.keys(task.initialData).length > 0 ? (
+                                <div key="initial-data">
+                                  {renderFormData(task.initialData, "Initial Flow Data")}
+                                </div>
+                              ) : null;
+                            } catch {
+                              return null;
+                            }
+                          })()}
                           
                           {/* Display Form Response Data */}
                           <div key="form-response">
-                            {renderFormData(task.formResponse, "Form Response Data")}
+                            {(() => {
+                              try {
+                                return renderFormData(task.formResponse, "Form Response Data");
+                              } catch (error) {
+                                console.error('Error rendering form response:', error);
+                                return (
+                                  <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
+                                    <div className="text-sm text-red-600 dark:text-red-400 text-center">Error displaying data</div>
+                                  </div>
+                                );
+                              }
+                            })()}
                           </div>
                         </div>
                       </TableCell>
