@@ -54,10 +54,13 @@ export default function Tasks() {
   }, [isAuthenticated, isLoading, toast]);
 
   const { data: tasks, isLoading: tasksLoading } = useQuery({
-    queryKey: statusFilter !== "all" ? ["/api/tasks", { status: statusFilter }] : ["/api/tasks"],
-    queryFn: statusFilter !== "all" 
-      ? () => fetch(`/api/tasks?status=${statusFilter}`).then(res => res.json())
-      : undefined, // Use default fetcher for all tasks
+    queryKey: ["/api/tasks", { status: statusFilter }],
+    queryFn: () => {
+      const url = statusFilter === "all" 
+        ? "/api/tasks" 
+        : `/api/tasks?status=${statusFilter}`;
+      return fetch(url).then(res => res.json());
+    },
     enabled: isAuthenticated,
     staleTime: 0, // Always refetch to avoid cache issues
     gcTime: 0, // Don't cache results
