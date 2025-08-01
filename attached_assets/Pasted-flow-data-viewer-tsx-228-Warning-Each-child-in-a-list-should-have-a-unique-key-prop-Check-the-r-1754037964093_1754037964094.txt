@@ -1,0 +1,177 @@
+flow-data-viewer.tsx:228 Warning: Each child in a list should have a unique "key" prop.
+
+Check the render method of `FlowDataViewer`. See https://reactjs.org/link/warning-keys for more information.
+    at FlowDataViewer (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/components/flow-data-viewer.tsx:26:3)
+    at div
+    at main
+    at div
+    at div
+    at FlowData (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/pages/flow-data.tsx:33:21)
+    at ProtectedRoute (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/components/ProtectedRoute.tsx:20:42)
+    at Route (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=229cf196:323:16)
+    at Switch (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=229cf196:379:17)
+    at Router (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/App.tsx?v=W-2FfjOTZwGLG_jGeSct1:39:29)
+    at Provider (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=229cf196:38:15)
+    at TooltipProvider (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=229cf196:62:5)
+    at AuthProvider (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/contexts/AuthContext.tsx:30:32)
+    at QueryClientProvider (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=229cf196:2805:3)
+    at App
+printWarning @ react_jsx-dev-runtime.js?v=229cf196:64
+error @ react_jsx-dev-runtime.js?v=229cf196:48
+validateExplicitKey @ react_jsx-dev-runtime.js?v=229cf196:724
+validateChildKeys @ react_jsx-dev-runtime.js?v=229cf196:737
+jsxWithValidation @ react_jsx-dev-runtime.js?v=229cf196:855
+FlowDataViewer @ flow-data-viewer.tsx:228
+renderWithHooks @ chunk-RPCDYKBN.js?v=229cf196:11548
+mountIndeterminateComponent @ chunk-RPCDYKBN.js?v=229cf196:14926
+beginWork @ chunk-RPCDYKBN.js?v=229cf196:15914
+beginWork$1 @ chunk-RPCDYKBN.js?v=229cf196:19753
+performUnitOfWork @ chunk-RPCDYKBN.js?v=229cf196:19198
+workLoopSync @ chunk-RPCDYKBN.js?v=229cf196:19137
+renderRootSync @ chunk-RPCDYKBN.js?v=229cf196:19116
+performSyncWorkOnRoot @ chunk-RPCDYKBN.js?v=229cf196:18874
+flushSyncCallbacks @ chunk-RPCDYKBN.js?v=229cf196:9119
+(anonymous) @ chunk-RPCDYKBN.js?v=229cf196:18627
+setTimeout
+scheduleFn @ @tanstack_react-query.js?v=229cf196:555
+flush @ @tanstack_react-query.js?v=229cf196:569
+batch @ @tanstack_react-query.js?v=229cf196:587
+dispatch_fn @ @tanstack_react-query.js?v=229cf196:996
+setData @ @tanstack_react-query.js?v=229cf196:696
+onSuccess @ @tanstack_react-query.js?v=229cf196:897
+resolve @ @tanstack_react-query.js?v=229cf196:456
+Promise.then
+run @ @tanstack_react-query.js?v=229cf196:498
+start @ @tanstack_react-query.js?v=229cf196:536
+fetch @ @tanstack_react-query.js?v=229cf196:926
+executeFetch_fn @ @tanstack_react-query.js?v=229cf196:2211
+setOptions @ @tanstack_react-query.js?v=229cf196:1955
+(anonymous) @ @tanstack_react-query.js?v=229cf196:3032
+commitHookEffectListMount @ chunk-RPCDYKBN.js?v=229cf196:16915
+commitPassiveMountOnFiber @ chunk-RPCDYKBN.js?v=229cf196:18156
+commitPassiveMountEffects_complete @ chunk-RPCDYKBN.js?v=229cf196:18129
+commitPassiveMountEffects_begin @ chunk-RPCDYKBN.js?v=229cf196:18119
+commitPassiveMountEffects @ chunk-RPCDYKBN.js?v=229cf196:18109
+flushPassiveEffectsImpl @ chunk-RPCDYKBN.js?v=229cf196:19490
+flushPassiveEffects @ chunk-RPCDYKBN.js?v=229cf196:19447
+commitRootImpl @ chunk-RPCDYKBN.js?v=229cf196:19416
+commitRoot @ chunk-RPCDYKBN.js?v=229cf196:19277
+performSyncWorkOnRoot @ chunk-RPCDYKBN.js?v=229cf196:18895
+flushSyncCallbacks @ chunk-RPCDYKBN.js?v=229cf196:9119
+(anonymous) @ chunk-RPCDYKBN.js?v=229cf196:18627Understand this error
+3chunk-RPCDYKBN.js?v=229cf196:9934 Uncaught Error: Objects are not valid as a React child (found: object with keys {answer, questionId, questionTitle}). If you meant to render a collection of children, use an array instead.
+    at throwOnInvalidObjectType (chunk-RPCDYKBN.js?v=229cf196:9934:17)
+    at reconcileChildFibers2 (chunk-RPCDYKBN.js?v=229cf196:10564:15)
+    at reconcileChildren (chunk-RPCDYKBN.js?v=229cf196:14290:37)
+    at updateHostComponent (chunk-RPCDYKBN.js?v=229cf196:14807:11)
+    at beginWork (chunk-RPCDYKBN.js?v=229cf196:15935:22)
+    at HTMLUnknownElement.callCallback2 (chunk-RPCDYKBN.js?v=229cf196:3674:22)
+    at Object.invokeGuardedCallbackDev (chunk-RPCDYKBN.js?v=229cf196:3699:24)
+    at invokeGuardedCallback (chunk-RPCDYKBN.js?v=229cf196:3733:39)
+    at beginWork$1 (chunk-RPCDYKBN.js?v=229cf196:19765:15)
+    at performUnitOfWork (chunk-RPCDYKBN.js?v=229cf196:19198:20)
+throwOnInvalidObjectType @ chunk-RPCDYKBN.js?v=229cf196:9934
+reconcileChildFibers2 @ chunk-RPCDYKBN.js?v=229cf196:10564
+reconcileChildren @ chunk-RPCDYKBN.js?v=229cf196:14290
+updateHostComponent @ chunk-RPCDYKBN.js?v=229cf196:14807
+beginWork @ chunk-RPCDYKBN.js?v=229cf196:15935
+callCallback2 @ chunk-RPCDYKBN.js?v=229cf196:3674
+invokeGuardedCallbackDev @ chunk-RPCDYKBN.js?v=229cf196:3699
+invokeGuardedCallback @ chunk-RPCDYKBN.js?v=229cf196:3733
+beginWork$1 @ chunk-RPCDYKBN.js?v=229cf196:19765
+performUnitOfWork @ chunk-RPCDYKBN.js?v=229cf196:19198
+workLoopSync @ chunk-RPCDYKBN.js?v=229cf196:19137
+renderRootSync @ chunk-RPCDYKBN.js?v=229cf196:19116
+performSyncWorkOnRoot @ chunk-RPCDYKBN.js?v=229cf196:18874
+flushSyncCallbacks @ chunk-RPCDYKBN.js?v=229cf196:9119
+(anonymous) @ chunk-RPCDYKBN.js?v=229cf196:18627Understand this error
+3chunk-RPCDYKBN.js?v=229cf196:9934 Uncaught Error: Objects are not valid as a React child (found: object with keys {answer, questionId, questionTitle}). If you meant to render a collection of children, use an array instead.
+    at throwOnInvalidObjectType (chunk-RPCDYKBN.js?v=229cf196:9934:17)
+    at reconcileChildFibers2 (chunk-RPCDYKBN.js?v=229cf196:10564:15)
+    at reconcileChildren (chunk-RPCDYKBN.js?v=229cf196:14290:37)
+    at updateHostComponent (chunk-RPCDYKBN.js?v=229cf196:14807:11)
+    at beginWork (chunk-RPCDYKBN.js?v=229cf196:15935:22)
+    at HTMLUnknownElement.callCallback2 (chunk-RPCDYKBN.js?v=229cf196:3674:22)
+    at Object.invokeGuardedCallbackDev (chunk-RPCDYKBN.js?v=229cf196:3699:24)
+    at invokeGuardedCallback (chunk-RPCDYKBN.js?v=229cf196:3733:39)
+    at beginWork$1 (chunk-RPCDYKBN.js?v=229cf196:19765:15)
+    at performUnitOfWork (chunk-RPCDYKBN.js?v=229cf196:19198:20)
+throwOnInvalidObjectType @ chunk-RPCDYKBN.js?v=229cf196:9934
+reconcileChildFibers2 @ chunk-RPCDYKBN.js?v=229cf196:10564
+reconcileChildren @ chunk-RPCDYKBN.js?v=229cf196:14290
+updateHostComponent @ chunk-RPCDYKBN.js?v=229cf196:14807
+beginWork @ chunk-RPCDYKBN.js?v=229cf196:15935
+callCallback2 @ chunk-RPCDYKBN.js?v=229cf196:3674
+invokeGuardedCallbackDev @ chunk-RPCDYKBN.js?v=229cf196:3699
+invokeGuardedCallback @ chunk-RPCDYKBN.js?v=229cf196:3733
+beginWork$1 @ chunk-RPCDYKBN.js?v=229cf196:19765
+performUnitOfWork @ chunk-RPCDYKBN.js?v=229cf196:19198
+workLoopSync @ chunk-RPCDYKBN.js?v=229cf196:19137
+renderRootSync @ chunk-RPCDYKBN.js?v=229cf196:19116
+recoverFromConcurrentError @ chunk-RPCDYKBN.js?v=229cf196:18736
+performSyncWorkOnRoot @ chunk-RPCDYKBN.js?v=229cf196:18879
+flushSyncCallbacks @ chunk-RPCDYKBN.js?v=229cf196:9119
+(anonymous) @ chunk-RPCDYKBN.js?v=229cf196:18627Understand this error
+3chunk-RPCDYKBN.js?v=229cf196:14032 The above error occurred in the <div> component:
+
+    at div
+    at div
+    at div
+    at div
+    at div
+    at td
+    at _c13 (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/components/ui/table.tsx:152:13)
+    at tr
+    at _c9 (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/components/ui/table.tsx:102:12)
+    at tbody
+    at _c5 (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/components/ui/table.tsx:55:12)
+    at table
+    at div
+    at _c (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/components/ui/table.tsx:20:11)
+    at div
+    at div
+    at _c9 (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/components/ui/card.tsx:114:12)
+    at div
+    at _c (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/components/ui/card.tsx:20:11)
+    at FlowDataViewer (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/components/flow-data-viewer.tsx:26:3)
+    at div
+    at main
+    at div
+    at div
+    at FlowData (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/pages/flow-data.tsx:33:21)
+    at ProtectedRoute (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/components/ProtectedRoute.tsx:20:42)
+    at Route (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=229cf196:323:16)
+    at Switch (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=229cf196:379:17)
+    at Router (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/App.tsx?v=W-2FfjOTZwGLG_jGeSct1:39:29)
+    at Provider (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=229cf196:38:15)
+    at TooltipProvider (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=229cf196:62:5)
+    at AuthProvider (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/contexts/AuthContext.tsx:30:32)
+    at QueryClientProvider (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=229cf196:2805:3)
+    at App
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries.
+logCapturedError @ chunk-RPCDYKBN.js?v=229cf196:14032
+update.callback @ chunk-RPCDYKBN.js?v=229cf196:14052
+callCallback @ chunk-RPCDYKBN.js?v=229cf196:11248
+commitUpdateQueue @ chunk-RPCDYKBN.js?v=229cf196:11265
+commitLayoutEffectOnFiber @ chunk-RPCDYKBN.js?v=229cf196:17093
+commitLayoutMountEffects_complete @ chunk-RPCDYKBN.js?v=229cf196:17980
+commitLayoutEffects_begin @ chunk-RPCDYKBN.js?v=229cf196:17969
+commitLayoutEffects @ chunk-RPCDYKBN.js?v=229cf196:17920
+commitRootImpl @ chunk-RPCDYKBN.js?v=229cf196:19353
+commitRoot @ chunk-RPCDYKBN.js?v=229cf196:19277
+performSyncWorkOnRoot @ chunk-RPCDYKBN.js?v=229cf196:18895
+flushSyncCallbacks @ chunk-RPCDYKBN.js?v=229cf196:9119
+(anonymous) @ chunk-RPCDYKBN.js?v=229cf196:18627Understand this error
+chunk-RPCDYKBN.js?v=229cf196:9934 Uncaught Error: Objects are not valid as a React child (found: object with keys {answer, questionId, questionTitle}). If you meant to render a collection of children, use an array instead.
+    at throwOnInvalidObjectType (chunk-RPCDYKBN.js?v=229cf196:9934:17)
+    at reconcileChildFibers2 (chunk-RPCDYKBN.js?v=229cf196:10564:15)
+    at reconcileChildren (chunk-RPCDYKBN.js?v=229cf196:14290:37)
+    at updateHostComponent (chunk-RPCDYKBN.js?v=229cf196:14807:11)
+    at beginWork (chunk-RPCDYKBN.js?v=229cf196:15935:22)
+    at beginWork$1 (chunk-RPCDYKBN.js?v=229cf196:19753:22)
+    at performUnitOfWork (chunk-RPCDYKBN.js?v=229cf196:19198:20)
+    at workLoopSync (chunk-RPCDYKBN.js?v=229cf196:19137:13)
+    at renderRootSync (chunk-RPCDYKBN.js?v=229cf196:19116:15)
+    at recoverFromConcurrentError (chunk-RPCDYKBN.js?v=229cf196:18736:28)

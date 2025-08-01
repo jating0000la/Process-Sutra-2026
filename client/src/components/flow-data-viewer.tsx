@@ -1,4 +1,5 @@
 import { useState } from "react";
+import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -227,7 +228,7 @@ export default function FlowDataViewer({
             </TableHeader>
             <TableBody>
               {tasks.map((task, index) => (
-                <>
+                <React.Fragment key={task.id}>
                   <TableRow key={task.id} className="cursor-pointer hover:bg-gray-50">
                     <TableCell>
                       <Button
@@ -294,7 +295,7 @@ export default function FlowDataViewer({
                       </TableCell>
                     </TableRow>
                   )}
-                </>
+                </React.Fragment>
               ))}
             </TableBody>
           </Table>
