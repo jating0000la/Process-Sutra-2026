@@ -131,13 +131,25 @@ export default function FlowDataViewer({
                                   .replace(/answer/i, '')
                                   .trim();
               
+              // Additional safety check - convert any object to safe display
+              const safeValue = (() => {
+                if (value === null || value === undefined) return '';
+                if (typeof value === 'object' && !Array.isArray(value)) {
+                  // Handle objects with answer/questionId/questionTitle pattern
+                  if (value.hasOwnProperty('answer') && value.hasOwnProperty('questionId')) {
+                    return value.answer || '';
+                  }
+                }
+                return value;
+              })();
+              
               return (
                 <div key={key} className="grid grid-cols-3 gap-4 py-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
                   <div className="font-medium text-sm text-gray-700 dark:text-gray-300">
                     {displayKey}
                   </div>
                   <div className="col-span-2 text-sm">
-                    {Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' ? (
+                    {Array.isArray(safeValue) && safeValue.length > 0 && typeof safeValue[0] === 'object' ? (
                       // Table display for array of objects
                       <div className="bg-white dark:bg-gray-900 border rounded overflow-hidden">
                         <div className="bg-gray-50 dark:bg-gray-800 px-3 py-1 border-b">
@@ -147,15 +159,15 @@ export default function FlowDataViewer({
                           <table className="w-full text-xs">
                             <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0">
                               <tr>
-                                {Object.keys(value[0] || {}).map((header) => (
+                                {Object.keys(safeValue[0] || {}).map((header) => (
                                   <th key={header} className="px-2 py-1 text-left font-medium text-gray-700 dark:text-gray-300 border-r last:border-r-0">
-                                    {header}
+                                    {String(header)}
                                   </th>
                                 ))}
                               </tr>
                             </thead>
                             <tbody>
-                              {value.map((row, index) => (
+                              {safeValue.map((row, index) => (
                                 <tr key={index} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800">
                                   {Object.values(row || {}).map((cell, cellIndex) => (
                                     <td key={`${index}-${cellIndex}`} className="px-2 py-1 border-r last:border-r-0 text-gray-900 dark:text-gray-100">
@@ -168,23 +180,23 @@ export default function FlowDataViewer({
                           </table>
                         </div>
                       </div>
-                    ) : Array.isArray(value) ? (
+                    ) : Array.isArray(safeValue) ? (
                       // Simple array display
                       <div className="space-y-1">
-                        {value.map((item, index) => (
+                        {safeValue.map((item, index) => (
                           <div key={index} className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded border border-blue-200 dark:border-blue-800">
                             <span className="text-blue-900 dark:text-blue-100">{renderValue(item)}</span>
                           </div>
                         ))}
                       </div>
-                    ) : typeof value === 'object' && value !== null ? (
-                      // Object display
+                    ) : typeof safeValue === 'object' && safeValue !== null ? (
+                      // Object display - ensure safe rendering
                       <div className="bg-gray-50 dark:bg-gray-800 p-2 rounded border">
                         <div className="space-y-1">
-                          {Object.entries(value).map(([objKey, objValue]) => (
+                          {Object.entries(safeValue).map(([objKey, objValue]) => (
                             <div key={objKey} className="flex justify-between text-xs">
                               <span className="font-medium text-gray-700 dark:text-gray-300">
-                                {objKey}:
+                                {String(objKey)}:
                               </span>
                               <span className="text-gray-900 dark:text-gray-100">
                                 {renderValue(objValue)}
@@ -194,9 +206,9 @@ export default function FlowDataViewer({
                         </div>
                       </div>
                     ) : (
-                      // Simple value display
+                      // Simple value display - ensure safe rendering
                       <span className="text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded border">
-                        {renderValue(value)}
+                        {renderValue(safeValue)}
                       </span>
                     )}
                   </div>
