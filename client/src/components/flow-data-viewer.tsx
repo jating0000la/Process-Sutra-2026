@@ -98,6 +98,47 @@ export default function FlowDataViewer({
         );
       }
 
+      // Check if data looks like a table row (object with multiple string/number values)
+      const isTableRowObject = (data: any): boolean => {
+        if (typeof data !== 'object' || Array.isArray(data) || !data) return false;
+        const values = Object.values(data);
+        return values.length > 1 && values.every(v => 
+          typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
+        );
+      };
+
+      // Render table format for objects that look like table rows
+      const renderTableObject = (data: any): React.ReactElement => {
+        const entries = Object.entries(data).filter(([key]) => 
+          !key.toLowerCase().includes('questionid')
+        );
+        
+        return (
+          <div className="overflow-x-auto">
+            <table className="min-w-full border border-gray-200 dark:border-gray-700 rounded-lg">
+              <thead className="bg-gray-50 dark:bg-gray-800">
+                <tr>
+                  {entries.map(([key]) => (
+                    <th key={key} className="px-3 py-2 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
+                      {String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).replace(/_/g, ' ')}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="bg-white dark:bg-gray-900">
+                  {entries.map(([key, value]) => (
+                    <td key={key} className="px-3 py-2 text-sm text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700">
+                      {String(value || '')}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        );
+      };
+
       // Safe conversion function that handles the {answer, questionId, questionTitle} objects
       const convertToSafeDisplay = (data: any): string => {
         if (data === null || data === undefined) return 'No data';
@@ -133,25 +174,43 @@ export default function FlowDataViewer({
                 <h4 className="font-medium text-sm text-gray-900 dark:text-white">{String(title)}</h4>
               </div>
             )}
-            <div className="p-4 space-y-3">
-              {Object.entries(formResponse).map(([key, value], index) => {
-                // Skip questionId fields to hide them as requested
-                if (key.toLowerCase().includes('questionid')) return null;
-                
-                const displayValue = convertToSafeDisplay(value);
-                const displayKey = String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-                
-                return (
-                  <div key={`${key}-${index}`} className="border-b border-gray-100 dark:border-gray-700 pb-2 last:border-b-0">
-                    <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      {displayKey}
-                    </div>
-                    <div className="text-sm text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-3 py-2 rounded">
-                      {displayValue}
-                    </div>
-                  </div>
-                );
-              }).filter(Boolean)}
+            <div className="p-4">
+              {isTableRowObject(formResponse) ? (
+                renderTableObject(formResponse)
+              ) : (
+                <div className="space-y-3">
+                  {Object.entries(formResponse).map(([key, value], index) => {
+                    // Skip questionId fields to hide them as requested
+                    if (key.toLowerCase().includes('questionid')) return null;
+                    
+                    // Check if this value is also a table-like object
+                    if (isTableRowObject(value)) {
+                      return (
+                        <div key={`${key}-${index}`} className="border-b border-gray-100 dark:border-gray-700 pb-3 last:border-b-0">
+                          <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+                            {String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                          </div>
+                          {renderTableObject(value)}
+                        </div>
+                      );
+                    }
+                    
+                    const displayValue = convertToSafeDisplay(value);
+                    const displayKey = String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                    
+                    return (
+                      <div key={`${key}-${index}`} className="border-b border-gray-100 dark:border-gray-700 pb-2 last:border-b-0">
+                        <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                          {displayKey}
+                        </div>
+                        <div className="text-sm text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-3 py-2 rounded">
+                          {displayValue}
+                        </div>
+                      </div>
+                    );
+                  }).filter(Boolean)}
+                </div>
+              )}
             </div>
           </div>
         );
