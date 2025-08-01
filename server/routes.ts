@@ -241,7 +241,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (nextRules.length > 0) {
         // Get TAT configuration for enhanced calculations
-        const tatConfiguration = await storage.getTATConfig();
+        const tatConfiguration = await storage.getTATConfig(user.organizationId);
         const config = tatConfiguration || { officeStartHour: 9, officeEndHour: 18 };
         
         // Create ALL next tasks using enhanced TAT calculation
@@ -321,7 +321,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (nextRules.length > 0) {
         // Get TAT configuration for enhanced calculations
-        const tatConfiguration = await storage.getTATConfig();
+        const tatConfiguration = await storage.getTATConfig(user.organizationId);
         const config = tatConfiguration || { officeStartHour: 9, officeEndHour: 18 };
         
         // Create ALL next tasks based on current task status using enhanced TAT calculation
@@ -436,7 +436,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Get TAT configuration for enhanced calculations
-      const tatConfiguration = await storage.getTATConfig();
+      const tatConfiguration = await storage.getTATConfig(user.organizationId);
       const config = tatConfiguration || { officeStartHour: 9, officeEndHour: 18 };
       
       const plannedTime = calculateTAT(new Date(), startRule.tat, startRule.tatType, config);
