@@ -969,22 +969,8 @@ export default function Tasks() {
                           📋 Flow Context
                         </div>
                         
-                        {/* WHO, WHAT, WHEN */}
+                        {/* WHEN, ORDER */}
                         <div className="grid grid-cols-1 gap-2 text-sm mb-3">
-                          {task.flowInitiatedBy && (
-                            <div className="flex items-start">
-                              <span className="font-medium text-blue-700 dark:text-blue-300 min-w-[50px]">WHO:</span>
-                              <span className="text-blue-600 dark:text-blue-400">Started by {task.flowInitiatedBy}</span>
-                            </div>
-                          )}
-                          
-                          {task.flowDescription && (
-                            <div className="flex items-start">
-                              <span className="font-medium text-blue-700 dark:text-blue-300 min-w-[50px]">WHAT:</span>
-                              <span className="text-blue-600 dark:text-blue-400">{task.flowDescription}</span>
-                            </div>
-                          )}
-                          
                           {task.flowInitiatedAt && (
                             <div className="flex items-start">
                               <span className="font-medium text-blue-700 dark:text-blue-300 min-w-[50px]">WHEN:</span>
