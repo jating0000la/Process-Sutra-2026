@@ -14,6 +14,7 @@ interface TaskData {
   plannedTime: string;
   actualCompletionTime: string | null;
   formResponse?: Record<string, any>;
+  initialData?: Record<string, any>;
   doerEmail: string;
 }
 
@@ -88,6 +89,22 @@ export default function FlowDataViewer({
       );
     }
 
+    // Safe function to render any value as a string
+    const renderValue = (val: any): string => {
+      if (val === null || val === undefined) return '';
+      if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+        return String(val);
+      }
+      if (typeof val === 'object') {
+        try {
+          return JSON.stringify(val, null, 2);
+        } catch {
+          return '[Complex Object]';
+        }
+      }
+      return String(val);
+    };
+
     return (
       <div className="bg-white dark:bg-gray-900 border rounded-lg overflow-hidden">
         {title && (
@@ -100,9 +117,8 @@ export default function FlowDataViewer({
             .filter(([key]) => 
               !key.toLowerCase().includes('questionid') && 
               !key.toLowerCase().includes('questiontitle')
-            ) // Hide question IDs and titles (they'll be used as labels)
+            )
             .map(([key, value]) => {
-              // Try to find corresponding questionTitle
               const titleKey = key.replace(/answer/i, 'questionTitle');
               const displayKey = formResponse[titleKey] || 
                                key.replace(/([A-Z])/g, ' $1')
@@ -116,72 +132,66 @@ export default function FlowDataViewer({
                     {displayKey}
                   </div>
                   <div className="col-span-2 text-sm">
-                    {typeof value === 'object' && value !== null ? (
-                      Array.isArray(value) ? (
-                        value.length > 0 ? (
-                          // Check if array contains objects (table data)
-                          typeof value[0] === 'object' ? (
-                            <div className="bg-white dark:bg-gray-900 border rounded overflow-hidden">
-                              <div className="bg-gray-50 dark:bg-gray-800 px-3 py-1 border-b">
-                                <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Table Data</span>
-                              </div>
-                              <div className="max-h-64 overflow-auto">
-                                <table className="w-full text-xs">
-                                  <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0">
-                                    <tr>
-                                      {Object.keys(value[0]).map((header) => (
-                                        <th key={header} className="px-2 py-1 text-left font-medium text-gray-700 dark:text-gray-300 border-r last:border-r-0">
-                                          {header}
-                                        </th>
-                                      ))}
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {value.map((row, index) => (
-                                      <tr key={index} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800">
-                                        {Object.values(row).map((cell, cellIndex) => (
-                                          <td key={`${index}-${cellIndex}`} className="px-2 py-1 border-r last:border-r-0 text-gray-900 dark:text-gray-100">
-                                            {typeof cell === 'object' && cell !== null ? JSON.stringify(cell) : String(cell)}
-                                          </td>
-                                        ))}
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-                          ) : (
-                            // Simple array items
-                            <div className="space-y-1">
-                              {value.map((item, index) => (
-                                <div key={index} className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded border border-blue-200 dark:border-blue-800">
-                                  <span className="text-blue-900 dark:text-blue-100">{String(item)}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )
-                        ) : (
-                          <span className="text-gray-500 italic">Empty list</span>
-                        )
-                      ) : (
-                        <div className="bg-gray-50 dark:bg-gray-800 p-2 rounded border">
-                          <div className="space-y-1">
-                            {Object.entries(value).map(([objKey, objValue]) => (
-                              <div key={objKey} className="flex justify-between text-xs">
-                                <span className="font-medium text-gray-700 dark:text-gray-300">
-                                  {objKey}:
-                                </span>
-                                <span className="text-gray-900 dark:text-gray-100">
-                                  {typeof objValue === 'object' && objValue !== null ? JSON.stringify(objValue) : String(objValue)}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
+                    {Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' ? (
+                      // Table display for array of objects
+                      <div className="bg-white dark:bg-gray-900 border rounded overflow-hidden">
+                        <div className="bg-gray-50 dark:bg-gray-800 px-3 py-1 border-b">
+                          <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Table Data</span>
                         </div>
-                      )
+                        <div className="max-h-64 overflow-auto">
+                          <table className="w-full text-xs">
+                            <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0">
+                              <tr>
+                                {Object.keys(value[0] || {}).map((header) => (
+                                  <th key={header} className="px-2 py-1 text-left font-medium text-gray-700 dark:text-gray-300 border-r last:border-r-0">
+                                    {header}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {value.map((row, index) => (
+                                <tr key={index} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800">
+                                  {Object.values(row || {}).map((cell, cellIndex) => (
+                                    <td key={`${index}-${cellIndex}`} className="px-2 py-1 border-r last:border-r-0 text-gray-900 dark:text-gray-100">
+                                      {renderValue(cell)}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ) : Array.isArray(value) ? (
+                      // Simple array display
+                      <div className="space-y-1">
+                        {value.map((item, index) => (
+                          <div key={index} className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded border border-blue-200 dark:border-blue-800">
+                            <span className="text-blue-900 dark:text-blue-100">{renderValue(item)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : typeof value === 'object' && value !== null ? (
+                      // Object display
+                      <div className="bg-gray-50 dark:bg-gray-800 p-2 rounded border">
+                        <div className="space-y-1">
+                          {Object.entries(value).map(([objKey, objValue]) => (
+                            <div key={objKey} className="flex justify-between text-xs">
+                              <span className="font-medium text-gray-700 dark:text-gray-300">
+                                {objKey}:
+                              </span>
+                              <span className="text-gray-900 dark:text-gray-100">
+                                {renderValue(objValue)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     ) : (
+                      // Simple value display
                       <span className="text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded border">
-                        {typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)}
+                        {renderValue(value)}
                       </span>
                     )}
                   </div>
