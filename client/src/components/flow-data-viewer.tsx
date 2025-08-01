@@ -159,7 +159,9 @@ export default function FlowDataViewer({
         
         // Handle form response objects with answer property
         if (typeof data === 'object' && data.answer !== undefined) {
-          return convertToSafeDisplay(data.answer);
+          // Try parsing the answer if it's a JSON string
+          const parsedAnswer = parseIfJsonString(data.answer);
+          return convertToSafeDisplay(parsedAnswer);
         }
         
         // Handle arrays
@@ -198,22 +200,37 @@ export default function FlowDataViewer({
                     // Skip questionId fields to hide them as requested
                     if (key.toLowerCase().includes('questionid')) return null;
                     
-                    // Parse JSON strings if they look like objects/arrays
-                    const parsedValue = parseIfJsonString(value);
+                    // Handle nested form response structure with answer property
+                    let processedValue = value;
+                    if (typeof value === 'object' && value !== null && 'answer' in value) {
+                      processedValue = parseIfJsonString((value as any).answer);
+                    } else {
+                      processedValue = parseIfJsonString(value);
+                    }
                     
-                    // Check if this value is also a table-like object (after parsing)
-                    if (isTableRowObject(parsedValue)) {
+                    // Debug logging to see what's happening
+                    if (key.toLowerCase().includes('product')) {
+                      console.log('Product Details Debug:', {
+                        originalValue: value,
+                        processedValue: processedValue,
+                        isTableRow: isTableRowObject(processedValue),
+                        type: typeof processedValue
+                      });
+                    }
+                    
+                    // Check if this value is also a table-like object (after processing)
+                    if (isTableRowObject(processedValue)) {
                       return (
                         <div key={`${key}-${index}`} className="border-b border-gray-100 dark:border-gray-700 pb-3 last:border-b-0">
                           <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
                             {String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
                           </div>
-                          {renderTableObject(parsedValue)}
+                          {renderTableObject(processedValue)}
                         </div>
                       );
                     }
                     
-                    const displayValue = convertToSafeDisplay(parsedValue);
+                    const displayValue = convertToSafeDisplay(processedValue);
                     const displayKey = String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
                     
                     return (
