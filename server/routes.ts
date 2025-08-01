@@ -881,6 +881,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Override users endpoint to be organization-specific
+  app.get("/api/users", isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      const users = await storage.getUsersByOrganization(user.organizationId);
+      res.json(users);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  // Organization API
+  app.get("/api/organizations/current", isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      const organization = await storage.getOrganization(user.organizationId);
+      res.json(organization);
+    } catch (error) {
+      console.error("Error fetching organization:", error);
+      res.status(500).json({ message: "Failed to fetch organization" });
+    }
+  });
+
+  app.post("/api/organizations", isAuthenticated, requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertOrganizationSchema.parse(req.body);
+      const organization = await storage.createOrganization(validatedData);
+      res.status(201).json(organization);
+    } catch (error) {
+      console.error("Error creating organization:", error);
+      res.status(400).json({ message: "Invalid organization data" });
+    }
+  });
+
   // Login Logs API
   app.get("/api/login-logs", isAuthenticated, async (req: any, res) => {
     try {

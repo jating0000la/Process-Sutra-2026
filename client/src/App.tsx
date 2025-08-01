@@ -15,6 +15,7 @@ import TATConfig from "@/pages/tat-config";
 import FlowData from "@/pages/flow-data";
 import FlowSimulator from "@/pages/flow-simulator";
 import UserManagement from "@/pages/user-management";
+import OrganizationSettings from "@/pages/organization-settings";
 
 function Router() {
   const { user, loading } = useAuth();
@@ -45,6 +46,7 @@ function Router() {
           <Route path="/flow-data" component={FlowData} />
           <Route path="/flow-simulator" component={FlowSimulator} />
           <Route path="/user-management" component={UserManagement} />
+          <Route path="/organization-settings" component={OrganizationSettings} />
           <Route component={NotFound} />
         </>
       )}

@@ -9,10 +9,12 @@ import {
   userLoginLogs,
   userDevices,
   passwordChangeHistory,
-  type User,
-  type UpsertUser,
-  organizations,
   insertOrganizationSchema,
+  type User,
+  type InsertUser,
+  type UpsertUser,
+  type Organization,
+  type InsertOrganization,
   type FlowRule,
   type InsertFlowRule,
   type Task,
@@ -33,14 +35,18 @@ import { eq, and, desc, asc, count, sql } from "drizzle-orm";
 
 export interface IStorage {
   // Organization operations
-  getOrganizationByDomain(domain: string): Promise<typeof organizations.$inferSelect | undefined>;
-  createOrganization(organization: typeof organizations.$inferInsert): Promise<typeof organizations.$inferSelect>;
+  getOrganization(id: string): Promise<Organization | undefined>;
+  getOrganizationByDomain(domain: string): Promise<Organization | undefined>;
+  createOrganization(organization: InsertOrganization): Promise<Organization>;
   getOrganizationUserCount(organizationId: string): Promise<number>;
 
   // User operations (mandatory for Replit Auth)
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  createUser(user: Omit<InsertUser, 'id'>): Promise<User>;
+  updateUser(id: string, user: Partial<InsertUser>): Promise<User>;
   upsertUser(user: UpsertUser): Promise<User>;
+  getUsersByOrganization(organizationId: string): Promise<User[]>;
 
   // Flow Rules operations (organization-specific)
   getFlowRules(system?: string): Promise<FlowRule[]>;
@@ -112,12 +118,17 @@ export interface IStorage {
 
 export class DatabaseStorage implements IStorage {
   // Organization operations
-  async getOrganizationByDomain(domain: string): Promise<typeof organizations.$inferSelect | undefined> {
+  async getOrganization(id: string): Promise<Organization | undefined> {
+    const [organization] = await db.select().from(organizations).where(eq(organizations.id, id));
+    return organization;
+  }
+
+  async getOrganizationByDomain(domain: string): Promise<Organization | undefined> {
     const [organization] = await db.select().from(organizations).where(eq(organizations.domain, domain));
     return organization;
   }
 
-  async createOrganization(organizationData: typeof organizations.$inferInsert): Promise<typeof organizations.$inferSelect> {
+  async createOrganization(organizationData: InsertOrganization): Promise<Organization> {
     const [organization] = await db.insert(organizations).values(organizationData).returning();
     return organization;
   }
@@ -138,6 +149,23 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async createUser(userData: Omit<InsertUser, 'id'>): Promise<User> {
+    const [user] = await db.insert(users).values(userData).returning();
+    return user;
+  }
+
+  async updateUser(id: string, userData: Partial<InsertUser>): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({
+        ...userData,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, id))
+      .returning();
     return user;
   }
 
@@ -833,18 +861,9 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(users).orderBy(asc(users.firstName));
   }
 
-  async createUser(userData: Partial<User>): Promise<User> {
-    const [user] = await db
-      .insert(users)
-      .values({
-        ...userData,
-        status: userData.status || "active",
-        role: userData.role || "user",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .returning();
-    return user;
+  // Organization-specific user methods
+  async getUsersByOrganization(organizationId: string): Promise<User[]> {
+    return await db.select().from(users).where(eq(users.organizationId, organizationId));
   }
 
   async updateUserDetails(id: string, details: Partial<User>): Promise<User> {

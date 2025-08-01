@@ -68,38 +68,45 @@ async function getOrCreateOrganization(email: string) {
 
 async function upsertUser(userData: any) {
   try {
-    // Get or create organization first
-    const organization = await getOrCreateOrganization(userData.email);
-    
-    // Check if user already exists
+    // Check if user already exists in database
     let existingUser = await storage.getUserByEmail(userData.email);
     
-    // Determine user role: first user of an organization becomes admin
-    let role = 'user';
-    if (!existingUser) {
-      const orgUserCount = await storage.getOrganizationUserCount(organization.id);
-      if (orgUserCount === 0) {
-        role = 'admin';
-        console.log(`🔐 Making ${userData.email} admin of organization: ${organization.name}`);
-      }
-    } else {
-      role = existingUser.role; // Keep existing role
+    if (existingUser) {
+      // Update existing user's last login
+      return await storage.updateUser(existingUser.id, {
+        lastLoginAt: new Date(),
+        profileImageUrl: userData.photoURL // Update profile image if changed
+      });
     }
     
-    // Don't pass ID for upsert to avoid constraint violations
-    const userPayload = {
-      email: userData.email,
-      firstName: userData.displayName ? userData.displayName.split(' ')[0] : '',
-      lastName: userData.displayName ? userData.displayName.split(' ').slice(1).join(' ') : '',
-      profileImageUrl: userData.photoURL,
-      organizationId: organization.id,
-      role: role,
-      lastLoginAt: new Date(),
-    };
+    // For new users, check if there's an organization for their domain
+    const organization = await getOrCreateOrganization(userData.email);
     
-    return await storage.upsertUser(userPayload);
+    // Check if this is the first user of the organization (auto-admin)
+    const orgUserCount = await storage.getOrganizationUserCount(organization.id);
+    
+    if (orgUserCount === 0) {
+      // First user becomes admin automatically
+      const userPayload = {
+        email: userData.email,
+        firstName: userData.displayName ? userData.displayName.split(' ')[0] : '',
+        lastName: userData.displayName ? userData.displayName.split(' ').slice(1).join(' ') : '',
+        profileImageUrl: userData.photoURL,
+        organizationId: organization.id,
+        role: 'admin',
+        status: 'active',
+        lastLoginAt: new Date(),
+      };
+      
+      console.log(`🔐 Creating admin for new organization: ${userData.email} -> ${organization.name}`);
+      return await storage.createUser(userPayload);
+    } else {
+      // Not first user and not pre-added by admin - reject login
+      throw new Error('User not authorized. Contact your organization admin to be added to the system.');
+    }
+    
   } catch (error) {
-    console.error("Error upserting user:", error);
+    console.error("Error in upsertUser:", error);
     throw error;
   }
 }

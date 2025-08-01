@@ -75,6 +75,12 @@ const adminNavigationItems = [
     badge: null,
   },
   {
+    name: "Organization Settings",
+    href: "/organization-settings",
+    icon: Settings,
+    badge: null,
+  },
+  {
     name: "Settings",
     href: "/settings",
     icon: Settings,

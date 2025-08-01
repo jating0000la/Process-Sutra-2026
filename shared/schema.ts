@@ -337,8 +337,9 @@ export const insertTATConfigSchema = createInsertSchema(tatConfig).omit({
 // Types
 export type Organization = typeof organizations.$inferSelect;
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
-export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type UpsertUser = typeof users.$inferInsert;
 export type InsertFlowRule = z.infer<typeof insertFlowRuleSchema>;
 export type FlowRule = typeof flowRules.$inferSelect;
 export type InsertTask = z.infer<typeof insertTaskSchema>;
