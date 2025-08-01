@@ -80,30 +80,35 @@ export default function FlowDataViewer({
     );
   };
 
-  const renderFormData = (formResponse: Record<string, any> | undefined, title?: string) => {
-    if (!formResponse || Object.keys(formResponse).length === 0) {
-      return (
-        <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border">
-          <div className="text-sm text-gray-500 italic text-center">No data available</div>
-        </div>
-      );
-    }
+  const renderFormData = (formResponse: Record<string, any> | undefined, title?: string): React.ReactElement => {
+    try {
+      if (!formResponse || typeof formResponse !== 'object' || Object.keys(formResponse).length === 0) {
+        return (
+          <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border">
+            <div className="text-sm text-gray-500 italic text-center">No data available</div>
+          </div>
+        );
+      }
 
-    // Safe function to render any value as a string
-    const renderValue = (val: any): string => {
-      if (val === null || val === undefined) return '';
-      if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
-        return String(val);
-      }
-      if (typeof val === 'object') {
+      // Safe function to render any value as a string
+      const renderValue = (val: any): string => {
         try {
-          return JSON.stringify(val, null, 2);
+          if (val === null || val === undefined) return '';
+          if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+            return String(val);
+          }
+          if (typeof val === 'object') {
+            try {
+              return JSON.stringify(val, null, 2);
+            } catch {
+              return '[Complex Object]';
+            }
+          }
+          return String(val);
         } catch {
-          return '[Complex Object]';
+          return '[Error displaying value]';
         }
-      }
-      return String(val);
-    };
+      };
 
     return (
       <div className="bg-white dark:bg-gray-900 border rounded-lg overflow-hidden">
@@ -201,6 +206,14 @@ export default function FlowDataViewer({
         </div>
       </div>
     );
+    } catch (error) {
+      // Fallback for any rendering errors
+      return (
+        <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
+          <div className="text-sm text-red-600 dark:text-red-400 text-center">Error displaying form data</div>
+        </div>
+      );
+    }
   };
 
   return (
@@ -296,11 +309,15 @@ export default function FlowDataViewer({
                         <div className="space-y-4">
                           {/* Display Initial Flow Data for first task */}
                           {index === 0 && task.initialData && Object.keys(task.initialData).length > 0 && (
-                            renderFormData(task.initialData, "Initial Flow Data")
+                            <div key="initial-data">
+                              {renderFormData(task.initialData, "Initial Flow Data")}
+                            </div>
                           )}
                           
                           {/* Display Form Response Data */}
-                          {renderFormData(task.formResponse, "Form Response Data")}
+                          <div key="form-response">
+                            {renderFormData(task.formResponse, "Form Response Data")}
+                          </div>
                         </div>
                       </TableCell>
                     </TableRow>
