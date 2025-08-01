@@ -961,6 +961,161 @@ export default function Tasks() {
                       </div>
                     </div>
                     
+                    {/* Flow Context Information - WHO, WHAT, WHEN */}
+                    <div className="p-6">
+                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-4">
+                        <div className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-3 flex items-center">
+                          <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
+                          📋 Flow Context
+                        </div>
+                        
+                        {/* WHO, WHAT, WHEN */}
+                        <div className="grid grid-cols-1 gap-2 text-sm mb-3">
+                          {task.flowInitiatedBy && (
+                            <div className="flex items-start">
+                              <span className="font-medium text-blue-700 dark:text-blue-300 min-w-[50px]">WHO:</span>
+                              <span className="text-blue-600 dark:text-blue-400">Started by {task.flowInitiatedBy}</span>
+                            </div>
+                          )}
+                          
+                          {task.flowDescription && (
+                            <div className="flex items-start">
+                              <span className="font-medium text-blue-700 dark:text-blue-300 min-w-[50px]">WHAT:</span>
+                              <span className="text-blue-600 dark:text-blue-400">{task.flowDescription}</span>
+                            </div>
+                          )}
+                          
+                          {task.flowInitiatedAt && (
+                            <div className="flex items-start">
+                              <span className="font-medium text-blue-700 dark:text-blue-300 min-w-[50px]">WHEN:</span>
+                              <span className="text-blue-600 dark:text-blue-400">{format(new Date(task.flowInitiatedAt), 'MMM dd, yyyy HH:mm')}</span>
+                            </div>
+                          )}
+                          
+                          <div className="flex items-start">
+                            <span className="font-medium text-blue-700 dark:text-blue-300 min-w-[50px]">ORDER:</span>
+                            <span className="text-blue-600 dark:text-blue-400 font-mono">#{task.orderNumber}</span>
+                          </div>
+                        </div>
+                        
+                        {/* Data View Button and Flow Data */}
+                        <div className="pt-3 border-t border-blue-200 dark:border-blue-700">
+                          {/* Data View Button */}
+                          <div className="flex justify-between items-center mb-3">
+                            <div className="font-medium text-blue-700 dark:text-blue-300 text-sm flex items-center">
+                              <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                              📄 Flow Data
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const newExpanded = new Set(expandedDataTasks);
+                                if (newExpanded.has(task.id)) {
+                                  newExpanded.delete(task.id);
+                                } else {
+                                  newExpanded.add(task.id);
+                                }
+                                setExpandedDataTasks(newExpanded);
+                              }}
+                              className="h-8 px-3 text-xs bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 border-emerald-200 dark:border-emerald-700 hover:from-emerald-100 hover:to-teal-100 dark:hover:from-emerald-900/30 dark:hover:to-teal-900/30 text-emerald-700 dark:text-emerald-300 rounded-lg"
+                            >
+                              <Database className="h-3 w-3 mr-1" />
+                              {expandedDataTasks.has(task.id) ? 'Hide Data' : 'View Data'}
+                            </Button>
+                          </div>
+                          
+                          {/* Expandable Data Section */}
+                          {expandedDataTasks.has(task.id) && (
+                            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 text-xs border border-gray-200 dark:border-gray-600 shadow-sm max-h-64 overflow-y-auto">
+                              {(() => {
+                                // Get all tasks from the same flow, sorted by creation date
+                                const flowTasks = (tasks as any[])?.filter(t => t.flowId === task.flowId && t.status === 'completed')
+                                  .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) || [];
+                                
+                                // Get all form responses for this flow
+                                const flowResponses = (formResponses as any[])?.filter(fr => 
+                                  flowTasks.some(ft => ft.id === fr.taskId)
+                                ) || [];
+                                
+                                const allFormData: { formName: string, data: any, taskName: string, order: number }[] = [];
+                                
+                                // Add initial form data if available
+                                if (task.flowInitialFormData) {
+                                  allFormData.push({
+                                    formName: task.formId || 'Initial Form',
+                                    data: task.flowInitialFormData,
+                                    taskName: 'Initial Task',
+                                    order: 0
+                                  });
+                                }
+                                
+                                // Add completed task responses
+                                flowTasks.forEach((flowTask, index) => {
+                                  const taskResponse = flowResponses.find(fr => fr.taskId === flowTask.id);
+                                  if (taskResponse && taskResponse.formData) {
+                                    allFormData.push({
+                                      formName: flowTask.formId || `Task ${index + 1} Form`,
+                                      data: taskResponse.formData,
+                                      taskName: flowTask.taskName || `Task ${index + 1}`,
+                                      order: index + 1
+                                    });
+                                  }
+                                });
+                                
+                                return allFormData.map((formItem, formIndex) => (
+                                  <div key={formIndex} className="mb-4 border-b border-gray-200 dark:border-gray-600 last:border-b-0 pb-4 last:pb-0">
+                                    {/* Form Name Section */}
+                                    <div className="mb-2 p-2 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center space-x-2">
+                                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                          <div className="font-semibold text-green-800 dark:text-green-200 text-xs">
+                                            Form: {formItem.formName}
+                                          </div>
+                                        </div>
+                                        <div className="text-xs text-green-700 dark:text-green-300">
+                                          {formItem.taskName}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    {/* Form Data Section */}
+                                    <div className="space-y-2">
+                                      {Object.entries(getReadableFormData(formItem.data, formItem.formName)).map(([key, value]) => {
+                                        // Get the original form template to determine if this is a table field
+                                        const template = (formTemplates as any[])?.find((t: any) => t.formId === formItem.formName);
+                                        const questions = template?.questions ? (typeof template.questions === 'string' ? JSON.parse(template.questions) : template.questions) : [];
+                                        const field = questions?.find((f: any) => f.id === key);
+                                        const label = key; // Already processed by getReadableFormData
+                                        
+                                        return (
+                                          <div key={key} className="mb-2 p-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                            <div className="font-semibold text-gray-800 dark:text-gray-200 mb-1 text-xs bg-blue-100 dark:bg-blue-900 px-2 py-1 rounded">
+                                              {label}
+                                            </div>
+                                            
+                                            {/* Check if this is HTML table data */}
+                                            {typeof value === 'string' && value.includes('<table') ? (
+                                              <div dangerouslySetInnerHTML={{ __html: value }} />
+                                            ) : (
+                                              <div className="text-gray-900 dark:text-gray-100 text-xs pl-1">
+                                                {Array.isArray(value) ? value.join(', ') : String(value)}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ));
+                              })()}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    
                     {/* Action Buttons Section */}
                     <div className="p-6 bg-gray-50 dark:bg-gray-900/30 border-t border-gray-100 dark:border-gray-700">
                       <div className="flex items-center justify-between">
