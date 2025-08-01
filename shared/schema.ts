@@ -67,6 +67,7 @@ export const users = pgTable("users", {
 // User login logs table
 export const userLoginLogs = pgTable("user_login_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id),
   userId: varchar("user_id").notNull().references(() => users.id),
   deviceId: varchar("device_id").notNull(),
   deviceName: varchar("device_name"),
@@ -87,6 +88,7 @@ export const userLoginLogs = pgTable("user_login_logs", {
 // User devices table
 export const userDevices = pgTable("user_devices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id),
   userId: varchar("user_id").notNull().references(() => users.id),
   deviceId: varchar("device_id").notNull(),
   deviceName: varchar("device_name"),
@@ -102,6 +104,7 @@ export const userDevices = pgTable("user_devices", {
 // Password change history table
 export const passwordChangeHistory = pgTable("password_change_history", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id),
   userId: varchar("user_id").notNull().references(() => users.id),
   changedAt: timestamp("changed_at").defaultNow(),
   changedBy: varchar("changed_by"), // admin or self
@@ -320,6 +323,7 @@ export const insertPasswordChangeHistorySchema = createInsertSchema(passwordChan
 // TAT Configuration table
 export const tatConfig = pgTable("tat_config", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id),
   officeStartHour: integer("office_start_hour").default(9),
   officeEndHour: integer("office_end_hour").default(18),
   timezone: varchar("timezone").default("Asia/Kolkata"),

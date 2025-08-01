@@ -709,8 +709,8 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async getTATConfig(): Promise<any> {
-    const [config] = await db.select().from(tatConfig).limit(1);
+  async getTATConfig(organizationId: string): Promise<any> {
+    const [config] = await db.select().from(tatConfig).where(eq(tatConfig.organizationId, organizationId)).limit(1);
     return config;
   }
 
@@ -1000,8 +1000,8 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async upsertTATConfig(configData: any): Promise<any> {
-    const existing = await this.getTATConfig();
+  async upsertTATConfig(organizationId: string, configData: any): Promise<any> {
+    const existing = await this.getTATConfig(organizationId);
     
     if (existing) {
       const [updated] = await db
@@ -1016,7 +1016,10 @@ export class DatabaseStorage implements IStorage {
     } else {
       const [created] = await db
         .insert(tatConfig)
-        .values(configData)
+        .values({
+          ...configData,
+          organizationId,
+        })
         .returning();
       return created;
     }
