@@ -59,7 +59,18 @@ export default function Tasks() {
       ? () => fetch(`/api/tasks?status=${statusFilter}`).then(res => res.json())
       : undefined, // Use default fetcher for all tasks
     enabled: isAuthenticated,
+    staleTime: 0, // Always refetch to avoid cache issues
+    gcTime: 0, // Don't cache results
   });
+
+  // Add debugging to see what tasks are being returned
+  useEffect(() => {
+    if (tasks) {
+      console.log("Tasks data:", tasks);
+      console.log("Tasks count:", Array.isArray(tasks) ? tasks.length : 0);
+      console.log("Status filter:", statusFilter);
+    }
+  }, [tasks, statusFilter]);
 
   // Fetch form template
   const { data: formTemplates } = useQuery({
