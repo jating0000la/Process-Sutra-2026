@@ -284,7 +284,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/tasks/:id/status", isAuthenticated, async (req, res) => {
+  app.patch("/api/tasks/:id/status", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const { id } = req.params;
       const { status } = req.body;
@@ -331,7 +331,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (nextRules.length > 0) {
         // Get TAT configuration for enhanced calculations
-        const tatConfiguration = await storage.getTATConfig(user.organizationId);
+        const currentUser = req.currentUser;
+        const tatConfiguration = await storage.getTATConfig(currentUser.organizationId);
         const config = tatConfiguration || { officeStartHour: 9, officeEndHour: 18 };
         
         // Create ALL next tasks based on current task status using enhanced TAT calculation
@@ -347,7 +348,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             doerEmail: nextRule.email,
             status: "pending",
             formId: nextRule.formId,
-            organizationId: user.organizationId, // Include organization ID for new tasks
+            organizationId: currentUser.organizationId, // Include organization ID for new tasks
             // Include flow context and previous form data
             flowInitiatedBy: task.flowInitiatedBy,
             flowInitiatedAt: task.flowInitiatedAt,
@@ -889,7 +890,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(user);
     } catch (error) {
       console.error("Error creating user:", error);
-      if (error.code === '23505' && error.constraint === 'users_username_key') {
+      if ((error as any).code === '23505' && (error as any).constraint === 'users_username_key') {
         res.status(400).json({ message: "Username already exists. Please choose a different username." });
       } else {
         res.status(500).json({ message: "Failed to create user" });
@@ -907,9 +908,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/users/:id/status", isAuthenticated, requireAdmin, async (req, res) => {
+  app.put("/api/users/:id/status", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
-      const user = await storage.changeUserStatus(req.params.id, req.body.status);
+      const currentUser = req.currentUser;
+      const targetUserId = req.params.id;
+      const newStatus = req.body.status;
+      
+      // Get the target user to check their role
+      const targetUser = await storage.getUser(targetUserId);
+      
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Prevent suspending admin users
+      if (targetUser.role === 'admin' && newStatus === 'suspended') {
+        return res.status(400).json({ 
+          message: "Cannot suspend admin users. Every organization must have at least one active admin." 
+        });
+      }
+      
+      // Prevent admins from suspending themselves
+      if (targetUserId === currentUser.id && newStatus === 'suspended') {
+        return res.status(400).json({ 
+          message: "You cannot suspend your own account." 
+        });
+      }
+      
+      const user = await storage.changeUserStatus(targetUserId, newStatus);
       res.json(user);
     } catch (error) {
       console.error("Error updating user status:", error);

@@ -93,6 +93,10 @@ export default function UserManagement() {
   const changeStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
       const response = await apiRequest("PUT", `/api/users/${id}/status`, { status });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to update user status");
+      }
       return await response.json();
     },
     onSuccess: () => {
@@ -102,7 +106,7 @@ export default function UserManagement() {
         description: "User status updated successfully",
       });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast({
         title: "Error",
         description: error.message,
@@ -139,6 +143,19 @@ export default function UserManagement() {
   };
 
   const handleStatusChange = (userId: string, newStatus: string) => {
+    // Find the user to check their role
+    const targetUser = users.find(u => u.id === userId);
+    
+    // Prevent suspending admin users
+    if (targetUser?.role === 'admin' && newStatus === 'suspended') {
+      toast({
+        title: "Action Not Allowed",
+        description: "Cannot suspend admin users. Every organization must have at least one active admin.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     changeStatusMutation.mutate({ id: userId, status: newStatus });
   };
 
@@ -288,7 +305,9 @@ export default function UserManagement() {
                             <SelectContent>
                               <SelectItem value="active">Active</SelectItem>
                               <SelectItem value="inactive">Inactive</SelectItem>
-                              <SelectItem value="suspended">Suspended</SelectItem>
+                              {user.role !== 'admin' && (
+                                <SelectItem value="suspended">Suspended</SelectItem>
+                              )}
                             </SelectContent>
                           </Select>
                         </TableCell>
