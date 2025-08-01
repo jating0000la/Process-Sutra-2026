@@ -42,14 +42,25 @@ export default function OrganizationSettings() {
 
   // Create organization mutation
   const createOrgMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("/api/organizations", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+    mutationFn: (data: any) => 
+      fetch("/api/organizations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+        credentials: "include",
+      }).then(async res => {
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`${res.status}: ${errorText}`);
+        }
+        return res.json();
+      }),
     onSuccess: () => {
       toast({ title: "Organization created successfully" });
       setOrgForm({ name: "", domain: "", maxUsers: 50 });
-      queryClient.invalidateQueries({ queryKey: ["/api/organizations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations/current"] });
     },
     onError: (error: any) => {
       toast({ 
@@ -62,10 +73,21 @@ export default function OrganizationSettings() {
 
   // Add user mutation
   const addUserMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("/api/users", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+    mutationFn: (data: any) => 
+      fetch("/api/users", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+        credentials: "include",
+      }).then(async res => {
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`${res.status}: ${errorText}`);
+        }
+        return res.json();
+      }),
     onSuccess: () => {
       toast({ title: "User added successfully" });
       setUserForm({ email: "", firstName: "", lastName: "", role: "user" });
