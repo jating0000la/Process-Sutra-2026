@@ -80,12 +80,6 @@ const adminNavigationItems = [
     icon: Settings,
     badge: null,
   },
-  {
-    name: "Settings",
-    href: "/settings",
-    icon: Settings,
-    badge: null,
-  },
 ];
 
 export default function Sidebar() {
