@@ -93,77 +93,142 @@ export default function Tasks() {
     enabled: isAuthenticated,
   });
 
-  // Helper function to convert question IDs to readable labels
+  // Helper function to convert question IDs to readable labels for all form types
   const getReadableFormData = (formData: any, formId?: string): Record<string, any> => {
     if (!formData) return {};
     
     const readableData: Record<string, any> = {};
+    
+    // Get form template for better field labeling
+    const template = formTemplates ? (formTemplates as any[])?.find((t: any) => t.formId === formId) : null;
+    const questions = template ? (typeof template.questions === 'string' ? JSON.parse(template.questions) : template.questions) : null;
     
     Object.entries(formData).forEach(([key, value]) => {
       // Check if this is the new format with questionTitle and answer
       if (value && typeof value === 'object' && 'questionTitle' in value && 'answer' in value) {
         const formValue = value as { questionTitle: string; questionId?: string; answer: any };
         
-        // Try to get a better title from form template if current title looks like a question ID
+        // Try to get a better title from form template
         let displayTitle = formValue.questionTitle;
-        if (formTemplates && displayTitle.startsWith('q_')) {
-          const template = (formTemplates as any[])?.find((t: any) => t.formId === formId);
-          if (template) {
-            const questions = typeof template.questions === 'string' ? JSON.parse(template.questions) : template.questions;
-            if (Array.isArray(questions)) {
-              const question = questions.find((q: any) => q.id === displayTitle);
-              if (question && question.label) {
-                displayTitle = question.label;
-              }
-            }
+        let questionDefinition = null;
+        
+        if (questions && Array.isArray(questions)) {
+          // First try to find by questionId, then by title
+          questionDefinition = questions.find((q: any) => 
+            q.id === formValue.questionId || 
+            q.id === formValue.questionTitle || 
+            q.label === formValue.questionTitle
+          );
+          
+          if (questionDefinition && questionDefinition.label) {
+            displayTitle = questionDefinition.label;
           }
         }
         
-        // Special handling for table data in the answer
-        if (Array.isArray(formValue.answer) && formValue.answer.length > 0 && typeof formValue.answer[0] === 'object') {
-          // Try to get proper column labels from form template
-          let columns = Object.keys(formValue.answer[0]).map(key => ({
-            id: key,
-            label: key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()
-          }));
+        // Format answer based on question type
+        let formattedAnswer = formValue.answer;
+        
+        if (questionDefinition) {
+          const questionType = questionDefinition.type;
           
-          // Check if we can get better column labels from the form template
-          if (formTemplates && formId) {
-            const template = (formTemplates as any[])?.find((t: any) => t.formId === formId);
-            if (template) {
-              const questions = typeof template.questions === 'string' ? JSON.parse(template.questions) : template.questions;
-              if (Array.isArray(questions)) {
-                // Find the table question that matches this data
-                const tableQuestion = questions.find((q: any) => 
-                  q.type === 'table' && (q.id === formValue.questionId || q.label === displayTitle)
-                );
+          switch (questionType) {
+            case 'table':
+              // Handle table data
+              if (Array.isArray(formValue.answer) && formValue.answer.length > 0 && typeof formValue.answer[0] === 'object') {
+                let columns = Object.keys(formValue.answer[0]).map(key => ({
+                  id: key,
+                  label: key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()
+                }));
                 
-                if (tableQuestion && tableQuestion.tableColumns) {
-                  // Create a mapping of form template column labels by order
-                  const templateColumns = tableQuestion.tableColumns;
+                if (questionDefinition.tableColumns) {
+                  const templateColumns = questionDefinition.tableColumns;
                   const dataColumnKeys = Object.keys(formValue.answer[0]);
-                  
-                  // Map data columns to template column labels by position
                   columns = dataColumnKeys.map((dataKey, index) => ({
                     id: dataKey,
                     label: templateColumns[index]?.label || dataKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()
                   }));
                 }
+                
+                let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full border border-gray-300 text-xs">';
+                tableHtml += '<thead class="bg-gray-50"><tr>';
+                columns.forEach((col: any) => {
+                  tableHtml += `<th class="border border-gray-300 px-2 py-1 text-left font-medium">${col.label}</th>`;
+                });
+                tableHtml += '</tr></thead><tbody>';
+                formValue.answer.forEach((row: any, index: number) => {
+                  tableHtml += `<tr class="${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">`;
+                  columns.forEach((col: any) => {
+                    const cellValue = row[col.id] || '';
+                    tableHtml += `<td class="border border-gray-300 px-2 py-1">${cellValue}</td>`;
+                  });
+                  tableHtml += '</tr>';
+                });
+                tableHtml += '</tbody></table></div>';
+                formattedAnswer = tableHtml;
               }
-            }
+              break;
+              
+            case 'select':
+            case 'radio':
+              // Handle select/radio options - convert values to labels if options exist
+              if (questionDefinition.options && Array.isArray(questionDefinition.options)) {
+                const option = questionDefinition.options.find((opt: any) => opt.value === formValue.answer);
+                formattedAnswer = option ? option.label : formValue.answer;
+              }
+              break;
+              
+            case 'checkbox':
+              // Handle checkbox arrays - convert values to labels
+              if (Array.isArray(formValue.answer) && questionDefinition.options) {
+                const selectedLabels = formValue.answer.map((value: any) => {
+                  const option = questionDefinition.options.find((opt: any) => opt.value === value);
+                  return option ? option.label : value;
+                });
+                formattedAnswer = selectedLabels.join(', ');
+              }
+              break;
+              
+            case 'date':
+              // Format date values
+              if (formValue.answer && (typeof formValue.answer === 'string' || typeof formValue.answer === 'number' || formValue.answer instanceof Date)) {
+                try {
+                  const date = new Date(formValue.answer);
+                  formattedAnswer = date.toLocaleDateString();
+                } catch (e) {
+                  formattedAnswer = formValue.answer;
+                }
+              }
+              break;
+              
+            case 'file':
+              // Handle file uploads
+              if (formValue.answer) {
+                if (typeof formValue.answer === 'string') {
+                  formattedAnswer = `📎 ${formValue.answer}`;
+                } else if (Array.isArray(formValue.answer)) {
+                  formattedAnswer = formValue.answer.map((file: any) => `📎 ${file}`).join(', ');
+                }
+              }
+              break;
+              
+            default:
+              // For text, textarea, number, email, etc., use the answer as-is
+              formattedAnswer = formValue.answer;
+              break;
           }
+        } else if (Array.isArray(formValue.answer) && formValue.answer.length > 0 && typeof formValue.answer[0] === 'object') {
+          // Fallback table handling for cases without question definition
+          let columns = Object.keys(formValue.answer[0]).map(key => ({
+            id: key,
+            label: key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()
+          }));
           
           let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full border border-gray-300 text-xs">';
-          
-          // Table headers
           tableHtml += '<thead class="bg-gray-50"><tr>';
           columns.forEach((col: any) => {
             tableHtml += `<th class="border border-gray-300 px-2 py-1 text-left font-medium">${col.label}</th>`;
           });
-          tableHtml += '</tr></thead>';
-          
-          // Table rows
-          tableHtml += '<tbody>';
+          tableHtml += '</tr></thead><tbody>';
           formValue.answer.forEach((row: any, index: number) => {
             tableHtml += `<tr class="${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">`;
             columns.forEach((col: any) => {
@@ -173,15 +238,14 @@ export default function Tasks() {
             tableHtml += '</tr>';
           });
           tableHtml += '</tbody></table></div>';
-          
-          readableData[displayTitle] = tableHtml;
-        } else {
-          readableData[displayTitle] = formValue.answer;
+          formattedAnswer = tableHtml;
         }
+        
+        readableData[displayTitle] = formattedAnswer;
       } else {
-        // Legacy format - try to map using form template if available
-        if (!formTemplates) {
-          // Simple formatting for legacy data without template
+        // Legacy format - handle all field types dynamically
+        if (!questions || !Array.isArray(questions)) {
+          // Simple formatting without template
           if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
             const tableRows = value.map((row: any, index: number) => {
               const rowEntries = Object.entries(row).map(([colKey, colValue]) => {
@@ -197,85 +261,114 @@ export default function Tasks() {
           return;
         }
         
-        // Find the form template that matches this form ID
-        const template = (formTemplates as any[])?.find((t: any) => t.formId === formId);
+        // Find the question definition for this key
+        const legacyQuestion = questions.find((q: any) => q.id === key);
+        const questionText = legacyQuestion?.label || key;
         
-        if (!template) {
-          readableData[key] = value;
-          return;
-        }
+        // Format value based on question type
+        let formattedValue = value;
         
-        // Parse questions if it's a JSON string
-        const questions = typeof template.questions === 'string' 
-          ? JSON.parse(template.questions) 
-          : template.questions;
-        
-        if (!questions || !Array.isArray(questions)) {
-          readableData[key] = value;
-          return;
-        }
-        
-        // Create a mapping of question ID to question text
-        const questionMap: Record<string, string> = {};
-        questions.forEach((question: any) => {
-          if (question.id && question.label) {
-            questionMap[question.id] = question.label;
-          }
-        });
-        
-        const questionText = questionMap[key] || key;
-        
-        // Special handling for table data
-        if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
-          const tableQuestion = questions.find((q: any) => q.id === key && q.type === 'table');
+        if (legacyQuestion) {
+          const questionType = legacyQuestion.type;
           
-          if (tableQuestion && tableQuestion.tableColumns) {
-            // Map data columns to template column labels by position
-            const templateColumns = tableQuestion.tableColumns;
-            const dataColumnKeys = Object.keys(value[0]);
-            
-            // Create columns mapping
-            const columns = dataColumnKeys.map((dataKey, index) => ({
-              id: dataKey,
-              label: templateColumns[index]?.label || dataKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()
-            }));
-            
-            let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full border border-gray-300 text-xs">';
-            
-            // Table headers
-            tableHtml += '<thead class="bg-gray-50"><tr>';
-            columns.forEach((col: any) => {
-              tableHtml += `<th class="border border-gray-300 px-2 py-1 text-left font-medium">${col.label}</th>`;
-            });
-            tableHtml += '</tr></thead>';
-            
-            // Table rows
-            tableHtml += '<tbody>';
-            value.forEach((row: any, index: number) => {
-              tableHtml += `<tr class="${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">`;
-              columns.forEach((col: any) => {
-                const cellValue = row[col.id] || '';
-                tableHtml += `<td class="border border-gray-300 px-2 py-1">${cellValue}</td>`;
-              });
-              tableHtml += '</tr>';
-            });
-            tableHtml += '</tbody></table></div>';
-            
-            readableData[questionText] = tableHtml;
-          } else {
-            // Fallback formatting
-            const tableRows = value.map((row: any, index: number) => {
-              const rowEntries = Object.entries(row).map(([colKey, colValue]) => {
-                const colLabel = colKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
-                return `${colLabel}: ${colValue}`;
-              });
-              return `Item ${index + 1} - ${rowEntries.join(', ')}`;
-            });
-            readableData[questionText] = tableRows.join(' • ');
+          switch (questionType) {
+            case 'table':
+              // Handle table data
+              if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
+                let columns = Object.keys(value[0]).map(colKey => ({
+                  id: colKey,
+                  label: colKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()
+                }));
+                
+                if (legacyQuestion.tableColumns) {
+                  const templateColumns = legacyQuestion.tableColumns;
+                  const dataColumnKeys = Object.keys(value[0]);
+                  columns = dataColumnKeys.map((dataKey, index) => ({
+                    id: dataKey,
+                    label: templateColumns[index]?.label || dataKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()
+                  }));
+                }
+                
+                let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full border border-gray-300 text-xs">';
+                tableHtml += '<thead class="bg-gray-50"><tr>';
+                columns.forEach((col: any) => {
+                  tableHtml += `<th class="border border-gray-300 px-2 py-1 text-left font-medium">${col.label}</th>`;
+                });
+                tableHtml += '</tr></thead><tbody>';
+                value.forEach((row: any, index: number) => {
+                  tableHtml += `<tr class="${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">`;
+                  columns.forEach((col: any) => {
+                    const cellValue = row[col.id] || '';
+                    tableHtml += `<td class="border border-gray-300 px-2 py-1">${cellValue}</td>`;
+                  });
+                  tableHtml += '</tr>';
+                });
+                tableHtml += '</tbody></table></div>';
+                formattedValue = tableHtml;
+              }
+              break;
+              
+            case 'select':
+            case 'radio':
+              // Convert values to labels
+              if (legacyQuestion.options && Array.isArray(legacyQuestion.options)) {
+                const option = legacyQuestion.options.find((opt: any) => opt.value === value);
+                formattedValue = option ? option.label : value;
+              }
+              break;
+              
+            case 'checkbox':
+              // Handle checkbox arrays
+              if (Array.isArray(value) && legacyQuestion.options) {
+                const selectedLabels = value.map((val: any) => {
+                  const option = legacyQuestion.options.find((opt: any) => opt.value === val);
+                  return option ? option.label : val;
+                });
+                formattedValue = selectedLabels.join(', ');
+              }
+              break;
+              
+            case 'date':
+              // Format dates
+              if (value && (typeof value === 'string' || typeof value === 'number' || value instanceof Date)) {
+                try {
+                  const date = new Date(value);
+                  formattedValue = date.toLocaleDateString();
+                } catch (e) {
+                  formattedValue = value;
+                }
+              }
+              break;
+              
+            case 'file':
+              // Handle file uploads
+              if (value) {
+                if (typeof value === 'string') {
+                  formattedValue = `📎 ${value}`;
+                } else if (Array.isArray(value)) {
+                  formattedValue = value.map((file: any) => `📎 ${file}`).join(', ');
+                }
+              }
+              break;
+              
+            default:
+              // For text, textarea, number, email, etc.
+              formattedValue = value;
+              break;
           }
-        } else {
-          readableData[questionText] = value;
+        } else if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
+          // Fallback table formatting
+          const tableRows = value.map((row: any, index: number) => {
+            const rowEntries = Object.entries(row).map(([colKey, colValue]) => {
+              const colLabel = colKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
+              return `${colLabel}: ${colValue}`;
+            });
+            return `Item ${index + 1} - ${rowEntries.join(', ')}`;
+          });
+          formattedValue = tableRows.join(' • ');
         }
+        
+        readableData[questionText] = formattedValue;
       }
     });
     
