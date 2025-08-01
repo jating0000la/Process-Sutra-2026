@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
@@ -37,16 +38,48 @@ function Router() {
         </>
       ) : (
         <>
+          {/* Public user routes */}
           <Route path="/" component={Dashboard} />
           <Route path="/tasks" component={Tasks} />
-          <Route path="/flows" component={Flows} />
-          <Route path="/form-builder" component={FormBuilder} />
           <Route path="/analytics" component={Analytics} />
-          <Route path="/tat-config" component={TATConfig} />
-          <Route path="/flow-data" component={FlowData} />
-          <Route path="/flow-simulator" component={FlowSimulator} />
-          <Route path="/user-management" component={UserManagement} />
-          <Route path="/organization-settings" component={OrganizationSettings} />
+          
+          {/* Admin-only routes */}
+          <Route path="/flows">
+            <ProtectedRoute requireAdmin>
+              <Flows />
+            </ProtectedRoute>
+          </Route>
+          <Route path="/form-builder">
+            <ProtectedRoute requireAdmin>
+              <FormBuilder />
+            </ProtectedRoute>
+          </Route>
+          <Route path="/tat-config">
+            <ProtectedRoute requireAdmin>
+              <TATConfig />
+            </ProtectedRoute>
+          </Route>
+          <Route path="/flow-data">
+            <ProtectedRoute requireAdmin>
+              <FlowData />
+            </ProtectedRoute>
+          </Route>
+          <Route path="/flow-simulator">
+            <ProtectedRoute requireAdmin>
+              <FlowSimulator />
+            </ProtectedRoute>
+          </Route>
+          <Route path="/user-management">
+            <ProtectedRoute requireAdmin>
+              <UserManagement />
+            </ProtectedRoute>
+          </Route>
+          <Route path="/organization-settings">
+            <ProtectedRoute requireAdmin>
+              <OrganizationSettings />
+            </ProtectedRoute>
+          </Route>
+          
           <Route component={NotFound} />
         </>
       )}
