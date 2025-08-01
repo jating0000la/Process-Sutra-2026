@@ -79,9 +79,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/flow-rules", isAuthenticated, requireAdmin, async (req, res) => {
+  app.post("/api/flow-rules", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
-      const validatedData = insertFlowRuleSchema.parse(req.body);
+      const currentUser = req.currentUser;
+      const dataWithOrganization = {
+        ...req.body,
+        organizationId: currentUser.organizationId
+      };
+      const validatedData = insertFlowRuleSchema.parse(dataWithOrganization);
       const flowRule = await storage.createFlowRule(validatedData);
       res.status(201).json(flowRule);
     } catch (error) {
@@ -90,8 +95,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/flow-rules/bulk", isAuthenticated, requireAdmin, async (req, res) => {
+  app.post("/api/flow-rules/bulk", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
+      const currentUser = req.currentUser;
       const { rules } = req.body;
       
       if (!Array.isArray(rules)) {
@@ -101,7 +107,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const createdRules = [];
       for (const ruleData of rules) {
         try {
-          const validatedData = insertFlowRuleSchema.parse(ruleData);
+          const dataWithOrganization = {
+            ...ruleData,
+            organizationId: currentUser.organizationId
+          };
+          const validatedData = insertFlowRuleSchema.parse(dataWithOrganization);
           const rule = await storage.createFlowRule(validatedData);
           createdRules.push(rule);
         } catch (error) {

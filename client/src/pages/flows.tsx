@@ -66,6 +66,12 @@ export default function Flows() {
     enabled: isAuthenticated,
   });
 
+  // Fetch users for dropdown
+  const { data: users = [] } = useQuery({
+    queryKey: ["/api/users"],
+    enabled: isAuthenticated,
+  });
+
   // Get unique systems and tasks from existing rules for dropdowns
   const availableSystems = Array.from(new Set((flowRules as any[])?.map(rule => rule.system) || []));
   const availableTasks = Array.from(new Set((flowRules as any[])?.map(rule => rule.nextTask).filter(Boolean) || []));
@@ -739,10 +745,21 @@ export default function Flows() {
                           name="email"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Email</FormLabel>
-                              <FormControl>
-                                <Input {...field} type="email" placeholder="assignee@example.com" />
-                              </FormControl>
+                              <FormLabel>Assign to User</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select user to assign task" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {(users as any[])?.map((user: any) => (
+                                    <SelectItem key={user.id} value={user.email}>
+                                      {user.firstName} {user.lastName} ({user.email})
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -798,15 +815,15 @@ export default function Flows() {
                             name="transferToEmails"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Transfer Target Emails</FormLabel>
+                                <FormLabel>Transfer Target Users</FormLabel>
                                 <FormControl>
                                   <Input 
                                     {...field} 
-                                    placeholder="user1@example.com, user2@example.com"
+                                    placeholder="Select users from: {(users as any[])?.map((u: any) => u.email).join(', ')}"
                                   />
                                 </FormControl>
                                 <div className="text-xs text-gray-500">
-                                  Comma-separated list of emails who can receive transferred tasks
+                                  Comma-separated list of emails from the dropdown above who can receive transferred tasks
                                 </div>
                                 <FormMessage />
                               </FormItem>
