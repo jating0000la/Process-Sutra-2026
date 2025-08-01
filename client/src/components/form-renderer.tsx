@@ -57,7 +57,7 @@ export default function FormRenderer({
   });
 
   // Create auto-prefill data by matching field labels from previous responses
-  const getAutoPrefillData = () => {
+  const autoPrefillData = useMemo(() => {
     if (!flowResponses || !Array.isArray(flowResponses)) {
       return {};
     }
@@ -77,9 +77,7 @@ export default function FormRenderer({
     });
 
     return prefillData;
-  };
-
-  const autoPrefillData = getAutoPrefillData();
+  }, [flowResponses, template.questions]);
   
   // Merge initialData with auto-prefill data (initialData takes precedence)
   const combinedInitialData = {
@@ -326,14 +324,50 @@ export default function FormRenderer({
     defaultValues: getDefaultValues(),
   });
 
-  // Update form when auto-prefill data becomes available
+  // Track if form has been initialized to prevent loops
+  const [isFormInitialized, setIsFormInitialized] = useState(false);
+
+  // Update form when auto-prefill data becomes available (only once)
   useEffect(() => {
-    if (Object.keys(autoPrefillData).length > 0) {
-      const newDefaults = getDefaultValues();
-      // Reset form with new defaults that include auto-prefill data
+    if (!isFormInitialized && Object.keys(autoPrefillData).length > 0) {
+      // Create new defaults inline to avoid dependency issues
+      const newDefaults: Record<string, any> = {};
+      template.questions.forEach((question) => {
+        const initialValue = initialData[question.id];
+        const prefillValue = autoPrefillData[question.label];
+        
+        if (initialValue !== undefined) {
+          newDefaults[question.id] = initialValue;
+        } else if (prefillValue !== undefined) {
+          newDefaults[question.id] = prefillValue;
+        } else {
+          switch (question.type) {
+            case "text":
+            case "textarea":
+            case "select":
+            case "radio":
+            case "date":
+              newDefaults[question.id] = "";
+              break;
+            case "checkbox":
+              newDefaults[question.id] = [];
+              break;
+            case "file":
+              newDefaults[question.id] = null;
+              break;
+            case "table":
+              newDefaults[question.id] = [];
+              break;
+            default:
+              newDefaults[question.id] = "";
+          }
+        }
+      });
+      
       form.reset(newDefaults);
+      setIsFormInitialized(true);
     }
-  }, [autoPrefillData, form, getDefaultValues]);
+  }, [autoPrefillData, initialData, template.questions, form.reset, isFormInitialized]);
 
   const handleSubmit = (data: any) => {
     // Clean up the data by removing empty optional fields

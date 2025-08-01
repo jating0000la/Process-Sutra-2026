@@ -1,0 +1,57 @@
+Warning: Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render.
+    at FormRenderer (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/components/form-renderer.tsx:34:3)
+    at div
+    at https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-AXMZZQ2X.js?v=229cf196:42:13
+    at https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-LLLTVKM7.js?v=229cf196:61:7
+    at https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-2K77HOHX.js?v=229cf196:79:13
+    at https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-2K77HOHX.js?v=229cf196:56:13
+    at https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-AXMZZQ2X.js?v=229cf196:42:13
+    at https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-HG7P5XMB.js?v=229cf196:29:5
+    at https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-dialog.js?v=229cf196:236:13
+    at https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-dialog.js?v=229cf196:159:58
+    at Presence (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-LUE5KDWX.js?v=229cf196:24:11)
+    at https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-dialog.js?v=229cf196:150:64
+    at https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-2K77HOHX.js?v=229cf196:79:13
+    at https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-2K77HOHX.js?v=229cf196:56:13
+    at https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-AXMZZQ2X.js?v=229cf196:42:13
+    at https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-LLLTVKM7.js?v=229cf196:260:22
+    at Presence (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-LUE5KDWX.js?v=229cf196:24:11)
+    at Provider (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=229cf196:38:15)
+    at DialogPortal (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-dialog.js?v=229cf196:112:11)
+    at _c3 (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/components/ui/dialog.tsx:52:12)
+    at Provider (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=229cf196:38:15)
+    at Dialog (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-dialog.js?v=229cf196:53:5)
+    at div
+    at Tasks (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/pages/tasks.tsx:38:21)
+    at Route (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=229cf196:323:16)
+    at Switch (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=229cf196:379:17)
+    at Router (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/App.tsx?v=war-ILDB09FEACRUcUNHE:39:29)
+    at Provider (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=229cf196:38:15)
+    at TooltipProvider (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=229cf196:62:5)
+    at AuthProvider (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/src/contexts/AuthContext.tsx:30:32)
+    at QueryClientProvider (https://df96900a-bc1e-4fa2-8b40-095cd70d9111-00-ynl9dz1nvcvh.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=229cf196:2805:3)
+    at App
+printWarning @ chunk-RPCDYKBN.js?v=229cf196:521
+error @ chunk-RPCDYKBN.js?v=229cf196:505
+checkForNestedUpdates @ chunk-RPCDYKBN.js?v=229cf196:19665
+scheduleUpdateOnFiber @ chunk-RPCDYKBN.js?v=229cf196:18533
+dispatchSetState @ chunk-RPCDYKBN.js?v=229cf196:12403
+callback @ chunk-4BFJKWC4.js?v=229cf196:179
+next @ chunk-4BFJKWC4.js?v=229cf196:1305
+next @ chunk-4BFJKWC4.js?v=229cf196:396
+setFieldValue @ chunk-4BFJKWC4.js?v=229cf196:1115
+setValue @ chunk-4BFJKWC4.js?v=229cf196:1152
+_reset @ chunk-4BFJKWC4.js?v=229cf196:1543
+reset @ chunk-4BFJKWC4.js?v=229cf196:1576
+(anonymous) @ form-renderer.tsx:334
+commitHookEffectListMount @ chunk-RPCDYKBN.js?v=229cf196:16915
+commitPassiveMountOnFiber @ chunk-RPCDYKBN.js?v=229cf196:18156
+commitPassiveMountEffects_complete @ chunk-RPCDYKBN.js?v=229cf196:18129
+commitPassiveMountEffects_begin @ chunk-RPCDYKBN.js?v=229cf196:18119
+commitPassiveMountEffects @ chunk-RPCDYKBN.js?v=229cf196:18109
+flushPassiveEffectsImpl @ chunk-RPCDYKBN.js?v=229cf196:19490
+flushPassiveEffects @ chunk-RPCDYKBN.js?v=229cf196:19447
+(anonymous) @ chunk-RPCDYKBN.js?v=229cf196:19328
+workLoop @ chunk-RPCDYKBN.js?v=229cf196:197
+flushWork @ chunk-RPCDYKBN.js?v=229cf196:176
+performWorkUntilDeadline @ chunk-RPCDYKBN.js?v=229cf196:384Understand this error
