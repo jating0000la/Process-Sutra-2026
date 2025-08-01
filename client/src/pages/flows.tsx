@@ -16,7 +16,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Plus, Workflow, Play, Edit, Trash2, Upload, Users } from "lucide-react";
+import { Plus, Workflow, Play, Edit, Trash2, Upload, Users, Eye } from "lucide-react";
+import { useLocation } from "wouter";
 
 const flowRuleSchema = z.object({
   system: z.string().min(1, "System is required"),
@@ -42,6 +43,7 @@ const startFlowSchema = z.object({
 export default function Flows() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading } = useAuth();
+  const [, setLocation] = useLocation();
   const [isRuleDialogOpen, setIsRuleDialogOpen] = useState(false);
   const [isStartFlowDialogOpen, setIsStartFlowDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<any>(null);
@@ -277,6 +279,11 @@ export default function Flows() {
 
   const onSubmitStartFlow = (data: z.infer<typeof startFlowSchema>) => {
     startFlowMutation.mutate(data);
+  };
+
+  const handleViewFlowData = (system: string) => {
+    // Navigate to flow data page with system filter
+    setLocation(`/flow-data?system=${encodeURIComponent(system)}`);
   };
 
   const importFromFile = async () => {
@@ -876,9 +883,20 @@ export default function Flows() {
               availableSystems.map((system: string) => (
                 <Card key={system}>
                   <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <Workflow className="w-5 h-5 mr-2" />
-                      {system}
+                    <CardTitle className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <Workflow className="w-5 h-5 mr-2" />
+                        {system}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleViewFlowData(system)}
+                        className="ml-4"
+                      >
+                        <Eye className="w-4 h-4 mr-2" />
+                        View Data
+                      </Button>
                     </CardTitle>
                   </CardHeader>
                   <CardContent>

@@ -32,6 +32,15 @@ export default function FlowData() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedFlowId, setSelectedFlowId] = useState<string | null>(null);
 
+  // Check for system parameter in URL and set filter
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const systemParam = urlParams.get('system');
+    if (systemParam) {
+      setSystemFilter(systemParam);
+    }
+  }, []);
+
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
