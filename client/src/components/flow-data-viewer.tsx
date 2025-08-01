@@ -78,55 +78,82 @@ export default function FlowDataViewer({
     );
   };
 
-  const renderFormData = (formResponse: Record<string, any> | undefined) => {
+  const renderFormData = (formResponse: Record<string, any> | undefined, title?: string) => {
     if (!formResponse || Object.keys(formResponse).length === 0) {
-      return <div className="text-sm text-gray-500 italic">No form data submitted</div>;
+      return (
+        <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border">
+          <div className="text-sm text-gray-500 italic text-center">No data available</div>
+        </div>
+      );
     }
 
     return (
-      <div className="space-y-3">
-        {Object.entries(formResponse).map(([key, value]) => (
-          <div key={key} className="border-l-2 border-blue-200 pl-3">
-            <div className="font-medium text-sm text-gray-700">{key}</div>
-            <div className="text-sm mt-1">
-              {typeof value === 'object' && value !== null ? (
-                Array.isArray(value) ? (
-                  value.length > 0 ? (
-                    <div className="space-y-2">
-                      {value.map((item, index) => (
-                        <div key={index} className="bg-gray-50 p-2 rounded text-xs">
-                          {typeof item === 'object' ? (
-                            Object.entries(item).map(([itemKey, itemValue]) => (
-                              <div key={itemKey} className="flex justify-between">
-                                <span className="font-medium">{itemKey}:</span>
-                                <span>{String(itemValue)}</span>
+      <div className="bg-white dark:bg-gray-900 border rounded-lg overflow-hidden">
+        {title && (
+          <div className="bg-gray-50 dark:bg-gray-800 px-4 py-2 border-b">
+            <h4 className="font-medium text-sm text-gray-900 dark:text-white">{title}</h4>
+          </div>
+        )}
+        <div className="p-4 space-y-3">
+          {Object.entries(formResponse).map(([key, value]) => (
+            <div key={key} className="grid grid-cols-3 gap-4 py-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
+              <div className="font-medium text-sm text-gray-700 dark:text-gray-300 capitalize">
+                {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+              </div>
+              <div className="col-span-2 text-sm">
+                {typeof value === 'object' && value !== null ? (
+                  Array.isArray(value) ? (
+                    value.length > 0 ? (
+                      <div className="space-y-1">
+                        {value.map((item, index) => (
+                          <div key={index} className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded border border-blue-200 dark:border-blue-800">
+                            {typeof item === 'object' ? (
+                              <div className="space-y-1">
+                                {Object.entries(item).map(([itemKey, itemValue]) => (
+                                  <div key={itemKey} className="flex justify-between text-xs">
+                                    <span className="font-medium text-blue-700 dark:text-blue-300">
+                                      {itemKey}:
+                                    </span>
+                                    <span className="text-blue-900 dark:text-blue-100">
+                                      {String(itemValue)}
+                                    </span>
+                                  </div>
+                                ))}
                               </div>
-                            ))
-                          ) : (
-                            String(item)
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                            ) : (
+                              <span className="text-blue-900 dark:text-blue-100">{String(item)}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-gray-500 italic">Empty list</span>
+                    )
                   ) : (
-                    <span className="text-gray-500 italic">Empty list</span>
+                    <div className="bg-gray-50 dark:bg-gray-800 p-2 rounded border">
+                      <div className="space-y-1">
+                        {Object.entries(value).map(([objKey, objValue]) => (
+                          <div key={objKey} className="flex justify-between text-xs">
+                            <span className="font-medium text-gray-700 dark:text-gray-300">
+                              {objKey}:
+                            </span>
+                            <span className="text-gray-900 dark:text-gray-100">
+                              {String(objValue)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )
                 ) : (
-                  <div className="bg-gray-50 p-2 rounded text-xs">
-                    {Object.entries(value).map(([objKey, objValue]) => (
-                      <div key={objKey} className="flex justify-between">
-                        <span className="font-medium">{objKey}:</span>
-                        <span>{String(objValue)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )
-              ) : (
-                <span>{String(value)}</span>
-              )}
+                  <span className="text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded border">
+                    {String(value)}
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     );
   };
@@ -220,10 +247,15 @@ export default function FlowDataViewer({
                   </TableRow>
                   {expandedTasks.has(task.id) && (
                     <TableRow>
-                      <TableCell colSpan={7} className="bg-gray-50 p-4">
-                        <div className="space-y-3">
-                          <h4 className="font-medium text-sm">Form Response Data:</h4>
-                          {renderFormData(task.formResponse)}
+                      <TableCell colSpan={7} className="bg-gray-50 dark:bg-gray-800 p-4">
+                        <div className="space-y-4">
+                          {/* Display Initial Flow Data for first task */}
+                          {index === 0 && task.initialData && Object.keys(task.initialData).length > 0 && (
+                            renderFormData(task.initialData, "Initial Flow Data")
+                          )}
+                          
+                          {/* Display Form Response Data */}
+                          {renderFormData(task.formResponse, "Form Response Data")}
                         </div>
                       </TableCell>
                     </TableRow>
