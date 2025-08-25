@@ -39,7 +39,7 @@ Deploy your FlowSense application on any VPS provider with Docker and PostgreSQL
 
 ```bash
 # Access your VPS via Hostinger panel SSH terminal or:
-ssh root@your-hostinger-vps-ip
+ssh root@62.72.57.53
 
 # Hostinger VPS usually comes with Ubuntu 22.04 LTS
 # Verify your system
