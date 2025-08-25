@@ -74,9 +74,5 @@ temp/
 # Vite config variations
 vite.config.ts.*
 
-# AWS specific
-.aws/
-
 # Keep template files but ignore actual env files
 !.env.production.template
-!.env.railway

@@ -4,9 +4,9 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6.3-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-blue.svg)](https://postgresql.org/)
-[![Railway](https://img.shields.io/badge/Deploy-Railway-blueviolet.svg)](https://railway.app/)
+[![Docker](https://img.shields.io/badge/Docker-Supported-blue.svg)](https://docker.com/)
 
-FlowSense is a modern, real-time workflow management platform built with React, TypeScript, and Express.js. It provides advanced flow management capabilities with real-time collaboration, Firebase authentication, and comprehensive deployment options.
+FlowSense is a modern, real-time workflow management platform built with React, TypeScript, and Express.js. It provides advanced flow management capabilities with real-time collaboration, Firebase authentication, and VPS deployment.
 
 ## ✨ Features
 
@@ -16,19 +16,27 @@ FlowSense is a modern, real-time workflow management platform built with React, 
 - 🎛️ **Flow Builder** - Visual workflow creation and management
 - 📱 **Responsive Design** - Works seamlessly on all devices
 - 🐳 **Docker Support** - Containerized for easy deployment
-- ☁️ **Multiple Deployment Options** - Railway, AWS, and more
+- 🖥️ **VPS Deployment** - Deploy on any VPS provider
 - 🔄 **Database Migrations** - Automated schema management
 - 📈 **Performance Monitoring** - Built-in health checks
 
-## 🚀 Quick Deploy
+## 🚀 Quick Deploy on VPS
 
-### Railway (Recommended)
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/jating0000la/flowsense)
+### One-Command Deployment
+Deploy FlowSense on any VPS (DigitalOcean, Vultr, Linode, Hetzner) with a single command:
 
-1. Click "Deploy on Railway" 
-2. Connect your GitHub account
-3. Set environment variables (see [Railway Deployment Guide](RAILWAY_DEPLOYMENT.md))
-4. Deploy in minutes!
+```bash
+curl -sSL https://raw.githubusercontent.com/jating0000la/flowsense/main/scripts/vps-deploy.sh | sudo bash
+```
+
+### Supported VPS Providers
+- **DigitalOcean** - $6/month, beginner-friendly
+- **Vultr** - $6/month, global locations
+- **Linode** - $5/month, reliable
+- **Hetzner** - €4.5/month (~$5), best performance
+- **Contabo** - €5/month (~$5.5), high specs
+
+For detailed VPS deployment instructions, see [VPS Deployment Guide](VPS_DEPLOYMENT.md).
 
 ### Local Development
 
@@ -236,19 +244,14 @@ If you see an error like "port 5000 is already in use" when starting the develop
 
 ## 🚀 Deployment Options
 
-### Railway.com (Recommended)
-- **Easy Setup**: One-click PostgreSQL integration
-- **Auto-Deployment**: Push to deploy
-- **Free Tier**: $5 credit monthly
-- **Guide**: [Railway Deployment Guide](RAILWAY_DEPLOYMENT.md)
+### VPS Deployment (Recommended)
+- **Full Control**: Complete server management
+- **Cost Effective**: Starting from $5/month
+- **Production Ready**: Docker Compose with Nginx
+- **Multiple Providers**: DigitalOcean, Vultr, Linode, Hetzner
+- **Guide**: [VPS Deployment Guide](VPS_DEPLOYMENT.md)
 
-### AWS Options  
-- **App Runner**: Serverless container deployment
-- **ECS Fargate**: Full container orchestration
-- **CDK**: Infrastructure as code
-- **Guide**: [AWS Deployment Guide](DEPLOYMENT.md)
-
-### Docker
+### Local Docker
 ```bash
 docker-compose up --build
 ```
@@ -270,9 +273,8 @@ flowsense/
 │   ├── db.ts             # Database configuration
 │   └── flowController.ts # Flow management logic
 ├── shared/               # Shared TypeScript types
-├── aws-cdk/             # AWS CDK deployment code
 ├── scripts/             # Utility scripts
-└── .github/workflows/   # CI/CD pipelines
+└── docker-compose.yml   # Container orchestration
 ```
 
 ## 🛠️ Tech Stack
@@ -296,9 +298,9 @@ flowsense/
 
 ### Infrastructure
 - **Docker** - Containerization
-- **Railway** - Deployment platform  
-- **AWS CDK** - Infrastructure as code
-- **GitHub Actions** - CI/CD
+- **Docker Compose** - Multi-container orchestration
+- **Nginx** - Reverse proxy & SSL termination
+- **PostgreSQL** - Production database
 
 ## 🤝 Contributing
 
@@ -316,9 +318,7 @@ flowsense/
 
 ## 📚 Documentation
 
-- [Railway Deployment Guide](RAILWAY_DEPLOYMENT.md) - Deploy to Railway.com
-- [AWS Deployment Guide](DEPLOYMENT.md) - Deploy to AWS
-- [Quick Deploy Guide](QUICK_DEPLOY.md) - Fast deployment options
+- [VPS Deployment Guide](VPS_DEPLOYMENT.md) - Complete VPS setup and deployment
 - [GitHub Setup](GITHUB_SETUP.md) - Repository setup instructions
 
 ## 🔒 Security
@@ -341,6 +341,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - Firebase for authentication services
-- Railway for deployment platform
+- Docker for containerization
 - Radix UI for component primitives
 - The React and Node.js communities

@@ -31,8 +31,7 @@ git push -u origin main
 2. **Check that all files are uploaded**:
    - ✅ Client folder with React app
    - ✅ Server folder with Express backend
-   - ✅ Deployment documentation
-   - ✅ Railway configuration files
+   - ✅ VPS deployment documentation
    - ✅ Docker setup
 
 ## Alternative: Using GitHub CLI (if you have it installed)
@@ -47,7 +46,7 @@ gh repo create flowsense --public --description "FlowSense - Advanced workflow m
 ## Step 4: Update Repository Settings (Optional)
 
 1. **Add Topics**: Go to your repository → About section → Add topics:
-   - `react`, `typescript`, `express`, `postgresql`, `firebase`, `railway`, `workflow-management`
+   - `react`, `typescript`, `express`, `postgresql`, `firebase`, `docker`, `workflow-management`
 
 2. **Set up Branch Protection** (if desired):
    - Go to Settings → Branches
@@ -61,8 +60,8 @@ gh repo create flowsense --public --description "FlowSense - Advanced workflow m
 ## Step 5: Next Steps After Upload
 
 1. **Update README.md** with your GitHub repository URL
-2. **Test Railway deployment** using the GitHub repository
-3. **Set up CI/CD** using the provided GitHub Actions workflow
+2. **Test VPS deployment** using the GitHub repository
+3. **Set up your VPS** following the deployment guide
 4. **Share your repository** with collaborators
 
 ## Repository Structure
@@ -71,25 +70,21 @@ Your uploaded repository will include:
 
 ```
 flowsense/
-├── client/                 # React frontend
-├── server/                 # Express backend
-├── aws-cdk/               # AWS CDK deployment
-├── scripts/               # Utility scripts
-├── .github/workflows/     # GitHub Actions
-├── RAILWAY_DEPLOYMENT.md  # Railway deployment guide
-├── DEPLOYMENT.md          # AWS deployment guide
-├── README.md              # Project documentation
-├── Dockerfile             # Container configuration
-├── docker-compose.yml     # Local development
-├── railway.json           # Railway configuration
-└── package.json           # Dependencies
+├── client/                # React frontend
+├── server/                # Express backend
+├── scripts/              # Utility scripts
+├── VPS_DEPLOYMENT.md     # VPS deployment guide
+├── README.md             # Project documentation
+├── Dockerfile            # Container configuration
+├── docker-compose.yml    # Container orchestration
+└── package.json          # Dependencies
 ```
 
 ## 🔒 Security Notes
 
 - ✅ `.env` files are in `.gitignore` (private data protected)
 - ✅ Only template files are committed
-- ✅ Secrets should be set in Railway/AWS dashboard
+- ✅ Secrets should be set in your VPS environment
 
 ## Support
 
