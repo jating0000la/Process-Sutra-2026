@@ -23,7 +23,7 @@ FlowSense is a modern, real-time workflow management platform built with React, 
 ## 🚀 Quick Deploy
 
 ### Railway (Recommended)
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/YOUR_REPO_ID)
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/jating0000la/flowsense)
 
 1. Click "Deploy on Railway" 
 2. Connect your GitHub account
@@ -330,8 +330,8 @@ flowsense/
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](../../issues)
-- **Discussions**: [GitHub Discussions](../../discussions)
+- **Issues**: [GitHub Issues](https://github.com/jating0000la/flowsense/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/jating0000la/flowsense/discussions)
 - **Documentation**: Check the `/docs` folder
 
 ## 📄 License
