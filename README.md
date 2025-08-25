@@ -246,9 +246,9 @@ If you see an error like "port 5000 is already in use" when starting the develop
 
 ### VPS Deployment (Recommended)
 - **Full Control**: Complete server management
-- **Cost Effective**: Starting from $5/month
+- **Cost Effective**: Starting from $3.95/month (Hostinger VPS)
 - **Production Ready**: Docker Compose with Nginx
-- **Multiple Providers**: DigitalOcean, Vultr, Linode, Hetzner
+- **Multiple Providers**: Hostinger, DigitalOcean, Vultr, Linode, Hetzner
 - **Guide**: [VPS Deployment Guide](VPS_DEPLOYMENT.md)
 
 ### Local Docker

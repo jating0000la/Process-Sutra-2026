@@ -5,6 +5,7 @@ Deploy your FlowSense application on any VPS provider with Docker and PostgreSQL
 ## 🏆 Recommended VPS Providers
 
 ### Budget-Friendly Options
+- **Hostinger VPS** - $3.95-59.99/month (excellent performance & support)
 - **DigitalOcean** - $4-6/month droplets
 - **Vultr** - $2.50-6/month instances
 - **Linode (Akamai)** - $5-12/month
@@ -15,6 +16,40 @@ Deploy your FlowSense application on any VPS provider with Docker and PostgreSQL
 - **Oracle Cloud** - Always Free tier available
 - **Azure** - Virtual Machines
 - **Contabo** - €4-50/month (high specs)
+
+## 🎯 Hostinger VPS Specific Setup
+
+### Hostinger VPS Advantages
+- **KVM Virtualization** - Full root access
+- **NVMe SSD Storage** - Fast database performance
+- **24/7 Support** - Live chat assistance
+- **Multiple Locations** - Global data centers
+- **Easy OS Installation** - Ubuntu/Debian pre-configured
+
+### Recommended Hostinger VPS Plans for FlowSense
+
+| Plan | RAM | CPU | Storage | Price | Best For |
+|------|-----|-----|---------|-------|----------|
+| VPS 1 | 1GB | 1 Core | 20GB | $3.95/mo | Development/Testing |
+| VPS 2 | 2GB | 1 Core | 40GB | $7.95/mo | Small Production |
+| VPS 4 | 4GB | 2 Core | 80GB | $14.95/mo | Production |
+| VPS 8 | 8GB | 4 Core | 160GB | $29.95/mo | High Traffic |
+
+### Hostinger VPS Initial Setup
+
+```bash
+# Access your VPS via Hostinger panel SSH terminal or:
+ssh root@your-hostinger-vps-ip
+
+# Hostinger VPS usually comes with Ubuntu 22.04 LTS
+# Verify your system
+cat /etc/os-release
+
+# Create a non-root user (recommended)
+adduser flowsense
+usermod -aG sudo flowsense
+usermod -aG docker flowsense
+```
 
 ## 🐳 Docker Deployment (Recommended)
 
@@ -158,6 +193,25 @@ crontab -e
 # Add: 0 12 * * * /usr/bin/certbot renew --quiet
 ```
 
+### 🌐 Hostinger Domain Configuration
+
+If you're using a Hostinger domain with your VPS:
+
+```bash
+# DNS Settings in Hostinger Control Panel:
+# A Record: @ → Your VPS IP Address
+# A Record: www → Your VPS IP Address  
+# CNAME Record: * → your-domain.com (for subdomains)
+
+# Example DNS setup:
+# Type    Name    Value
+# A       @       192.168.1.100
+# A       www     192.168.1.100
+# CNAME   *       your-domain.com
+```
+
+**Note**: DNS propagation can take 1-48 hours. You can check propagation status at [whatsmydns.net](https://www.whatsmydns.net/).
+
 ## 📊 Manual Deployment (Without Docker)
 
 ### Step 1: Install Dependencies
@@ -280,6 +334,7 @@ pm2 reload flowsense
 
 | Provider | Specs | Monthly Cost | Best For |
 |----------|-------|--------------|----------|
+| Hostinger VPS | 1GB RAM, 1 CPU | $3.95 | Best Value |
 | DigitalOcean | 1GB RAM, 1 CPU | $6 | Beginners |
 | Vultr | 1GB RAM, 1 CPU | $6 | Global locations |
 | Linode | 1GB RAM, 1 CPU | $5 | Reliability |
@@ -290,8 +345,20 @@ pm2 reload flowsense
 
 Once you have your VPS:
 
+### 🚀 Hostinger VPS Quick Setup (Recommended)
+
 ```bash
-# One-line setup
+# Step 1: Initial server setup (run as root)
+curl -sSL https://raw.githubusercontent.com/jating0000la/flowsense/main/scripts/hostinger-setup.sh | bash
+
+# Step 2: Deploy FlowSense (run as root)
+curl -sSL https://raw.githubusercontent.com/jating0000la/flowsense/main/scripts/hostinger-deploy.sh | bash
+```
+
+### 🔧 Generic VPS Setup
+
+```bash
+# One-line setup for other providers
 curl -sSL https://raw.githubusercontent.com/jating0000la/flowsense/main/scripts/vps-deploy.sh | bash
 
 # Manual steps
