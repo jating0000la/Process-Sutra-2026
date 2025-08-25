@@ -5,12 +5,14 @@ import { addClient, removeClient, sendToEmail } from './notifications';
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./firebaseAuth";
+import { db } from "./db";
 import {
   insertFlowRuleSchema,
   insertTaskSchema,
   insertFormTemplateSchema,
   insertFormResponseSchema,
   insertOrganizationSchema,
+  users,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { randomBytes } from "crypto";
@@ -20,9 +22,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
 
-  // Lightweight health check (no auth) for debugging routing/ports
+  // Lightweight health check (no auth, no DB) for debugging routing/ports
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, ts: new Date().toISOString() });
+    res.json({ 
+      ok: true, 
+      ts: new Date().toISOString(),
+      env: process.env.NODE_ENV || 'development',
+      port: process.env.PORT || '5000'
+    });
+  });
+
+  // Database health check (separate endpoint)
+  app.get('/api/health/db', async (_req, res) => {
+    try {
+      // Import isDatabaseConnected function
+      const { isDatabaseConnected } = await import('./db');
+      
+      if (!isDatabaseConnected()) {
+        return res.status(503).json({ 
+          ok: false, 
+          database: 'disconnected',
+          error: 'Database connection not established'
+        });
+      }
+
+      // Simple DB query to test connection
+      await db.select().from(users).limit(1);
+      res.json({ ok: true, database: 'connected' });
+    } catch (error) {
+      res.status(500).json({ 
+        ok: false, 
+        database: 'disconnected',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
   });
 
   // Role-based middleware with status check
