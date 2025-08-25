@@ -9,6 +9,7 @@ interface DatabaseUser {
   lastName: string;
   role: string;
   profileImageUrl?: string;
+  organizationId?: string;
 }
 
 interface AuthContextType {

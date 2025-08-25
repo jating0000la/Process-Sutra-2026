@@ -49,6 +49,14 @@ export default function Analytics() {
     doerEmail: "",
   });
 
+  // Reporting state
+  const [reportFilters, setReportFilters] = useState({
+    system: "",
+    taskName: "",
+    startDate: "",
+    endDate: "",
+  });
+
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -64,19 +72,68 @@ export default function Analytics() {
     }
   }, [isAuthenticated, isLoading, toast]);
 
-  const { data: metrics, isLoading: metricsLoading } = useQuery({
+  const { data: metrics, isLoading: metricsLoading } = useQuery<{
+    totalTasks: number;
+    completedTasks: number;
+    overdueTasks: number;
+    onTimeRate: number;
+    avgResolutionTime: number;
+  }>({
     queryKey: ["/api/analytics/metrics"],
     enabled: isAuthenticated,
   });
 
-  const { data: flowPerformance, isLoading: flowLoading } = useQuery({
+  const { data: flowPerformance, isLoading: flowLoading } = useQuery<Array<{
+    system: string;
+    avgCompletionTime: number;
+    onTimeRate: number;
+  }>>({
     queryKey: ["/api/analytics/flow-performance"],
     enabled: isAuthenticated,
   });
 
   // Weekly scoring for users
-  const { data: weeklyScoring, isLoading: weeklyLoading } = useQuery({
+  const { data: weeklyScoring, isLoading: weeklyLoading } = useQuery<any[]>({
     queryKey: ["/api/analytics/weekly-scoring"],
+    enabled: isAuthenticated,
+  });
+
+  // Reporting queries
+  const { data: systems } = useQuery<string[]>({
+    queryKey: ["/api/analytics/report/systems"],
+    enabled: isAuthenticated,
+  });
+
+  const { data: processes, refetch: refetchProcesses } = useQuery<string[]>({
+    queryKey: ["/api/analytics/report/processes", reportFilters.system],
+    queryFn: async () => {
+      if (!reportFilters.system) return [];
+      const res = await fetch(`/api/analytics/report/processes?system=${encodeURIComponent(reportFilters.system)}`);
+      if (!res.ok) throw new Error("Failed to fetch processes");
+      return res.json();
+    },
+    enabled: isAuthenticated && !!reportFilters.system,
+  });
+
+  const { data: report, isLoading: reportLoading, refetch: refetchReport } = useQuery<{
+    metrics: {
+      totalTasks: number;
+      completedTasks: number;
+      overdueTasks: number;
+      completionRate: number;
+      onTimeRate: number;
+      avgCompletionDays: number;
+    };
+    timeseries: Array<{ date: string; created: number; completed: number; overdue: number }>;
+  }>({
+    queryKey: ["/api/analytics/report", reportFilters],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      Object.entries(reportFilters).forEach(([k, v]) => { if (v) params.append(k, v); });
+      const res = await fetch(`/api/analytics/report?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed to fetch report");
+      return res.json();
+    },
     enabled: isAuthenticated,
   });
 
@@ -163,10 +220,11 @@ export default function Analytics() {
 
           {/* Tabs for different views */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className={`grid w-full ${(user as any)?.role === 'admin' ? 'grid-cols-3' : 'grid-cols-2'}`}>
+            <TabsList className={`grid w-full ${(user as any)?.role === 'admin' ? 'grid-cols-4' : 'grid-cols-3'}`}>
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="weekly">Weekly Scoring</TabsTrigger>
               {(user as any)?.role === 'admin' && <TabsTrigger value="doers">All Doers Performance</TabsTrigger>}
+              <TabsTrigger value="report">Reporting</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-6">
@@ -420,6 +478,92 @@ export default function Analytics() {
                 </Card>
               </TabsContent>
             )}
+
+            {/* Reporting Tab */}
+            <TabsContent value="report" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5" /> Reporting Dashboard
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {/* Filters */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <Label htmlFor="system">Flow (System)</Label>
+                      <select
+                        id="system"
+                        className="w-full border rounded h-9 px-2"
+                        value={reportFilters.system}
+                        onChange={(e) => {
+                          setReportFilters(prev => ({ ...prev, system: e.target.value, taskName: "" }));
+                        }}
+                      >
+                        <option value="">All</option>
+                        {systems?.map((s: string) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <Label htmlFor="task">Process (Task)</Label>
+                      <select
+                        id="task"
+                        className="w-full border rounded h-9 px-2"
+                        value={reportFilters.taskName}
+                        onChange={(e) => setReportFilters(prev => ({ ...prev, taskName: e.target.value }))}
+                        disabled={!reportFilters.system}
+                      >
+                        <option value="">All</option>
+                        {processes?.map((p: string) => (
+                          <option key={p} value={p}>{p}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <Label htmlFor="start">Start Date</Label>
+                      <Input id="start" type="date" value={reportFilters.startDate}
+                        onChange={(e) => setReportFilters(prev => ({ ...prev, startDate: e.target.value }))} />
+                    </div>
+                    <div>
+                      <Label htmlFor="end">End Date</Label>
+                      <Input id="end" type="date" value={reportFilters.endDate}
+                        onChange={(e) => setReportFilters(prev => ({ ...prev, endDate: e.target.value }))} />
+                    </div>
+                  </div>
+
+                  {/* KPI Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                    <MetricCard title="Total Tasks" value={report?.metrics?.totalTasks || 0} icon={<Target className="text-blue-500" />} />
+                    <MetricCard title="Completion Rate" value={`${report?.metrics?.completionRate || 0}%`} icon={<CheckCircle className="text-green-500" />} />
+                    <MetricCard title="On-Time Rate" value={`${report?.metrics?.onTimeRate || 0}%`} icon={<Clock className="text-orange-500" />} />
+                    <MetricCard title="Avg Completion" value={`${report?.metrics?.avgCompletionDays || 0} days`} icon={<Award className="text-purple-500" />} />
+                  </div>
+
+                  {/* Timeseries Chart */}
+                  <div className="h-72">
+                    {reportLoading ? (
+                      <div className="flex items-center justify-center h-full">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={report?.timeseries || []}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="date" tickFormatter={(v) => format(new Date(v), "MMM dd")} />
+                          <YAxis />
+                          <Tooltip labelFormatter={(v) => format(new Date(v), "MMM dd, yyyy")} />
+                          <Line type="monotone" dataKey="created" stroke="#3B82F6" name="Created" />
+                          <Line type="monotone" dataKey="completed" stroke="#10B981" name="Completed" />
+                          <Line type="monotone" dataKey="overdue" stroke="#EF4444" name="Overdue" />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
           </Tabs>
         </div>
       </main>

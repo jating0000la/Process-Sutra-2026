@@ -109,6 +109,24 @@ export interface IStorage {
     onTimeRate: number;
   }[]>;
 
+  // Reporting filters and data
+  getOrganizationSystems(organizationId: string): Promise<string[]>;
+  getProcessesBySystem(organizationId: string, system: string): Promise<string[]>;
+  getOrganizationReport(
+    organizationId: string,
+    filters: { system?: string; taskName?: string; startDate?: string; endDate?: string }
+  ): Promise<{
+    metrics: {
+      totalTasks: number;
+      completedTasks: number;
+      overdueTasks: number;
+      completionRate: number;
+      onTimeRate: number;
+      avgCompletionDays: number;
+    };
+    timeseries: Array<{ date: string; created: number; completed: number; overdue: number }>;
+  }>;
+
   // User Management operations
   getAllUsers(): Promise<User[]>;
   getUserByUsername(username: string): Promise<User | undefined>;
@@ -141,6 +159,11 @@ export class DatabaseStorage implements IStorage {
 
   async getOrganizationByDomain(domain: string): Promise<Organization | undefined> {
     const [organization] = await db.select().from(organizations).where(eq(organizations.domain, domain));
+    return organization;
+  }
+
+  async getOrganizationById(id: string): Promise<Organization | undefined> {
+    const [organization] = await db.select().from(organizations).where(eq(organizations.id, id));
     return organization;
   }
 
@@ -187,11 +210,15 @@ export class DatabaseStorage implements IStorage {
 
   async upsertUser(userData: UpsertUser): Promise<User> {
     try {
+      const email = userData.email;
+      if (!email) {
+        throw new Error("upsertUser requires a valid email");
+      }
       // First try to find existing user by email
       const existingUser = await db
         .select()
         .from(users)
-        .where(eq(users.email, userData.email))
+        .where(eq(users.email, email))
         .limit(1);
       
       if (existingUser.length > 0) {
@@ -205,7 +232,7 @@ export class DatabaseStorage implements IStorage {
             ...updateData,
             updatedAt: new Date(),
           })
-          .where(eq(users.email, userData.email))
+          .where(eq(users.email, email))
           .returning();
         return user;
       } else {
@@ -219,7 +246,7 @@ export class DatabaseStorage implements IStorage {
       const [existingUser] = await db
         .select()
         .from(users)
-        .where(eq(users.email, userData.email))
+        .where(eq(users.email, (userData as any).email as string))
         .limit(1);
       
       if (existingUser) {
@@ -567,6 +594,7 @@ export class DatabaseStorage implements IStorage {
     completedTasks: number;
     overdueTasks: number;
     onTimeRate: number;
+    avgResolutionTime: number;
   }> {
     const totalResult = await db.select({ count: count() }).from(tasks);
     const completedResult = await db
@@ -616,6 +644,7 @@ export class DatabaseStorage implements IStorage {
     completedTasks: number;
     overdueTasks: number;
     onTimeRate: number;
+    avgResolutionTime: number;
   }> {
     const totalResult = await db
       .select({ count: count() })
@@ -657,7 +686,7 @@ export class DatabaseStorage implements IStorage {
     const onTimeRate = completedTasks > 0 ? (onTimeTasks / completedTasks) * 100 : 0;
     const avgResolutionTime = avgResolutionResult[0]?.avgTime || 0;
 
-    return {
+  return {
       totalTasks,
       completedTasks,
       overdueTasks,
@@ -795,6 +824,122 @@ export class DatabaseStorage implements IStorage {
       avgCompletionTime: Math.round(result.avgTime * 10) / 10,
       onTimeRate: Math.round((result.onTimeCount / result.totalCompleted) * 100),
     }));
+  }
+
+  // Reporting filters and data
+  async getOrganizationSystems(organizationId: string): Promise<string[]> {
+    const results = await db
+      .select({ system: tasks.system })
+      .from(tasks)
+      .where(eq(tasks.organizationId, organizationId))
+      .groupBy(tasks.system);
+    return results.map((r) => r.system).filter(Boolean);
+  }
+
+  async getProcessesBySystem(organizationId: string, system: string): Promise<string[]> {
+    const results = await db
+      .select({ taskName: tasks.taskName })
+      .from(tasks)
+      .where(and(eq(tasks.organizationId, organizationId), eq(tasks.system, system)))
+      .groupBy(tasks.taskName);
+    return results.map((r) => r.taskName).filter(Boolean);
+  }
+
+  async getOrganizationReport(
+    organizationId: string,
+    filters: { system?: string; taskName?: string; startDate?: string; endDate?: string }
+  ): Promise<{
+    metrics: {
+      totalTasks: number;
+      completedTasks: number;
+      overdueTasks: number;
+      completionRate: number;
+      onTimeRate: number;
+      avgCompletionDays: number;
+    };
+    timeseries: Array<{ date: string; created: number; completed: number; overdue: number }>;
+  }> {
+    const conds: any[] = [eq(tasks.organizationId, organizationId)];
+    if (filters.system) conds.push(eq(tasks.system, filters.system));
+    if (filters.taskName) conds.push(eq(tasks.taskName, filters.taskName));
+    if (filters.startDate) conds.push(sql`${tasks.plannedTime} >= ${new Date(filters.startDate)}`);
+    if (filters.endDate) conds.push(sql`${tasks.plannedTime} <= ${new Date(filters.endDate)}`);
+
+    const whereExpr = and(...conds);
+
+    // Metrics
+    const [totalResult] = await db
+      .select({ count: count() })
+      .from(tasks)
+      .where(whereExpr);
+
+    const [completedResult] = await db
+      .select({ count: count() })
+      .from(tasks)
+      .where(and(whereExpr, eq(tasks.status, "completed")));
+
+    const [overdueResult] = await db
+      .select({ count: count() })
+      .from(tasks)
+      .where(and(whereExpr, eq(tasks.status, "overdue")));
+
+    const [onTimeResult] = await db
+      .select({ count: count() })
+      .from(tasks)
+      .where(
+        and(
+          whereExpr,
+          eq(tasks.status, "completed"),
+          sql`${tasks.actualCompletionTime} <= ${tasks.plannedTime}`
+        )
+      );
+
+    const [avgCompletionResult] = await db
+      .select({
+        avgDays: sql<number>`AVG(EXTRACT(EPOCH FROM (${tasks.actualCompletionTime} - ${tasks.plannedTime})) / 86400)`,
+      })
+      .from(tasks)
+      .where(and(whereExpr, eq(tasks.status, "completed")));
+
+    const totalTasks = Number(totalResult?.count || 0);
+    const completedTasks = Number(completedResult?.count || 0);
+    const overdueTasks = Number(overdueResult?.count || 0);
+    const onTimeTasks = Number(onTimeResult?.count || 0);
+    const onTimeRate = completedTasks > 0 ? Math.round((onTimeTasks / completedTasks) * 100) : 0;
+    const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+    const avgCompletionDays = Math.round(((avgCompletionResult?.avgDays as any) || 0) * 10) / 10;
+
+    // Timeseries grouped by day (planned_time)
+    const ts = await db.execute(sql`
+      SELECT 
+        DATE_TRUNC('day', ${tasks.plannedTime}) as day,
+        COUNT(*) as created,
+        COUNT(CASE WHEN ${tasks.status} = 'completed' THEN 1 END) as completed,
+        COUNT(CASE WHEN ${tasks.status} = 'overdue' THEN 1 END) as overdue
+      FROM ${tasks}
+      WHERE ${whereExpr}
+      GROUP BY DATE_TRUNC('day', ${tasks.plannedTime})
+      ORDER BY day ASC
+    `);
+
+    const timeseries = (ts.rows as any[]).map((r) => ({
+      date: r.day,
+      created: Number(r.created || 0),
+      completed: Number(r.completed || 0),
+      overdue: Number(r.overdue || 0),
+    }));
+
+    return {
+      metrics: {
+        totalTasks,
+        completedTasks,
+        overdueTasks,
+        completionRate,
+        onTimeRate,
+        avgCompletionDays,
+      },
+      timeseries,
+    };
   }
 
   // Weekly scoring for users

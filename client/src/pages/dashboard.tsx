@@ -34,17 +34,27 @@ export default function Dashboard() {
     }
   }, [isAuthenticated, isLoading, toast]);
 
-  const { data: metrics, isLoading: metricsLoading } = useQuery({
+  const { data: metrics, isLoading: metricsLoading } = useQuery<{
+    totalTasks: number;
+    completedTasks: number;
+    overdueTasks: number;
+    onTimeRate: number;
+    avgResolutionTime: number;
+  }>({
     queryKey: ["/api/analytics/metrics"],
     enabled: isAuthenticated,
   });
 
-  const { data: tasks, isLoading: tasksLoading } = useQuery({
+  const { data: tasks, isLoading: tasksLoading } = useQuery<any[]>({
     queryKey: ["/api/tasks"],
     enabled: isAuthenticated,
   });
 
-  const { data: flowPerformance } = useQuery({
+  const { data: flowPerformance } = useQuery<Array<{
+    system: string;
+    avgCompletionTime: number;
+    onTimeRate: number;
+  }>>({
     queryKey: ["/api/analytics/flow-performance"],
     enabled: isAuthenticated,
   });
@@ -113,11 +123,11 @@ export default function Dashboard() {
               trend={{ value: 12, isPositive: true }}
               description="from last week"
             />
-            <MetricCard
+      <MetricCard
               title="Completed Today"
               value={tasks?.filter((t: any) => 
                 t.status === 'completed' && 
-                new Date(t.actualTime).toDateString() === new Date().toDateString()
+        t.actualCompletionTime && new Date(t.actualCompletionTime).toDateString() === new Date().toDateString()
               ).length || 0}
               icon={<CheckCircle className="text-success" />}
               trend={{ value: 8, isPositive: true }}

@@ -1,6 +1,11 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+// @ts-ignore - JS helper with runtime side-effects
+import loadEnv from "../load-env.js";
+
+// Load environment variables from .env and .env.local
+loadEnv();
 
 const app = express();
 app.use(express.json());
@@ -56,16 +61,24 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
-  });
+  // Serve on PORT if provided, otherwise prefer 5000 for local dev to avoid common 3000 conflicts
+  const preferred = process.env.PORT ? parseInt(process.env.PORT, 10) : 5000;
+
+  const listen = (p: number) => {
+    const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1';
+    server.listen(p, host, () => {
+      log(`serving on ${host}:${p}`);
+    }).on('error', (err: any) => {
+      if (err?.code === 'EADDRINUSE') {
+        const next = p + 1;
+        log(`port ${p} in use, trying ${next}…`);
+        listen(next);
+      } else {
+        console.error('Server failed to start:', err);
+        process.exit(1);
+      }
+    });
+  };
+
+  listen(preferred);
 })();

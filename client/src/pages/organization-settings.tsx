@@ -9,6 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Separator } from "@/components/ui/separator";
 import { Building2, Users, Plus, Settings } from "lucide-react";
+import Sidebar from "@/components/sidebar";
+import Header from "@/components/header";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function OrganizationSettings() {
   const { toast } = useToast();
@@ -31,12 +34,12 @@ export default function OrganizationSettings() {
   });
 
   // Get organization details
-  const { data: organization } = useQuery<any>({
+  const { data: organization, isLoading: orgLoading } = useQuery<any>({
     queryKey: ["/api/organizations/current"],
   });
 
   // Get organization users
-  const { data: users = [] } = useQuery<any[]>({
+  const { data: users = [], isLoading: usersLoading } = useQuery<any[]>({
     queryKey: ["/api/users"],
   });
 
@@ -119,14 +122,20 @@ export default function OrganizationSettings() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <Settings className="h-6 w-6" />
-        <h1 className="text-2xl font-bold">Organization Settings</h1>
-      </div>
+    <div className="flex h-screen bg-neutral">
+      <Sidebar />
+      <main className="flex-1 overflow-y-auto">
+        <Header title="Organization Settings" description="Manage your company, domains, and users" />
+        <div className="p-6 space-y-6">
 
       {/* Current Organization Info */}
-      {organization && (
+      {orgLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {[...Array(2)].map((_, i) => (
+              <div key={i} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 animate-pulse h-32" />
+            ))}
+          </div>
+        ) : organization ? (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -135,7 +144,7 @@ export default function OrganizationSettings() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label className="text-sm font-medium">Organization Name</Label>
                 <p className="text-lg">{organization.name}</p>
@@ -155,7 +164,7 @@ export default function OrganizationSettings() {
             </div>
           </CardContent>
         </Card>
-      )}
+      ) : null}
 
       {/* Create New Organization */}
       <Card>
@@ -170,7 +179,7 @@ export default function OrganizationSettings() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleCreateOrg} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="orgName">Organization Name</Label>
                 <Input
@@ -226,7 +235,7 @@ export default function OrganizationSettings() {
         <CardContent className="space-y-6">
           {/* Add User Form */}
           <form onSubmit={handleAddUser} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="userEmail">Email Address</Label>
                 <Input
@@ -240,15 +249,15 @@ export default function OrganizationSettings() {
               </div>
               <div>
                 <Label htmlFor="userRole">Role</Label>
-                <select
-                  id="userRole"
-                  value={userForm.role}
-                  onChange={(e) => setUserForm(prev => ({ ...prev, role: e.target.value }))}
-                  className="w-full p-2 border rounded-md"
-                >
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
-                </select>
+                <Select value={userForm.role} onValueChange={(v) => setUserForm(prev => ({ ...prev, role: v }))}>
+                  <SelectTrigger id="userRole">
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="user">User</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="firstName">First Name</Label>
@@ -277,29 +286,39 @@ export default function OrganizationSettings() {
           {/* Current Users List */}
           <div>
             <h3 className="text-lg font-semibold mb-3">Current Users</h3>
-            <div className="space-y-2">
-              {users.map((user: any) => (
-                <div key={user.id} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div>
-                      <p className="font-medium">{user.firstName} {user.lastName}</p>
-                      <p className="text-sm text-gray-600">{user.email}</p>
+            {usersLoading ? (
+              <div className="space-y-2">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="h-16 bg-white rounded-xl shadow-sm border border-gray-200 p-6 animate-pulse" />
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {users.map((user: any) => (
+                  <div key={user.id} className="flex items-center justify-between p-3 border rounded-lg bg-white">
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <p className="font-medium">{user.firstName} {user.lastName}</p>
+                        <p className="text-sm text-gray-600">{user.email}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={user.role === 'admin' ? 'default' : 'secondary'}>
+                        {user.role}
+                      </Badge>
+                      <Badge variant={user.status === 'active' ? 'default' : 'destructive'}>
+                        {user.status}
+                      </Badge>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={user.role === 'admin' ? 'default' : 'secondary'}>
-                      {user.role}
-                    </Badge>
-                    <Badge variant={user.status === 'active' ? 'default' : 'destructive'}>
-                      {user.status}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
+        </div>
+      </main>
     </div>
   );
 }

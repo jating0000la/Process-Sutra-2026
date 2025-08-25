@@ -1,4 +1,7 @@
+
 import type { Express } from "express";
+import { startFlowWebhook } from './flowController';
+import { addClient, removeClient, sendToEmail } from './notifications';
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./firebaseAuth";
@@ -10,11 +13,17 @@ import {
   insertOrganizationSchema,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { randomBytes } from "crypto";
 import { calculateTAT, TATConfig } from "./tatCalculator";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
+
+  // Lightweight health check (no auth) for debugging routing/ports
+  app.get('/api/health', (_req, res) => {
+    res.json({ ok: true, ts: new Date().toISOString() });
+  });
 
   // Role-based middleware with status check
   const requireAdmin = async (req: any, res: any, next: any) => {
@@ -433,7 +442,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No starting rule found for this system" });
       }
 
-      const flowId = randomUUID();
+  const flowId = randomUUID();
       
       // Parse initial form data if provided
       let parsedInitialFormData = null;
@@ -470,6 +479,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         flowInitialFormData: parsedInitialFormData,
       });
 
+      // Notify the assigned doer via SSE if connected
+      try {
+        if (startRule.email) {
+          sendToEmail(startRule.email, 'flow-started', {
+            flowId,
+            orderNumber,
+            system,
+            taskName: startRule.nextTask,
+            description,
+            assignedTo: startRule.email,
+            plannedTime,
+          });
+        }
+      } catch (e) {
+        console.error('SSE notify error:', e);
+      }
+
       res.status(201).json({ 
         flowId, 
         task,
@@ -483,6 +509,225 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error starting flow:", error);
       res.status(500).json({ message: "Failed to start flow" });
     }
+  });
+
+  // --- Integrations: Start Flow via API key (public, authenticated by API key) ---
+  function getApiKeyMap(): Record<string, string> {
+    // Supports both a single key (FLOW_API_KEY) and a JSON map (FLOW_API_KEYS)
+    // FLOW_API_KEYS example: {"acme.com":"sk_live_xxx","org-uuid":"sk_live_yyy"}
+    try {
+      const m = process.env.FLOW_API_KEYS ? JSON.parse(process.env.FLOW_API_KEYS) : {};
+      if (process.env.FLOW_API_KEY) {
+        // Global fallback key under "*"
+        m["*"] = process.env.FLOW_API_KEY;
+      }
+      return m;
+    } catch {
+      return process.env.FLOW_API_KEY ? { "*": process.env.FLOW_API_KEY } : {};
+    }
+  }
+
+  async function integrationAuth(req: any, res: any, next: any) {
+    // Only x-api-key is required. Organization ID can be used directly as the API key.
+    const apiKey = req.header("x-api-key");
+    if (!apiKey) return res.status(401).json({ message: "Missing x-api-key" });
+
+    // 1) If apiKey matches an organization ID, accept it directly
+    let organization = await storage.getOrganizationById?.(apiKey);
+
+    // 2) Otherwise, try reverse-lookup from FLOW_API_KEYS/FLOW_API_KEY
+    if (!organization) {
+      const keyMap = getApiKeyMap();
+      // Find entry where value === apiKey
+      const pair = Object.entries(keyMap).find(([, v]) => v === apiKey);
+      if (pair) {
+        const [hint] = pair;
+        if (hint !== "*") {
+          organization = (await storage.getOrganizationById?.(hint)) || (await storage.getOrganizationByDomain(hint));
+        }
+      }
+    }
+
+    if (!organization) {
+      return res.status(401).json({ message: "Invalid or unmapped API key" });
+    }
+
+    req.integration = {
+      organizationId: organization.id,
+      organizationDomain: organization.domain,
+      actorEmail: req.header("x-actor-email") || undefined,
+      source: req.header("x-source") || "api",
+    };
+    next();
+  }
+
+  app.post("/api/integrations/start-flow", integrationAuth, async (req: any, res) => {
+    try {
+      const { system, orderNumber, description, initialFormData, notifyAssignee = true } = req.body || {};
+      const { organizationId, actorEmail } = req.integration;
+
+      if (!system) return res.status(400).json({ message: "system is required" });
+      if (!orderNumber) return res.status(400).json({ message: "orderNumber is required" });
+      if (!description) return res.status(400).json({ message: "description is required" });
+
+      // Find the starting rule (currentTask is empty) - organization-specific
+      const flowRules = await storage.getFlowRulesByOrganization(organizationId, system);
+      const startRule = flowRules.find((rule: any) => rule.currentTask === "");
+      if (!startRule) return res.status(400).json({ message: "No starting rule found for this system" });
+
+      const flowId = randomUUID();
+
+      // Parse initial form data if provided (string or object)
+      let parsedInitialFormData: any = null;
+      if (typeof initialFormData === "string" && initialFormData.trim()) {
+        try {
+          parsedInitialFormData = JSON.parse(initialFormData);
+        } catch (error) {
+          return res.status(400).json({ message: `Invalid JSON for initialFormData: ${(error as Error).message}` });
+        }
+      } else if (initialFormData && typeof initialFormData === "object") {
+        parsedInitialFormData = initialFormData;
+      }
+
+      // Get TAT configuration for enhanced calculations
+      const tatConfiguration = await storage.getTATConfig(organizationId);
+      const config = tatConfiguration || { officeStartHour: 9, officeEndHour: 18 };
+      const plannedTime = calculateTAT(new Date(), startRule.tat, startRule.tatType, config);
+      const flowStartTime = new Date();
+
+      const task = await storage.createTask({
+        system,
+        flowId,
+        orderNumber,
+        taskName: startRule.nextTask,
+        plannedTime,
+        doerEmail: startRule.email,
+        status: "pending",
+        formId: startRule.formId,
+        organizationId,
+        flowInitiatedBy: actorEmail || `integration:${req.integration.source}`,
+        flowInitiatedAt: flowStartTime,
+        flowDescription: description,
+        flowInitialFormData: parsedInitialFormData,
+      });
+
+      // Optional notify
+      if (notifyAssignee && startRule.email) {
+        try {
+          sendToEmail(startRule.email, 'flow-started', {
+            flowId,
+            orderNumber,
+            system,
+            taskName: startRule.nextTask,
+            description,
+            assignedTo: startRule.email,
+            plannedTime,
+          });
+        } catch {}
+      }
+
+      res.status(201).json({
+        flowId,
+        task,
+        orderNumber,
+        description,
+        initiatedBy: actorEmail || `integration:${req.integration.source}`,
+        initiatedAt: flowStartTime.toISOString(),
+        message: "Flow started successfully",
+      });
+    } catch (error) {
+      console.error("Integration start-flow error:", error);
+      res.status(500).json({ message: "Failed to start flow" });
+    }
+  });
+
+  // Simple HTML doc page
+  app.get('/api/docs/start-flow', (_req, res) => {
+    const exampleKey = 'your-organization-id';
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8" /><title>Start Flow API</title>
+<style>body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:24px;max-width:900px;margin:0 auto;color:#111}code,pre{background:#f6f8fa;border-radius:6px;padding:12px;display:block;overflow:auto}h1{font-size:24px;margin:0 0 12px}h2{font-size:18px;margin:24px 0 8px}table{border-collapse:collapse}td,th{border:1px solid #e5e7eb;padding:6px 8px;text-align:left}</style>
+</head><body>
+<h1>Start Flow API</h1>
+<p>Create the first task for a system using your organization rules.</p>
+
+<h2>Endpoint</h2>
+<pre><code>POST /api/integrations/start-flow</code></pre>
+
+<h2>Headers</h2>
+<table>
+<tr><th>Header</th><th>Required</th><th>Example</th></tr>
+<tr><td>x-api-key</td><td>Yes</td><td>${exampleKey} (use your Organization ID)</td></tr>
+<tr><td>x-actor-email</td><td>No</td><td>bot@yourcompany.com</td></tr>
+<tr><td>x-source</td><td>No</td><td>zapier</td></tr>
+</table>
+
+<h2>Body (JSON)</h2>
+<pre><code>{
+  "system": "CRM Onboarding",            // required
+  "orderNumber": "ORD-12345",            // required
+  "description": "New account setup",     // required
+  "initialFormData": { "account": "Acme" }, // optional (object or JSON string)
+  "notifyAssignee": true                  // optional (default true)
+}</code></pre>
+
+<h2>Response</h2>
+<pre><code>{
+  "flowId": "...",
+  "task": { /* created task */ },
+  "orderNumber": "ORD-12345",
+  "description": "New account setup",
+  "initiatedBy": "bot@yourcompany.com",
+  "initiatedAt": "2025-08-23T10:05:00.000Z",
+  "message": "Flow started successfully"
+}</code></pre>
+
+<h2>PowerShell example</h2>
+<pre><code>$headers = @{ "x-api-key" = "${exampleKey}"; "x-actor-email" = "bot@yourcompany.com" }
+$body = @{ system = "CRM Onboarding"; orderNumber = "ORD-12345"; description = "New account setup"; initialFormData = @{ account = "Acme" } } | ConvertTo-Json
+Invoke-RestMethod -Uri "http://localhost:5000/api/integrations/start-flow" -Method Post -Headers $headers -Body $body -ContentType "application/json"</code></pre>
+
+<h2>Node fetch example</h2>
+<pre><code>await fetch("/api/integrations/start-flow", { method: "POST", headers: { "x-api-key": "${exampleKey}", "Content-Type": "application/json" }, body: JSON.stringify({ system: "CRM Onboarding", orderNumber: "ORD-12345", description: "New account setup" }) });</code></pre>
+
+</body></html>`;
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+  });
+
+  // --- Admin: Generate a suggested API token (not persisted) ---
+  app.post('/api/admin/integrations/token', isAuthenticated, addUserToRequest, async (req: any, res) => {
+    const user = req.currentUser;
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    const token = `sk_live_${randomBytes(24).toString('hex')}`;
+    res.json({ token });
+  });
+
+  // Server-Sent Events endpoint for real-time notifications
+  app.get('/api/notifications/stream', isAuthenticated, addUserToRequest, async (req: any, res) => {
+    const user = req.currentUser;
+    const id = randomUUID();
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    // initial hello event
+    res.write(`event: hello\n` + `data: {"ok":true}\n\n`);
+
+    const heartbeat = setInterval(() => {
+      res.write(`event: ping\n` + `data: ${Date.now()}\n\n`);
+    }, 25000);
+
+    addClient({ id, userId: user.id, email: user.email, organizationId: user.organizationId, res, heartbeat });
+
+    req.on('close', () => {
+      removeClient(id);
+      clearInterval(heartbeat);
+    });
   });
 
   // Form Templates API (Organization-specific)
@@ -511,20 +756,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Auto-prefill endpoint - get previous form responses for a flow
-  app.get("/api/flows/:flowId/responses", isAuthenticated, async (req, res) => {
+  // Auto-prefill endpoint - get previous form responses for a flow (organization-aware)
+  app.get("/api/flows/:flowId/responses", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const { flowId } = req.params;
-      const formResponses = await storage.getFormResponsesByFlowId(flowId);
-      
+      const user = req.currentUser;
+      // Restrict by organization to avoid cross-tenant data access
+      const formResponses = await storage.getFormResponsesByOrganization(user.organizationId, flowId);
+
       // Return all form responses in chronological order for auto-prefill
-      const responses = formResponses.map(response => ({
-        id: response.id,
-        taskId: response.taskId,
-        formData: response.formData,
-        submittedAt: response.timestamp ? new Date(response.timestamp).toISOString() : new Date().toISOString(),
-      })).sort((a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime());
-      
+      const responses = formResponses
+        .map((response) => ({
+          id: response.id,
+          taskId: response.taskId,
+          formData: response.formData,
+          submittedAt: response.timestamp
+            ? new Date(response.timestamp).toISOString()
+            : new Date().toISOString(),
+        }))
+        .sort(
+          (a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime()
+        );
+
       res.json(responses);
     } catch (error) {
       console.error("Error fetching flow responses:", error);
@@ -535,10 +788,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/form-templates", isAuthenticated, requireAdmin, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
+      const user = req.currentUser; // Get the user from the request
+      
       const validatedData = insertFormTemplateSchema.parse({
         ...req.body,
         createdBy: userId,
+        organizationId: user.organizationId, // Add the organization ID
       });
+      
       const template = await storage.createFormTemplate(validatedData);
       res.status(201).json(template);
     } catch (error) {
@@ -601,16 +858,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/flows/:flowId/responses", isAuthenticated, async (req, res) => {
-    try {
-      const { flowId } = req.params;
-      const responses = await storage.getFormResponsesByFlowId(flowId);
-      res.json(responses);
-    } catch (error) {
-      console.error("Error fetching flow responses:", error);
-      res.status(500).json({ message: "Failed to fetch flow responses" });
-    }
-  });
+  // Duplicate endpoint removed; consolidated earlier with org-aware access control
 
   // Get comprehensive flow data with tasks and form responses
   app.get("/api/flows/:flowId/data", isAuthenticated, addUserToRequest, async (req: any, res) => {
@@ -829,6 +1077,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching weekly scoring:", error);
       res.status(500).json({ message: "Failed to fetch weekly scoring" });
+    }
+  });
+
+  // Reporting: filters and report
+  app.get("/api/analytics/report/systems", isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      const systems = await storage.getOrganizationSystems(user.organizationId);
+      res.json(systems);
+    } catch (error) {
+      console.error("Error fetching systems:", error);
+      res.status(500).json({ message: "Failed to fetch systems" });
+    }
+  });
+
+  app.get("/api/analytics/report/processes", isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      const { system } = req.query;
+      if (!system) return res.status(400).json({ message: "system is required" });
+      const processes = await storage.getProcessesBySystem(user.organizationId, String(system));
+      res.json(processes);
+    } catch (error) {
+      console.error("Error fetching processes:", error);
+      res.status(500).json({ message: "Failed to fetch processes" });
+    }
+  });
+
+  app.get("/api/analytics/report", isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      const { system, taskName, startDate, endDate } = req.query as Record<string, string>;
+      const report = await storage.getOrganizationReport(user.organizationId, { system, taskName, startDate, endDate });
+      res.json(report);
+    } catch (error) {
+      console.error("Error fetching report:", error);
+      res.status(500).json({ message: "Failed to fetch report" });
     }
   });
 

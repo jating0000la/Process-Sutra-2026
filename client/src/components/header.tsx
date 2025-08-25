@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Bell, ChevronDown, LogOut, User, Settings } from "lucide-react";
+import { useLocation } from "wouter";
 
 interface HeaderProps {
   title: string;
@@ -18,9 +19,12 @@ interface HeaderProps {
 
 export default function Header({ title, description, actions }: HeaderProps) {
   const { user, logout } = useAuth();
+  const [ , setLocation ] = useLocation();
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
+    // After logging out, send the user to the login screen
+    setLocation("/");
   };
 
   const getInitials = (displayName?: string | null) => {
@@ -62,7 +66,7 @@ export default function Header({ title, description, actions }: HeaderProps) {
                       />
                     </svg>
                   </div>
-                  <span className="ml-3 text-xl font-bold text-gray-900">TaskFlow Pro</span>
+                  <span className="ml-3 text-xl font-bold text-gray-900">FlowSense by Jatin Gola</span>
                 </div>
               </div>
             </div>
@@ -80,7 +84,7 @@ export default function Header({ title, description, actions }: HeaderProps) {
                   <Button variant="ghost" className="flex items-center space-x-3 p-2">
                     <Avatar className="h-8 w-8">
                       <AvatarImage 
-                        src={user?.photoURL} 
+                        // src={user?.photoURL} 
                         alt="User profile"
                         className="profile-image"
                       />
@@ -95,16 +99,16 @@ export default function Header({ title, description, actions }: HeaderProps) {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setLocation("/profile")}>
                     <User className="mr-2 h-4 w-4" />
                     Profile
                   </DropdownMenuItem>
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setLocation("/organization-settings") }>
                     <Settings className="mr-2 h-4 w-4" />
                     Settings
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleLogout}>
+                  <DropdownMenuItem onSelect={handleLogout}>
                     <LogOut className="mr-2 h-4 w-4" />
                     Log out
                   </DropdownMenuItem>

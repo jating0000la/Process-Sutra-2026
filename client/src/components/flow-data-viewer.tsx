@@ -141,11 +141,33 @@ export default function FlowDataViewer({
 
       // Try to parse JSON strings that might be objects
       const parseIfJsonString = (data: any): any => {
-        if (typeof data === 'string' && (data.startsWith('{') || data.startsWith('['))) {
-          try {
-            return JSON.parse(data);
-          } catch {
-            return data; // Return original string if parsing fails
+        if (typeof data === 'string') {
+          const trimmed = data.trim();
+          // Direct JSON object/array
+          if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+            try {
+              return JSON.parse(trimmed);
+            } catch {
+              // Try to handle multiple JSON objects concatenated with commas (not a valid JSON array)
+              if (trimmed.includes('},') && trimmed.includes('{')) {
+                try {
+                  const normalized = `[${trimmed.replace(/}\s*{/g, '},{')}]`;
+                  return JSON.parse(normalized);
+                } catch {
+                  return data;
+                }
+              }
+              return data;
+            }
+          }
+          // Attempt to wrap multiple objects without brackets
+          if (trimmed.includes('},') && trimmed.includes('{')) {
+            try {
+              const normalized = `[${trimmed.replace(/}\s*{/g, '},{')}]`;
+              return JSON.parse(normalized);
+            } catch {
+              return data;
+            }
           }
         }
         return data;
@@ -179,7 +201,33 @@ export default function FlowDataViewer({
 
       // First, try to parse the entire response if it's a JSON string
       const parsedFormResponse = parseIfJsonString(formResponse);
+
+      // ─── FLATTEN ANSWER OBJECTS ────────────────────────────────────────────────
+const flatFormResponse = (() => {
+  // If it’s not a simple object, just use it as-is
+  if (typeof parsedFormResponse !== 'object' 
+      || parsedFormResponse === null 
+      || Array.isArray(parsedFormResponse)) {
+    return parsedFormResponse;
+  }
+
+  // Otherwise, unwrap any { answer } fields
+  return Object.entries(parsedFormResponse).reduce((acc, [key, value]) => {
+    if (value && typeof value === 'object' && 'answer' in value) {
+      acc[key] = parseIfJsonString((value as any).answer);
+    } else {
+      acc[key] = parseIfJsonString(value);
+    }
+    return acc;
+  }, {} as Record<string, any>);
+})();
+
       
+      // Helpers to detect arrays of table-like row objects
+      const isArrayOfTableRows = (arr: any): arr is Array<Record<string, any>> => {
+        return Array.isArray(arr) && arr.length > 0 && arr.every(isTableRowObject);
+      };
+
       // Check if it's an object with keys (after potential parsing)
       const isObjectWithData = typeof parsedFormResponse === 'object' && !Array.isArray(parsedFormResponse);
       
@@ -194,6 +242,43 @@ export default function FlowDataViewer({
             <div className="p-4">
               {isTableRowObject(parsedFormResponse) ? (
                 renderTableObject(parsedFormResponse)
+              ) : isArrayOfTableRows(parsedFormResponse) ? (
+                (() => {
+                  // Determine all columns across rows, excluding questionId-like keys
+                  const allCols = Array.from(
+                    new Set(
+                      parsedFormResponse.flatMap((row: any) =>
+                        Object.keys(row).filter(k => !k.toLowerCase().includes('questionid'))
+                      )
+                    )
+                  );
+                  return (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full border border-gray-200 dark:border-gray-700 rounded-lg">
+                        <thead className="bg-gray-50 dark:bg-gray-800">
+                          <tr>
+                            {allCols.map((key) => (
+                              <th key={key} className="px-3 py-2 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
+                                {String(key).replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase()).replace(/_/g, ' ')}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {parsedFormResponse.map((row: any, idx: number) => (
+                            <tr key={idx} className="bg-white dark:bg-gray-900">
+                              {allCols.map((key) => (
+                                <td key={key} className="px-3 py-2 text-sm text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700">
+                                  {String(row[key] ?? '')}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()
               ) : (
                 <div className="space-y-3">
                   {Object.entries(parsedFormResponse).map(([key, value], index) => {
@@ -202,7 +287,12 @@ export default function FlowDataViewer({
                     
                     // Handle nested form response structure with answer property
                     let processedValue = value;
+                    let labelFromValue: string | null = null;
                     if (typeof value === 'object' && value !== null && 'answer' in value) {
+                      // Prefer questionTitle when available for the display label
+                      if ('questionTitle' in (value as any) && (value as any).questionTitle) {
+                        labelFromValue = String((value as any).questionTitle);
+                      }
                       processedValue = parseIfJsonString((value as any).answer);
                     } else {
                       processedValue = parseIfJsonString(value);
@@ -229,9 +319,43 @@ export default function FlowDataViewer({
                         </div>
                       );
                     }
+                    if (Array.isArray(processedValue) && processedValue.every(isTableRowObject)) {
+                      const allCols = Array.from(new Set(processedValue.flatMap((row: any) => Object.keys(row).filter(k => !k.toLowerCase().includes('questionid')))));
+                      return (
+                        <div key={`${key}-${index}`} className="border-b border-gray-100 dark:border-gray-700 pb-3 last:border-b-0">
+                          <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+                            {String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full border border-gray-200 dark:border-gray-700 rounded-lg">
+                              <thead className="bg-gray-50 dark:bg-gray-800">
+                                <tr>
+                                  {allCols.map((col) => (
+                                    <th key={col} className="px-3 py-2 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
+                                      {String(col).replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase()).replace(/_/g, ' ')}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {processedValue.map((row: any, rIdx: number) => (
+                                  <tr key={rIdx} className="bg-white dark:bg-gray-900">
+                                    {allCols.map((col) => (
+                                      <td key={col} className="px-3 py-2 text-sm text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700">
+                                        {String(row[col] ?? '')}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    }
                     
                     const displayValue = convertToSafeDisplay(processedValue);
-                    const displayKey = String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                    const displayKey = labelFromValue ?? String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
                     
                     return (
                       <div key={`${key}-${index}`} className="border-b border-gray-100 dark:border-gray-700 pb-2 last:border-b-0">

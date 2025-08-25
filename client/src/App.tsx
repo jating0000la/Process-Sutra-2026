@@ -17,9 +17,13 @@ import FlowData from "@/pages/flow-data";
 import FlowSimulator from "@/pages/flow-simulator";
 import UserManagement from "@/pages/user-management";
 import OrganizationSettings from "@/pages/organization-settings";
+import Profile from "@/pages/profile";
+import { useNotifications } from "@/hooks/useNotifications";
+import ApiStartFlow from "@/pages/api-startflow";
 
 function Router() {
   const { user, loading } = useAuth();
+  useNotifications();
 
   if (loading) {
     return (
@@ -41,6 +45,7 @@ function Router() {
           <Route path="/" component={Dashboard} />
           <Route path="/tasks" component={Tasks} />
           <Route path="/analytics" component={Analytics} />
+          <Route path="/profile" component={Profile} />
           
           {/* Admin-only routes */}
           <Route path="/flows">
@@ -76,6 +81,11 @@ function Router() {
           <Route path="/organization-settings">
             <ProtectedRoute requireAdmin>
               <OrganizationSettings />
+            </ProtectedRoute>
+          </Route>
+          <Route path="/api-startflow">
+            <ProtectedRoute requireAdmin>
+              <ApiStartFlow />
             </ProtectedRoute>
           </Route>
         </>

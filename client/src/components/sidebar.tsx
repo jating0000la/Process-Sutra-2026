@@ -30,10 +30,16 @@ const userNavigationItems = [
   },
   {
     name: "My Performance",
-    href: "/analytics", 
+    href: "/analytics",
     icon: BarChart3,
     badge: null,
   },
+  // {
+  //   name: "My Performance",
+  //   href: "/analytics", 
+  //   icon: BarChart3,
+  //   badge: null,
+  // },
 ];
 
 // Additional navigation items for admins only
@@ -75,11 +81,17 @@ const adminNavigationItems = [
     badge: null,
   },
   {
-    name: "Organization Settings",
-    href: "/organization-settings",
+    name: "Start Flow API",
+    href: "/api-startflow",
     icon: Settings,
     badge: null,
   },
+  // {
+  //   name: "Organization Settings",
+  //   href: "/organization-settings",
+  //   icon: Settings,
+  //   badge: null,
+  // },
 ];
 
 export default function Sidebar() {

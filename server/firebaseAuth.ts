@@ -7,11 +7,49 @@ import { storage } from "./storage";
 
 // Initialize Firebase Admin (only once)
 if (!getApps().length) {
-  // For production, you would use a service account key
-  // For now, we'll use the client config for simplicity
-  initializeApp({
-    projectId: process.env.VITE_FIREBASE_PROJECT_ID,
-  });
+  try {
+    // For production, you would use a service account key
+    // For local development, we'll use the service account credentials from .env
+    const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    
+    // Check if we have all required Firebase credentials
+    if (projectId && clientEmail && privateKey) {
+      initializeApp({
+        credential: cert({
+          projectId,
+          clientEmail,
+          privateKey
+        }),
+      });
+      console.log('Firebase Admin initialized with service account credentials');
+    } else {
+      // If we're missing any credentials, initialize with just the project ID
+      if (projectId) {
+        initializeApp({
+          projectId,
+        });
+        console.log('Firebase Admin initialized with project ID only');
+      } else {
+        console.warn('Firebase credentials are missing. Some authentication features may not work.');
+        // Initialize with the project ID from the frontend config for development
+        if (process.env.NODE_ENV === 'development') {
+          const fallbackProjectId = 'taskflowpro-c62c1'; // Hardcoded fallback from .env
+          initializeApp({
+            projectId: fallbackProjectId,
+          });
+          console.log(`Firebase Admin initialized with fallback project ID: ${fallbackProjectId}`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error initializing Firebase Admin:', error);
+    // In development mode, continue without Firebase
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('Continuing without Firebase Admin in development mode');
+    }
+  }
 }
 
 const adminAuth = getAuth();
@@ -204,6 +242,7 @@ export async function setupAuth(app: Express) {
           lastName: dbUser.lastName,
           profileImageUrl: dbUser.profileImageUrl,
           role: dbUser.role,
+          organizationId: (dbUser as any).organizationId,
         }
       });
 

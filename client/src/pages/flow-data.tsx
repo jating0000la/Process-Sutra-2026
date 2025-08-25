@@ -73,10 +73,10 @@ export default function FlowData() {
       <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900">
         <Sidebar />
         <div className="flex-1 flex flex-col">
-          <Header />
           <main className="flex-1 p-6">
             <div className="text-center">Loading flow data...</div>
           </main>
+          
         </div>
       </div>
     );
@@ -152,7 +152,7 @@ export default function FlowData() {
     <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900">
       <Sidebar />
       <div className="flex-1 flex flex-col">
-        <Header />
+        {/* <Header /> */}
         <main className="flex-1 p-6 space-y-6">
           <div className="flex justify-between items-center">
             <div>
