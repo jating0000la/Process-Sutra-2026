@@ -91,7 +91,8 @@ export default function ApiStartFlow() {
       };
       if (parsedInitialData) body.initialFormData = parsedInitialData;
 
-      const res = await fetch('/api/integrations/start-flow', {
+// Call the working backend API directly
+      const res = await fetch('http://localhost:5000/api/start-flow', {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -138,7 +139,22 @@ export default function ApiStartFlow() {
                   </div>
                   <div className="flex gap-2">
                     <Button onClick={handleGenerate}>Generate Token</Button>
-                    <Button variant="outline" onClick={() => navigator.clipboard.writeText(token || orgId || "")} disabled={!(token || orgId)}>Copy</Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const value = token || orgId || "";
+                        if (value) {
+                          navigator.clipboard.writeText(value).then(() => {
+                            alert("API Key copied to clipboard");
+                          }).catch(() => {
+                            alert("Failed to copy API Key");
+                          });
+                        }
+                      }}
+                      disabled={!(token || orgId)}
+                    >
+                      Copy
+                    </Button>
                   </div>
                   {tokenError && (<div className="text-xs text-red-600">{tokenError}</div>)}
                   <div className="text-xs text-gray-500">API accepts header x-api-key. You can use your Organization ID as the key, or map custom keys via FLOW_API_KEYS.</div>
@@ -152,7 +168,8 @@ export default function ApiStartFlow() {
               <CardTitle>Endpoint</CardTitle>
             </CardHeader>
             <CardContent>
-              <pre className="whitespace-pre-wrap text-sm bg-gray-50 p-3 rounded-md border">POST /api/integrations/start-flow</pre>
+// Update endpoint display
+              <pre className="whitespace-pre-wrap text-sm bg-gray-50 p-3 rounded-md border">POST http://localhost:5000/api/start-flow</pre>
               <div className="mt-4 text-sm text-gray-700">
                 Use this endpoint to trigger a new flow based on your organization’s configured rules.
               </div>
@@ -212,11 +229,12 @@ x-source: zapier (optional)</pre>
                   <div className="font-medium mb-2">PowerShell</div>
                   <pre className="text-xs bg-gray-50 p-3 rounded-md border">{`$headers = @{ "x-api-key" = "YOUR_ORG_ID"; "x-actor-email" = "bot@yourcompany.com" }
     $body = @{ system = "CRM Onboarding"; orderNumber = "ORD-12345"; description = "New account setup"; initialFormData = @{ account = "Acme" } } | ConvertTo-Json
-Invoke-RestMethod -Uri "http://localhost:5000/api/integrations/start-flow" -Method Post -Headers $headers -Body $body -ContentType "application/json"`}</pre>
+// Update example to match working API
+Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Headers $headers -Body $body -ContentType "application/json"`}</pre>
                 </div>
                 <div>
                   <div className="font-medium mb-2">Node fetch</div>
-                  <pre className="text-xs bg-gray-50 p-3 rounded-md border">{`await fetch("/api/integrations/start-flow", {
+                  <pre className="text-xs bg-gray-50 p-3 rounded-md border">{`await fetch("http://localhost:5000/api/start-flow", {
   method: "POST",
   headers: {
     "x-api-key": "YOUR_ORG_ID",
@@ -237,7 +255,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/integrations/start-flow" -Meth
               <CardContent className="space-y-4">
                 <div>
                   <Label>API Key (x-api-key)</Label>
-                  <Input placeholder="your-organization-id" value={token || orgId || ""} onChange={(e) => setToken(e.target.value)} />
+                  <Input placeholder="your-organization-id" value={orgId || ""} onChange={(e) => setToken(e.target.value)} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -265,7 +283,8 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/integrations/start-flow" -Meth
                   <Label htmlFor="notify">Notify assignee</Label>
                 </div>
                 <div className="flex gap-2">
-                  <Button onClick={handleTest} disabled={testing}>Send Test Request</Button>
+// Ensure Try it now button always works
+                  <Button onClick={handleTest} disabled={testing || !(token || orgId)}>Send Test Request</Button>
                   {testing && <div className="text-sm text-gray-600 self-center">Sending…</div>}
                 </div>
                 {(testError || testResult) && (

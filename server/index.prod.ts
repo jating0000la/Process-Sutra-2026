@@ -20,7 +20,8 @@ function log(message: string, source = "express") {
 }
 
 function serveStatic(app: express.Express) {
-  const distPath = path.resolve(import.meta.dirname, "public");
+  // In production, static assets are emitted to dist/public relative to CWD
+  const distPath = path.resolve(process.cwd(), "dist", "public");
 
   if (!fs.existsSync(distPath)) {
     throw new Error(

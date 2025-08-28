@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Bell, ChevronDown, LogOut, User, Settings } from "lucide-react";
 import { useLocation } from "wouter";
+import { useState } from "react";
 
 interface HeaderProps {
   title: string;
@@ -20,6 +21,7 @@ interface HeaderProps {
 export default function Header({ title, description, actions }: HeaderProps) {
   const { user, logout } = useAuth();
   const [ , setLocation ] = useLocation();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const handleLogout = async () => {
     await logout();
@@ -51,22 +53,12 @@ export default function Header({ title, description, actions }: HeaderProps) {
             <div className="flex items-center">
               <div className="flex-shrink-0">
                 <div className="flex items-center">
-                  <div className="bg-primary text-white p-2 rounded-lg">
-                    <svg
-                      className="w-6 h-6"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                  </div>
-                  <span className="ml-3 text-xl font-bold text-gray-900">FlowSense by Jatin Gola</span>
+                  <img
+                    src="/src/logo/ProcessSutra2.png"
+                    alt="ProcessSutra Logo"
+                    className="h-12 w-35 object-contain"
+                  />
+                  {/* <span className="ml-3 text-xl font-bold text-gray-900">ProcessSutra</span> */}
                 </div>
               </div>
             </div>
@@ -131,6 +123,12 @@ export default function Header({ title, description, actions }: HeaderProps) {
           {actions && <div>{actions}</div>}
         </div>
       </div>
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-40"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
     </>
-  );
+  )
 }

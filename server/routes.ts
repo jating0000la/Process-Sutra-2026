@@ -684,8 +684,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 <h1>Start Flow API</h1>
 <p>Create the first task for a system using your organization rules.</p>
 
-<h2>Endpoint</h2>
-<pre><code>POST /api/integrations/start-flow</code></pre>
+<h2>Endpoints</h2>
+<pre><code>POST /api/start-flow (simplified)
+POST /api/integrations/start-flow (full featured)</code></pre>
 
 <h2>Headers</h2>
 <table>
@@ -700,32 +701,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
   "system": "CRM Onboarding",            // required
   "orderNumber": "ORD-12345",            // required
   "description": "New account setup",     // required
-  "initialFormData": { "account": "Acme" }, // optional (object or JSON string)
-  "notifyAssignee": true                  // optional (default true)
+  "initialFormData": { "account": "Acme" } // optional
 }</code></pre>
 
 <h2>Response</h2>
 <pre><code>{
   "flowId": "...",
-  "task": { /* created task */ },
-  "orderNumber": "ORD-12345",
-  "description": "New account setup",
-  "initiatedBy": "bot@yourcompany.com",
-  "initiatedAt": "2025-08-23T10:05:00.000Z",
+  "taskId": "...",
   "message": "Flow started successfully"
 }</code></pre>
 
 <h2>PowerShell example</h2>
-<pre><code>$headers = @{ "x-api-key" = "${exampleKey}"; "x-actor-email" = "bot@yourcompany.com" }
-$body = @{ system = "CRM Onboarding"; orderNumber = "ORD-12345"; description = "New account setup"; initialFormData = @{ account = "Acme" } } | ConvertTo-Json
-Invoke-RestMethod -Uri "http://localhost:5000/api/integrations/start-flow" -Method Post -Headers $headers -Body $body -ContentType "application/json"</code></pre>
+<pre><code>$headers = @{ "x-api-key" = "${exampleKey}" }
+$body = @{ system = "CRM Onboarding"; orderNumber = "ORD-12345"; description = "New account setup" } | ConvertTo-Json
+Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Headers $headers -Body $body -ContentType "application/json"</code></pre>
 
 <h2>Node fetch example</h2>
-<pre><code>await fetch("/api/integrations/start-flow", { method: "POST", headers: { "x-api-key": "${exampleKey}", "Content-Type": "application/json" }, body: JSON.stringify({ system: "CRM Onboarding", orderNumber: "ORD-12345", description: "New account setup" }) });</code></pre>
+<pre><code>await fetch("/api/start-flow", { method: "POST", headers: { "x-api-key": "${exampleKey}", "Content-Type": "application/json" }, body: JSON.stringify({ system: "CRM Onboarding", orderNumber: "ORD-12345", description: "New account setup" }) });</code></pre>
 
 </body></html>`;
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
+  });
+
+  // External API: Start Flow (simplified for external software)
+  app.post("/api/start-flow", integrationAuth, async (req: any, res) => {
+    try {
+      const { system, orderNumber, description, initialFormData } = req.body;
+      const { organizationId, actorEmail } = req.integration;
+
+      if (!system || !orderNumber || !description) {
+        return res.status(400).json({ message: "system, orderNumber, and description are required" });
+      }
+
+      const flowRules = await storage.getFlowRulesByOrganization(organizationId, system);
+      const startRule = flowRules.find((rule: any) => rule.currentTask === "");
+      if (!startRule) {
+        return res.status(400).json({ message: "No starting rule found for this system" });
+      }
+
+      const flowId = randomUUID();
+      const tatConfiguration = await storage.getTATConfig(organizationId);
+      const config = tatConfiguration || { officeStartHour: 9, officeEndHour: 18 };
+      const plannedTime = calculateTAT(new Date(), startRule.tat, startRule.tatType, config);
+
+      const task = await storage.createTask({
+        system,
+        flowId,
+        orderNumber,
+        taskName: startRule.nextTask,
+        plannedTime,
+        doerEmail: startRule.email,
+        status: "pending",
+        formId: startRule.formId,
+        organizationId,
+        flowInitiatedBy: actorEmail || "external-api",
+        flowInitiatedAt: new Date(),
+        flowDescription: description,
+        flowInitialFormData: initialFormData || null,
+      });
+
+      res.status(201).json({ flowId, taskId: task.id, message: "Flow started successfully" });
+    } catch (error) {
+      console.error("External start-flow error:", error);
+      res.status(500).json({ message: "Failed to start flow" });
+    }
   });
 
   // --- Admin: Generate a suggested API token (not persisted) ---

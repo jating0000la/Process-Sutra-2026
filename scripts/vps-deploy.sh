@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# FlowSense VPS Deployment Script
-# Usage: curl -sSL https://raw.githubusercontent.com/jating0000la/flowsense/main/scripts/vps-deploy.sh | bash
+# ProcessSutra VPS Deployment Script
+# Usage: curl -sSL https://raw.githubusercontent.com/jating0000la/processsutra/main/scripts/vps-deploy.sh | bash
 
 set -e
 
-echo "🚀 FlowSense VPS Deployment Script"
+echo "🚀 ProcessSutra VPS Deployment Script"
 echo "=================================="
 
 # Colors for output
@@ -99,15 +99,15 @@ setup_firewall() {
 
 # Clone repository
 clone_repo() {
-    print_info "Cloning FlowSense repository..."
+    print_info "Cloning ProcessSutra repository..."
     
-    if [ -d "/opt/flowsense" ]; then
-        print_warning "Directory /opt/flowsense already exists. Updating..."
-        cd /opt/flowsense
+    if [ -d "/opt/processsutra" ]; then
+        print_warning "Directory /opt/processsutra already exists. Updating..."
+        cd /opt/processsutra
         git pull origin main
     else
-        git clone https://github.com/jating0000la/flowsense.git /opt/flowsense
-        cd /opt/flowsense
+        git clone https://github.com/jating0000la/processsutra.git /opt/processsutra
+        cd /opt/processsutra
     fi
     
     print_status "Repository cloned/updated"
@@ -117,11 +117,11 @@ clone_repo() {
 setup_environment() {
     print_info "Setting up environment configuration..."
     
-    cd /opt/flowsense
+    cd /opt/processsutra
     
     if [ ! -f ".env.production" ]; then
         cp .env.production.template .env.production
-        print_warning "Please edit /opt/flowsense/.env.production with your configuration"
+    print_warning "Please edit /opt/processsutra/.env.production with your configuration"
         print_warning "Especially set your FIREBASE_PRIVATE_KEY and SESSION_SECRET"
     fi
     
@@ -136,9 +136,9 @@ setup_environment() {
 
 # Deploy application
 deploy_app() {
-    print_info "Deploying FlowSense application..."
+    print_info "Deploying ProcessSutra application..."
     
-    cd /opt/flowsense
+    cd /opt/processsutra
     
     # Build and start services
     docker-compose down 2>/dev/null || true
@@ -153,7 +153,7 @@ deploy_app() {
         print_status "Application deployed successfully!"
     else
         print_error "Application health check failed"
-        print_info "Check logs with: docker-compose -f /opt/flowsense/docker-compose.yml logs"
+        print_info "Check logs with: docker-compose -f /opt/processsutra/docker-compose.yml logs"
     fi
 }
 
@@ -164,7 +164,7 @@ setup_nginx_proxy() {
     # Get server IP
     SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || curl -s ipinfo.io/ip)
     
-    cat > /etc/nginx/sites-available/flowsense << EOF
+    cat > /etc/nginx/sites-available/processsutra << EOF
 server {
     listen 80;
     server_name ${SERVER_IP} localhost;
@@ -189,7 +189,7 @@ server {
 EOF
     
     # Enable site
-    ln -sf /etc/nginx/sites-available/flowsense /etc/nginx/sites-enabled/
+    ln -sf /etc/nginx/sites-available/processsutra /etc/nginx/sites-enabled/
     rm -f /etc/nginx/sites-enabled/default
     
     # Test and reload Nginx
@@ -214,7 +214,7 @@ install_ssl() {
             apt install certbot python3-certbot-nginx -y
             
             # Update Nginx config with domain
-            sed -i "s/server_name.*;/server_name $DOMAIN_NAME;/" /etc/nginx/sites-available/flowsense
+            sed -i "s/server_name.*;/server_name $DOMAIN_NAME;/" /etc/nginx/sites-available/processsutra
             nginx -t && systemctl reload nginx
             
             # Get certificate
@@ -232,26 +232,26 @@ install_ssl() {
 setup_backup() {
     print_info "Setting up backup script..."
     
-    mkdir -p /opt/flowsense/backups
+    mkdir -p /opt/processsutra/backups
     
-    cat > /opt/flowsense/backup.sh << 'EOF'
+    cat > /opt/processsutra/backup.sh << 'EOF'
 #!/bin/bash
 DATE=$(date +%Y%m%d_%H%M%S)
-BACKUP_DIR="/opt/flowsense/backups"
+BACKUP_DIR="/opt/processsutra/backups"
 
 # Create backup
-docker exec flowsense_postgres pg_dump -U flowsense_admin flowsense > "$BACKUP_DIR/flowsense_$DATE.sql"
+docker exec processsutra_postgres pg_dump -U processsutra_admin processsutra > "$BACKUP_DIR/processsutra_$DATE.sql"
 
 # Keep only last 7 days of backups
-find "$BACKUP_DIR" -name "flowsense_*.sql" -mtime +7 -delete
+find "$BACKUP_DIR" -name "processsutra_*.sql" -mtime +7 -delete
 
-echo "Backup completed: flowsense_$DATE.sql"
+echo "Backup completed: processsutra_$DATE.sql"
 EOF
     
-    chmod +x /opt/flowsense/backup.sh
+    chmod +x /opt/processsutra/backup.sh
     
     # Schedule daily backups
-    (crontab -l 2>/dev/null; echo "0 2 * * * /opt/flowsense/backup.sh") | crontab -
+    (crontab -l 2>/dev/null; echo "0 2 * * * /opt/processsutra/backup.sh") | crontab -
     
     print_status "Backup script created and scheduled"
 }
@@ -259,7 +259,7 @@ EOF
 # Main deployment function
 main() {
     echo
-    print_info "Starting FlowSense VPS deployment..."
+    print_info "Starting ProcessSutra VPS deployment..."
     echo
     
     check_root
@@ -275,20 +275,20 @@ main() {
     setup_backup
     
     echo
-    print_status "🎉 FlowSense deployment completed!"
+    print_status "🎉 ProcessSutra deployment completed!"
     echo
     print_info "Your application is now running at:"
     SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || curl -s ipinfo.io/ip)
     echo -e "${GREEN}http://$SERVER_IP${NC}"
     echo
     print_info "Useful commands:"
-    echo "  View logs: docker-compose -f /opt/flowsense/docker-compose.yml logs -f"
-    echo "  Restart: docker-compose -f /opt/flowsense/docker-compose.yml restart"
-    echo "  Update: cd /opt/flowsense && git pull && docker-compose up -d --build"
-    echo "  Backup: /opt/flowsense/backup.sh"
+    echo "  View logs: docker-compose -f /opt/processsutra/docker-compose.yml logs -f"
+    echo "  Restart: docker-compose -f /opt/processsutra/docker-compose.yml restart"
+    echo "  Update: cd /opt/processsutra && git pull && docker-compose up -d --build"
+    echo "  Backup: /opt/processsutra/backup.sh"
     echo
-    print_warning "Please edit /opt/flowsense/.env.production with your Firebase configuration"
-    print_warning "Then restart with: docker-compose -f /opt/flowsense/docker-compose.yml restart"
+    print_warning "Please edit /opt/processsutra/.env.production with your Firebase configuration"
+    print_warning "Then restart with: docker-compose -f /opt/processsutra/docker-compose.yml restart"
 }
 
 # Run main function

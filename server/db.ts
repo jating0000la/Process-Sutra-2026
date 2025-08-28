@@ -28,7 +28,7 @@ if (!databaseUrl) {
 // If still not found, handle production vs development differently
 if (!databaseUrl) {
   if (process.env.NODE_ENV === 'development') {
-    databaseUrl = "postgresql://postgres:admin@localhost:5432/flowsense";
+  databaseUrl = "postgresql://postgres:admin@localhost:5432/processsutra";
     process.env.DATABASE_URL = databaseUrl;
     console.warn("Using default DATABASE_URL for local development:", databaseUrl);
     console.warn("Please make sure PostgreSQL is installed and running.");

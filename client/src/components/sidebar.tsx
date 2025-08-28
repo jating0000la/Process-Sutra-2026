@@ -1,3 +1,4 @@
+
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -10,8 +11,8 @@ import {
   FileBarChart, 
   Users, 
   Settings,
-  Bell,
-  Activity
+  Activity,
+  Database
 } from "lucide-react";
 
 // Navigation items for all users
@@ -78,6 +79,12 @@ const adminNavigationItems = [
     name: "User Management",
     href: "/user-management",
     icon: Users,
+    badge: null,
+  },
+  {
+    name: "Form Data",
+    href: "/form-data-viewer",
+    icon: Database,
     badge: null,
   },
   {

@@ -2,13 +2,13 @@
 echo Setting up environment for FlowSense...
 
 REM Check if PostgreSQL is installed
-powershell -Command "try { $null = & psql --version } catch { Write-Host 'PostgreSQL is not installed or not in PATH.' -ForegroundColor Red; Write-Host 'Please install PostgreSQL first:' -ForegroundColor Yellow; Write-Host '1. Open PowerShell as Administrator' -ForegroundColor Yellow; Write-Host '2. Navigate to this directory' -ForegroundColor Yellow; Write-Host '3. Run: Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process' -ForegroundColor Yellow; Write-Host '4. Run: .\install-postgres.ps1' -ForegroundColor Yellow; Write-Host '5. After installation, restart your computer' -ForegroundColor Yellow; Write-Host '6. Run this batch file again' -ForegroundColor Yellow; exit 1 }" && if %errorlevel% neq 0 (pause && exit /b)
+echo Setting up environment for ProcessSutra...
 
 REM Check if .env.local exists
 if not exist .env.local (
     echo .env.local file not found. Please run setup.ps1 first.
     echo.
-    echo To run setup:
+echo Starting ProcessSutra development server...
     echo 1. Open PowerShell as Administrator
     echo 2. Navigate to this directory
     echo 3. Run: Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
@@ -16,7 +16,7 @@ if not exist .env.local (
     echo.
     pause
     exit /b
-)
+echo  - The processsutra database exists
 
 REM Check if PostgreSQL is running
 powershell -Command "try { $service = Get-Service postgresql* -ErrorAction SilentlyContinue; if ($service -and $service.Status -ne 'Running') { Write-Host 'PostgreSQL service is not running. Attempting to start...' -ForegroundColor Yellow; Start-Service $service.Name; Write-Host 'PostgreSQL service started.' -ForegroundColor Green; } } catch { Write-Host 'Could not check PostgreSQL service status.' -ForegroundColor Red; }"

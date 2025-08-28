@@ -47,6 +47,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           uid: firebaseUser.uid,
           email: firebaseUser.email,
@@ -69,7 +70,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           setDbUser(data.user);
         }
       } else {
-        const errorData = await response.json();
+        let errorData: any = {};
+        try { errorData = await response.json(); } catch { /* ignore parse errors */ }
         console.error('Backend authentication failed:', errorData);
         setError(errorData.message || 'Authentication failed. Please try again.');
         // Don't set user if backend authentication fails
@@ -143,6 +145,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         console.log('✅ Login successful via popup:', result.user.email);
         await syncUserWithBackend(result.user);
         setUser(result.user);
+        // ✅ Redirect to home after popup login
+        window.location.href = "/";
       }
     } catch (error) {
       console.error('❌ Login failed:', error);

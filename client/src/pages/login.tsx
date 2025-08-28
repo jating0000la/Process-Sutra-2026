@@ -7,34 +7,21 @@ export default function LoginPage() {
   const { login, error, loading } = useAuth();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-200 via-purple-200 to-pink-100 flex items-center justify-center p-6">
+      <Card className="w-full max-w-lg shadow-2xl rounded-2xl border border-gray-200 bg-white/80 backdrop-blur">
         <CardContent className="pt-6">
-          <div className="text-center">
-            <div className="flex justify-center mb-6">
-              <div className="bg-primary text-white p-4 rounded-xl">
-                <svg
-                  className="w-8 h-8"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-              </div>
+          <div className="text-center space-y-4">
+            <div className="flex justify-center">
+              <img
+                src="/src/logo/ProcessSutra.png"
+                alt="App Logo"
+                className="w-48 h-48 object-contain drop-shadow-md"
+              />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              TaskFlow Pro
-            </h1>
-            <p className="text-gray-600 mb-6">
-              Intelligent Task Flow & Form Management System
+            <p className="text-base text-gray-700">
+              Intelligent Task Management System
             </p>
-            <p className="text-sm text-gray-500 mb-8">
+            <p className="text-sm text-gray-500 max-w-md mx-auto">
               Streamline your workflows with configurable task flows, dynamic forms, and powerful analytics.
             </p>
             {error && (
@@ -45,7 +32,7 @@ export default function LoginPage() {
             <Button
               onClick={login}
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2"
+              className="w-full flex items-center justify-center gap-3 py-3 text-lg font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-xl shadow-md transition-all"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -58,7 +45,7 @@ export default function LoginPage() {
           </div>
         </CardContent>
       </Card>
-      <AuthDebug />
+      {/* <AuthDebug /> */}
     </div>
   );
 }

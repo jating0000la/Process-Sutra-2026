@@ -1764,18 +1764,37 @@ export default function FlowSimulator() {
         const totalTime = updatedTasks.length > 0 ? 
           (newCurrentTime.getTime() - updatedTasks[0].startTime.getTime()) / (1000 * 60 * 60) : 0;
         
+        // Check if all tasks are completed and stop simulation
+        const allTasksCompleted = updatedTasks.length > 0 && completedCount === updatedTasks.length;
+        
         return {
           ...prev,
           currentTime: newCurrentTime,
           tasks: updatedTasks,
           completedTasks: completedCount,
           totalThroughputTime: totalTime,
-          performance: updatedTasks.length > 0 ? Math.round((completedCount / updatedTasks.length) * 100) : 0
+          performance: updatedTasks.length > 0 ? Math.round((completedCount / updatedTasks.length) * 100) : 0,
+          isRunning: !allTasksCompleted // Stop simulation when all tasks are completed
         };
       });
     }, 1000); // Update every second
     
     setSimulationInterval(interval);
+    
+    // Add completion notification
+    const checkCompletion = setInterval(() => {
+      if (simulation && !simulation.isRunning && simulation.completedTasks === simulation.tasks.length) {
+        toast({
+          title: "Simulation Complete",
+          description: `All ${simulation.tasks.length} tasks have been completed successfully!`,
+          variant: "default",
+        });
+        clearInterval(checkCompletion);
+      }
+    }, 2000);
+    
+    // Clean up completion checker after 30 seconds
+    setTimeout(() => clearInterval(checkCompletion), 30000);
   };
 
   // Pause/Resume simulation
@@ -1802,6 +1821,23 @@ export default function FlowSimulator() {
     }
     setSimulation(null);
   };
+
+  // Auto-stop simulation when all tasks are completed
+  useEffect(() => {
+    if (simulation && simulation.completedTasks === simulation.tasks.length && simulation.tasks.length > 0) {
+      if (simulationInterval) {
+        clearInterval(simulationInterval);
+        setSimulationInterval(null);
+      }
+      
+      // Show completion notification
+      toast({
+        title: "🎉 Simulation Complete!",
+        description: `All ${simulation.tasks.length} tasks completed in ${simulation.totalThroughputTime.toFixed(1)} hours`,
+        variant: "default",
+      });
+    }
+  }, [simulation?.completedTasks, simulation?.tasks.length, simulationInterval, toast]);
 
   // Cleanup on unmount
   useEffect(() => {

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# FlowSense VPS Management Script
+# ProcessSutra VPS Management Script
 # Usage: ./vps-manage.sh [command]
 
 set -e
@@ -12,11 +12,11 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-APP_DIR="/opt/flowsense"
+APP_DIR="/opt/processsutra"
 COMPOSE_FILE="$APP_DIR/docker-compose.yml"
 
 print_usage() {
-    echo "FlowSense VPS Management Script"
+    echo "ProcessSutra VPS Management Script"
     echo "Usage: $0 [command]"
     echo ""
     echo "Commands:"
@@ -36,26 +36,26 @@ print_usage() {
 
 check_app_dir() {
     if [ ! -d "$APP_DIR" ]; then
-        echo -e "${RED}❌ FlowSense not found in $APP_DIR${NC}"
+    echo -e "${RED}❌ ProcessSutra not found in $APP_DIR${NC}"
         exit 1
     fi
     cd "$APP_DIR"
 }
 
 start_services() {
-    echo -e "${BLUE}🚀 Starting FlowSense services...${NC}"
+    echo -e "${BLUE}🚀 Starting ProcessSutra services...${NC}"
     docker-compose up -d
     echo -e "${GREEN}✅ Services started${NC}"
 }
 
 stop_services() {
-    echo -e "${BLUE}🛑 Stopping FlowSense services...${NC}"
+    echo -e "${BLUE}🛑 Stopping ProcessSutra services...${NC}"
     docker-compose down
     echo -e "${GREEN}✅ Services stopped${NC}"
 }
 
 restart_services() {
-    echo -e "${BLUE}🔄 Restarting FlowSense services...${NC}"
+    echo -e "${BLUE}🔄 Restarting ProcessSutra services...${NC}"
     docker-compose restart
     echo -e "${GREEN}✅ Services restarted${NC}"
 }
@@ -75,7 +75,7 @@ show_logs() {
 }
 
 update_app() {
-    echo -e "${BLUE}⬆️  Updating FlowSense...${NC}"
+    echo -e "${BLUE}⬆️  Updating ProcessSutra...${NC}"
     git pull origin main
     docker-compose down
     docker-compose up -d --build
@@ -85,10 +85,10 @@ update_app() {
 backup_database() {
     echo -e "${BLUE}💾 Creating database backup...${NC}"
     DATE=$(date +%Y%m%d_%H%M%S)
-    BACKUP_FILE="backups/flowsense_$DATE.sql"
+    BACKUP_FILE="backups/processsutra_$DATE.sql"
     
     mkdir -p backups
-    docker exec flowsense_postgres pg_dump -U flowsense_admin flowsense > "$BACKUP_FILE"
+    docker exec processsutra_postgres pg_dump -U processsutra_admin processsutra > "$BACKUP_FILE"
     
     echo -e "${GREEN}✅ Database backup created: $BACKUP_FILE${NC}"
 }
@@ -98,11 +98,11 @@ restore_database() {
     echo "Available backups:"
     ls -la backups/*.sql 2>/dev/null || echo "No backups found"
     echo ""
-    read -p "Enter backup file name (e.g., flowsense_20241201_120000.sql): " BACKUP_FILE
+    read -p "Enter backup file name (e.g., processsutra_20241201_120000.sql): " BACKUP_FILE
     
     if [ -f "backups/$BACKUP_FILE" ]; then
         echo -e "${BLUE}🔄 Restoring database from $BACKUP_FILE...${NC}"
-        docker exec -i flowsense_postgres psql -U flowsense_admin -d flowsense < "backups/$BACKUP_FILE"
+    docker exec -i processsutra_postgres psql -U processsutra_admin -d processsutra < "backups/$BACKUP_FILE"
         echo -e "${GREEN}✅ Database restored${NC}"
     else
         echo -e "${RED}❌ Backup file not found${NC}"

@@ -20,6 +20,9 @@ import OrganizationSettings from "@/pages/organization-settings";
 import Profile from "@/pages/profile";
 import { useNotifications } from "@/hooks/useNotifications";
 import ApiStartFlow from "@/pages/api-startflow";
+import FormResponses from "@/pages/form-responses";
+
+import FormDataViewer from "@/pages/form-data-viewer";
 
 function Router() {
   const { user, loading } = useAuth();
@@ -86,6 +89,17 @@ function Router() {
           <Route path="/api-startflow">
             <ProtectedRoute requireAdmin>
               <ApiStartFlow />
+            </ProtectedRoute>
+          </Route>
+          <Route path="/form-responses">
+            <ProtectedRoute requireAdmin>
+              <FormResponses />
+            </ProtectedRoute>
+          </Route>
+
+          <Route path="/form-data-viewer">
+            <ProtectedRoute requireAdmin>
+              <FormDataViewer />
             </ProtectedRoute>
           </Route>
         </>

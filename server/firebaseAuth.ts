@@ -56,6 +56,13 @@ const adminAuth = getAuth();
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
+  // Determine cookie security flags. In production on plain HTTP (no TLS),
+  // "secure" cookies won't be set/sent by the browser which causes 401s on /api/auth/user.
+  // Allow overriding via env when running behind an IP or without HTTPS.
+  const isProd = process.env.NODE_ENV === 'production';
+  const forceInsecure = process.env.INSECURE_COOKIES === 'true' || process.env.COOKIE_SECURE === 'false';
+  const cookieSecure = isProd && !forceInsecure; // default secure in prod unless explicitly disabled
+  const sameSite: any = process.env.COOKIE_SAMESITE || 'lax';
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
     conString: process.env.DATABASE_URL,
@@ -70,7 +77,8 @@ export function getSession() {
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+  secure: cookieSecure,
+  sameSite,
       maxAge: sessionTtl,
     },
   });
