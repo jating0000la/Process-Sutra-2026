@@ -1,10 +1,12 @@
 import { useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useNotificationContext } from "@/contexts/NotificationContext";
 
 export function useNotifications() {
   const { isAuthenticated } = useAuth();
   const { toast } = useToast();
+  const { addNotification } = useNotificationContext();
   const sourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
@@ -20,9 +22,18 @@ export function useNotifications() {
     es.addEventListener("flow-started", (ev: MessageEvent) => {
       try {
         const data = JSON.parse(ev.data);
+        
+        // Show toast notification
         toast({
           title: `New task assigned: ${data.taskName}`,
           description: `${data.system} • ${data.orderNumber}`,
+        });
+
+        // Add to notification context for the bell icon
+        addNotification({
+          title: `New task assigned: ${data.taskName}`,
+          description: `${data.system} • ${data.orderNumber}`,
+          type: 'info',
         });
       } catch {}
     });
@@ -36,5 +47,5 @@ export function useNotifications() {
       es.close();
       sourceRef.current = null;
     };
-  }, [isAuthenticated, toast]);
+  }, [isAuthenticated, toast, addNotification]);
 }

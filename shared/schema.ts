@@ -338,6 +338,27 @@ export const insertTATConfigSchema = createInsertSchema(tatConfig).omit({
   updatedAt: true,
 });
 
+// Webhook configurations
+export const webhooks = pgTable("webhooks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id),
+  event: varchar("event").notNull(), // e.g. form.submitted, flow.started, task.completed
+  targetUrl: text("target_url").notNull(),
+  secret: varchar("secret").notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
+  retryCount: integer("retry_count").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertWebhookSchema = createInsertSchema(webhooks).omit({
+  id: true,
+  retryCount: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Types
 export type Organization = typeof organizations.$inferSelect;
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
@@ -358,3 +379,5 @@ export type InsertUserDevice = z.infer<typeof insertUserDeviceSchema>;
 export type UserDevice = typeof userDevices.$inferSelect;
 export type InsertPasswordChangeHistory = z.infer<typeof insertPasswordChangeHistorySchema>;
 export type PasswordChangeHistory = typeof passwordChangeHistory.$inferSelect;
+export type Webhook = typeof webhooks.$inferSelect;
+export type InsertWebhook = z.infer<typeof insertWebhookSchema>;

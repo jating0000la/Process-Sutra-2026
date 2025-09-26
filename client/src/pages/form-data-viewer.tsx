@@ -23,11 +23,17 @@ interface FormResponse {
   formId: string;
   formData: Record<string, any>;
   timestamp: string;
+  orderNumber?: string;
+  system?: string;
+  flowDescription?: string;
+  flowInitiatedBy?: string;
+  flowInitiatedAt?: string;
 }
 
 export default function FormDataViewer() {
   const [selectedFormId, setSelectedFormId] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [orderNumberFilter, setOrderNumberFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [sortColumn, setSortColumn] = useState<string>("");
@@ -54,16 +60,18 @@ export default function FormDataViewer() {
     },
   });
 
-  // Filter responses by selected form and date
+  // Filter responses by selected form, date, and order number
   const responses = useMemo(() => {
     if (!selectedFormId) return [];
     return allResponses.filter((response: FormResponse) => {
       const matchesForm = response.formId === selectedFormId;
       const matchesDate = !dateFilter || 
         format(new Date(response.timestamp), "yyyy-MM-dd") === dateFilter;
-      return matchesForm && matchesDate;
+      const matchesOrderNumber = !orderNumberFilter || 
+        (response.orderNumber && response.orderNumber.toLowerCase().includes(orderNumberFilter.toLowerCase()));
+      return matchesForm && matchesDate && matchesOrderNumber;
     });
-  }, [allResponses, selectedFormId, dateFilter]);
+  }, [allResponses, selectedFormId, dateFilter, orderNumberFilter]);
 
   // Get selected form details
   const selectedForm = forms.find((f: FormTemplate) => f.formId === selectedFormId);
@@ -90,10 +98,21 @@ export default function FormDataViewer() {
     const rows: any[] = [];
     
     responses.forEach((response: FormResponse) => {
-      const baseRow: { Timestamp: string; ID: string; FlowID: string; [key: string]: any } = {
+      const baseRow: { 
+        Timestamp: string; 
+        ID: string; 
+        FlowID: string; 
+        OrderNumber: string;
+        System: string;
+        FlowDescription: string;
+        [key: string]: any 
+      } = {
         Timestamp: response.timestamp,
         ID: response.id,
         FlowID: response.flowId,
+        OrderNumber: response.orderNumber || "N/A",
+        System: response.system || "N/A",
+        FlowDescription: response.flowDescription || "N/A",
       };
 
       // Parse form data structure: {questionId: {answer, questionId, questionTitle}}
@@ -135,7 +154,7 @@ export default function FormDataViewer() {
   // Get dynamic columns
   const dynamicColumns = useMemo(() => {
     const columns = new Set<string>();
-    const systemFields = ['Timestamp', 'ID', 'FlowID'];
+    const systemFields = ['Timestamp', 'ID', 'FlowID', 'OrderNumber', 'System', 'FlowDescription'];
     
     tableData.forEach(row => {
       Object.keys(row).forEach(key => {
@@ -201,11 +220,14 @@ export default function FormDataViewer() {
   const exportToCSV = () => {
     if (!selectedForm || filteredData.length === 0) return;
 
-    const headers = ["Timestamp", "ID", "FlowID", ...dynamicColumns.map(getColumnTitle)];
+    const headers = ["Timestamp", "ID", "FlowID", "Order Number", "System", "Flow Description", ...dynamicColumns.map(getColumnTitle)];
     const csvData = filteredData.map(row => [
       format(new Date(row.Timestamp), "yyyy-MM-dd HH:mm:ss"),
       row.ID,
       row.FlowID,
+      row.OrderNumber,
+      row.System,
+      row.FlowDescription,
       ...dynamicColumns.map(col => formatValue(row[col]))
     ]);
 
@@ -234,7 +256,7 @@ export default function FormDataViewer() {
               <CardTitle>Filters</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <Select value={selectedFormId} onValueChange={(value) => {
                   setSelectedFormId(value);
                   setCurrentPage(1);
@@ -271,6 +293,19 @@ export default function FormDataViewer() {
                     value={searchTerm}
                     onChange={(e) => {
                       setSearchTerm(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="pl-10"
+                  />
+                </div>
+
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Input
+                    placeholder="Filter by order number..."
+                    value={orderNumberFilter}
+                    onChange={(e) => {
+                      setOrderNumberFilter(e.target.value);
                       setCurrentPage(1);
                     }}
                     className="pl-10"
@@ -337,6 +372,24 @@ export default function FormDataViewer() {
                             >
                               FlowID {sortColumn === "FlowID" && (sortDirection === "asc" ? "↑" : "↓")}
                             </TableHead>
+                            <TableHead 
+                              className="cursor-pointer hover:bg-gray-50 min-w-[150px]"
+                              onClick={() => handleSort("OrderNumber")}
+                            >
+                              Order Number {sortColumn === "OrderNumber" && (sortDirection === "asc" ? "↑" : "↓")}
+                            </TableHead>
+                            <TableHead 
+                              className="cursor-pointer hover:bg-gray-50 min-w-[120px]"
+                              onClick={() => handleSort("System")}
+                            >
+                              System {sortColumn === "System" && (sortDirection === "asc" ? "↑" : "↓")}
+                            </TableHead>
+                            <TableHead 
+                              className="cursor-pointer hover:bg-gray-50 min-w-[200px]"
+                              onClick={() => handleSort("FlowDescription")}
+                            >
+                              Flow Description {sortColumn === "FlowDescription" && (sortDirection === "asc" ? "↑" : "↓")}
+                            </TableHead>
                             {dynamicColumns.map(col => (
                               <TableHead 
                                 key={col}
@@ -351,7 +404,7 @@ export default function FormDataViewer() {
                         <TableBody>
                           {paginatedData.length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={3 + dynamicColumns.length} className="text-center py-8 text-gray-500">
+                              <TableCell colSpan={6 + dynamicColumns.length} className="text-center py-8 text-gray-500">
                                 No data found
                               </TableCell>
                             </TableRow>
@@ -361,6 +414,11 @@ export default function FormDataViewer() {
                                 <TableCell>{format(new Date(row.Timestamp), "MMM dd, yyyy HH:mm")}</TableCell>
                                 <TableCell className="font-mono text-sm">{row.ID}</TableCell>
                                 <TableCell className="font-mono text-sm">{row.FlowID?.slice(0, 8)}...</TableCell>
+                                <TableCell className="font-medium">{formatValue(row.OrderNumber)}</TableCell>
+                                <TableCell>{formatValue(row.System)}</TableCell>
+                                <TableCell className="max-w-[200px] truncate" title={row.FlowDescription}>
+                                  {formatValue(row.FlowDescription)}
+                                </TableCell>
                                 {dynamicColumns.map(col => (
                                   <TableCell key={col}>{formatValue(row[col])}</TableCell>
                                 ))}

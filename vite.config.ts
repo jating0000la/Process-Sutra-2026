@@ -33,5 +33,16 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
+    // Proxy API calls to the Express backend during development so that
+    // fetch('/api/...') from the frontend hits the server instead of Vite
+    // returning index.html (which causes "Unexpected token '<'" JSON parse errors)
+    proxy: process.env.NODE_ENV !== 'production' ? {
+      '/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        // Do not rewrite path; backend already expects /api/*
+        // If your backend runs on a different port, adjust target accordingly.
+      }
+    } : undefined,
   },
 });

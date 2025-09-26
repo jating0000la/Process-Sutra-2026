@@ -7,8 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Separator } from "@/components/ui/separator";
-import { Building2, Users, Plus, Settings } from "lucide-react";
+import { Building2, Users, Settings } from "lucide-react";
 import Sidebar from "@/components/sidebar";
 import Header from "@/components/header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,11 +15,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 export default function OrganizationSettings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [orgForm, setOrgForm] = useState({
-    name: "",
-    domain: "",
-    maxUsers: 50
-  });
   const [userForm, setUserForm] = useState({
     email: "",
     firstName: "",
@@ -41,37 +35,6 @@ export default function OrganizationSettings() {
   // Get organization users
   const { data: users = [], isLoading: usersLoading } = useQuery<any[]>({
     queryKey: ["/api/users"],
-  });
-
-  // Create organization mutation
-  const createOrgMutation = useMutation({
-    mutationFn: (data: any) => 
-      fetch("/api/organizations", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(data),
-        credentials: "include",
-      }).then(async res => {
-        if (!res.ok) {
-          const errorText = await res.text();
-          throw new Error(`${res.status}: ${errorText}`);
-        }
-        return res.json();
-      }),
-    onSuccess: () => {
-      toast({ title: "Organization created successfully" });
-      setOrgForm({ name: "", domain: "", maxUsers: 50 });
-      queryClient.invalidateQueries({ queryKey: ["/api/organizations/current"] });
-    },
-    onError: (error: any) => {
-      toast({ 
-        title: "Error creating organization", 
-        description: error.message,
-        variant: "destructive" 
-      });
-    },
   });
 
   // Add user mutation
@@ -104,11 +67,6 @@ export default function OrganizationSettings() {
       });
     },
   });
-
-  const handleCreateOrg = (e: React.FormEvent) => {
-    e.preventDefault();
-    createOrgMutation.mutate(orgForm);
-  };
 
   const handleAddUser = (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,61 +123,6 @@ export default function OrganizationSettings() {
           </CardContent>
         </Card>
       ) : null}
-
-      {/* Create New Organization */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Plus className="h-5 w-5" />
-            Create New Organization
-          </CardTitle>
-          <CardDescription>
-            Add a new organization domain for multi-tenant management
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleCreateOrg} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="orgName">Organization Name</Label>
-                <Input
-                  id="orgName"
-                  value={orgForm.name}
-                  onChange={(e) => setOrgForm(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="Enter organization name"
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="orgDomain">Email Domain</Label>
-                <Input
-                  id="orgDomain"
-                  value={orgForm.domain}
-                  onChange={(e) => setOrgForm(prev => ({ ...prev, domain: e.target.value }))}
-                  placeholder="example.com"
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="maxUsers">Max Users</Label>
-                <Input
-                  id="maxUsers"
-                  type="number"
-                  value={orgForm.maxUsers}
-                  onChange={(e) => setOrgForm(prev => ({ ...prev, maxUsers: parseInt(e.target.value) }))}
-                  min="1"
-                  required
-                />
-              </div>
-            </div>
-            <Button type="submit" disabled={createOrgMutation.isPending}>
-              {createOrgMutation.isPending ? "Creating..." : "Create Organization"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      <Separator />
 
       {/* User Management */}
       <Card>

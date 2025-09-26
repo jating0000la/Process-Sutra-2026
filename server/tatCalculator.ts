@@ -45,35 +45,49 @@ export function hourTAT(
   return newDate;
 }
 
-export function dayTAT(timestamp: Date, tat: number): Date {
+export function dayTAT(timestamp: Date, tat: number, config: TATConfig = defaultConfig): Date {
   const resultDate = new Date(timestamp);
-  resultDate.setDate(resultDate.getDate() + tat);
+  let daysAdded = 0;
   
-  // Skip Sunday
-  if (resultDate.getDay() === 0) {
+  while (daysAdded < tat) {
     resultDate.setDate(resultDate.getDate() + 1);
+    
+    // Skip weekends (Saturday = 6, Sunday = 0)
+    if (resultDate.getDay() !== 0 && resultDate.getDay() !== 6) {
+      daysAdded++;
+    }
   }
+  
+  // Set time to office start hour
+  resultDate.setHours(config.officeStartHour, 0, 0, 0);
   
   return resultDate;
 }
 
-export function beforeTAT(timestamp: Date, tat: number, beforeTat: number): Date {
+export function beforeTAT(timestamp: Date, tat: number, beforeTat: number, config: TATConfig = defaultConfig): Date {
   const resultDate = new Date(timestamp);
-  resultDate.setDate(resultDate.getDate() + tat - beforeTat);
+  let daysSubtracted = 0;
   
-  // Skip Sunday
-  if (resultDate.getDay() === 0) {
-    resultDate.setDate(resultDate.getDate() + 1);
+  while (daysSubtracted < (tat - beforeTat)) {
+    resultDate.setDate(resultDate.getDate() - 1);
+    
+    // Skip weekends (Saturday = 6, Sunday = 0)
+    if (resultDate.getDay() !== 0 && resultDate.getDay() !== 6) {
+      daysSubtracted++;
+    }
   }
+  
+  // Set time to office start hour
+  resultDate.setHours(config.officeStartHour, 0, 0, 0);
   
   return resultDate;
 }
 
-export function specifyTAT(timestamp: Date, hours: number): Date {
+export function specifyTAT(timestamp: Date, hours: number, config: TATConfig = defaultConfig): Date {
   const resultDate = new Date(timestamp);
   resultDate.setHours(resultDate.getHours() + hours);
   
-  // Skip Sunday
+  // Skip Sunday (0 = Sunday)
   if (resultDate.getDay() === 0) {
     resultDate.setDate(resultDate.getDate() + 1);
   }
@@ -89,13 +103,19 @@ export function calculateTAT(
 ): Date {
   switch (tatType.toLowerCase()) {
     case "hour":
+    case "hourtat":
       return hourTAT(timestamp, tat, config);
     case "day":
-      return dayTAT(timestamp, tat);
+    case "daytat":
+      return dayTAT(timestamp, tat, config);
     case "specify":
-      return specifyTAT(timestamp, tat);
+    case "specifytat":
+      return specifyTAT(timestamp, tat, config);
+    case "before":
+    case "beforetat":
+      return beforeTAT(timestamp, tat, 2, config);
     default:
-      return dayTAT(timestamp, tat);
+      return hourTAT(timestamp, tat, config);
   }
 }
 

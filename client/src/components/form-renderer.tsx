@@ -13,6 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Loader2, Plus, Trash2 } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 
 interface FormQuestion {
   id: string;
@@ -49,6 +51,7 @@ export default function FormRenderer({
   readonly = false,
   flowId 
 }: FormRendererProps) {
+  const { user } = useAuth();
   
   // Fetch previous form responses from the same flow for auto-prefill
   const { data: flowResponses } = useQuery({
@@ -59,8 +62,15 @@ export default function FormRenderer({
   // Create auto-prefill data by matching field labels from previous responses
   const autoPrefillData = useMemo(() => {
     if (!flowResponses || !Array.isArray(flowResponses)) {
+      console.log('FormRenderer: No flow responses available for auto-prefill', { flowResponses, flowId });
       return {};
     }
+
+    console.log('FormRenderer: Processing flow responses for auto-prefill', {
+      flowId,
+      responseCount: flowResponses.length,
+      responses: flowResponses
+    });
 
     const prefillData: Record<string, any> = {};
 
@@ -68,14 +78,44 @@ export default function FormRenderer({
     flowResponses.forEach((response: any) => {
       if (response.formData && typeof response.formData === 'object') {
         template.questions.forEach((question) => {
-          // Check if this field label exists in previous responses and not already set
-          if (response.formData[question.label] !== undefined && prefillData[question.label] === undefined) {
-            prefillData[question.label] = response.formData[question.label];
+          // Handle both old simple structure and new enhanced structure
+          let value = undefined;
+          
+          // First check if there's a direct match by question label (enhanced structure)
+          if (response.formData[question.label]) {
+            const fieldData = response.formData[question.label];
+            if (typeof fieldData === 'object' && fieldData.answer !== undefined) {
+              // Enhanced structure: { questionId, questionTitle, answer }
+              value = fieldData.answer;
+            } else {
+              // Simple structure: direct value
+              value = fieldData;
+            }
+          } 
+          // Also check by question ID for backwards compatibility
+          else if (response.formData[question.id]) {
+            const fieldData = response.formData[question.id];
+            if (typeof fieldData === 'object' && fieldData.answer !== undefined) {
+              value = fieldData.answer;
+            } else {
+              value = fieldData;
+            }
+          }
+          
+          // Set the value if found and not already set (first match wins)
+          if (value !== undefined && prefillData[question.id] === undefined) {
+            prefillData[question.id] = value;
+            console.log('FormRenderer: Auto-prefill match found', {
+              questionId: question.id,
+              questionLabel: question.label,
+              prefillValue: value
+            });
           }
         });
       }
     });
 
+    console.log('FormRenderer: Final auto-prefill data', prefillData);
     return prefillData;
   }, [flowResponses, template.questions]);
   
@@ -286,12 +326,12 @@ export default function FormRenderer({
     template.questions.forEach((question) => {
       // Priority: initialData > autoPrefillData > default empty values
       const existingValue = initialData[question.id];
-      const prefillValue = autoPrefillData[question.label]; // Use label for matching
+      const prefillValue = autoPrefillData[question.id]; // Use question ID for matching
       
       if (existingValue !== undefined) {
         defaults[question.id] = existingValue;
       } else if (prefillValue !== undefined) {
-        // Auto-prefill from previous form responses with same label
+        // Auto-prefill from previous form responses with matching question ID
         defaults[question.id] = prefillValue;
       } else {
         switch (question.type) {
@@ -327,47 +367,38 @@ export default function FormRenderer({
   // Track if form has been initialized to prevent loops
   const [isFormInitialized, setIsFormInitialized] = useState(false);
 
-  // Update form when auto-prefill data becomes available (only once)
+  // Reset initialization flag when template or flowId changes (new form)
+  useEffect(() => {
+    setIsFormInitialized(false);
+  }, [template.id, flowId]);
+
+  // Update form when auto-prefill data becomes available
   useEffect(() => {
     if (!isFormInitialized && Object.keys(autoPrefillData).length > 0) {
-      // Create new defaults inline to avoid dependency issues
-      const newDefaults: Record<string, any> = {};
+      console.log('FormRenderer: Updating form with auto-prefill data', autoPrefillData);
+      
+      // Set individual field values instead of resetting entire form
+      // This approach maintains field editability better
       template.questions.forEach((question) => {
         const initialValue = initialData[question.id];
-        const prefillValue = autoPrefillData[question.label];
+        const prefillValue = autoPrefillData[question.id];
         
         if (initialValue !== undefined) {
-          newDefaults[question.id] = initialValue;
+          form.setValue(question.id, initialValue);
         } else if (prefillValue !== undefined) {
-          newDefaults[question.id] = prefillValue;
-        } else {
-          switch (question.type) {
-            case "text":
-            case "textarea":
-            case "select":
-            case "radio":
-            case "date":
-              newDefaults[question.id] = "";
-              break;
-            case "checkbox":
-              newDefaults[question.id] = [];
-              break;
-            case "file":
-              newDefaults[question.id] = null;
-              break;
-            case "table":
-              newDefaults[question.id] = [];
-              break;
-            default:
-              newDefaults[question.id] = "";
-          }
+          form.setValue(question.id, prefillValue, { 
+            shouldDirty: false, 
+            shouldTouch: false,
+            shouldValidate: false 
+          });
+          console.log(`FormRenderer: Setting ${question.id} to prefilled value:`, prefillValue);
         }
       });
       
-      form.reset(newDefaults);
       setIsFormInitialized(true);
+      console.log('FormRenderer: Auto-prefill complete, fields should be editable');
     }
-  }, [autoPrefillData, initialData, template.questions, form.reset, isFormInitialized]);
+  }, [autoPrefillData, initialData, template.questions, form, isFormInitialized]);
 
   const handleSubmit = (data: any) => {
     // Clean up the data by removing empty optional fields
@@ -423,7 +454,7 @@ export default function FormRenderer({
                     return (
                       <Select
                         onValueChange={field.onChange}
-                        defaultValue={field.value}
+                        value={field.value || ""}
                         disabled={readonly}
                       >
                         <SelectTrigger>
@@ -442,7 +473,7 @@ export default function FormRenderer({
                     return (
                       <RadioGroup
                         onValueChange={field.onChange}
-                        defaultValue={field.value}
+                        value={field.value || ""}
                         disabled={readonly}
                       >
                         {question.options?.map((option) => (
@@ -485,11 +516,56 @@ export default function FormRenderer({
                     );
                   case "file":
                     return (
-                      <Input
-                        type="file"
-                        onChange={(e) => field.onChange(e.target.files?.[0])}
-                        disabled={readonly}
-                      />
+                      <div className="space-y-2">
+                        <Input
+                          type="file"
+                          onChange={async (e) => {
+                            const inputEl = e.currentTarget as HTMLInputElement;
+                            const file = inputEl.files?.[0];
+                            if (!file) {
+                              field.onChange(null);
+                              return;
+                            }
+                            try {
+                              const fd = new FormData();
+                              fd.append("formId", template.formId);
+                              fd.append("fieldId", question.id);
+                              // taskId is optional; include if provided via prop in future
+                              fd.append("file", file);
+                              const res = await fetch("/api/uploads", {
+                                method: "POST",
+                                body: fd,
+                                credentials: "include",
+                              });
+                              if (!res.ok) throw new Error(`${res.status}`);
+                              const descriptor = await res.json();
+                              // descriptor: { type:'file', gridFsId, originalName, mimeType, size, ... }
+                              field.onChange(descriptor);
+                              toast({ title: "Uploaded", description: descriptor.originalName || "File uploaded" });
+                            } catch (err) {
+                              console.error("Upload failed", err);
+                              toast({ title: "Upload failed", description: "Could not upload file", variant: "destructive" });
+                              field.onChange(null);
+                            } finally {
+                              // clear the input to allow re-uploading same file if needed
+                              if (inputEl) {
+                                try { inputEl.value = ""; } catch {}
+                              }
+                            }
+                          }}
+                          disabled={readonly}
+                        />
+                        {field.value && typeof field.value === 'object' && field.value.type === 'file' && field.value.gridFsId && (
+                          <a
+                            href={`/api/uploads/${field.value.gridFsId}`}
+                            className="text-blue-600 hover:underline text-sm"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {field.value.originalName || 'Download file'}
+                          </a>
+                        )}
+                      </div>
                     );
                   case "table":
                     return <TableInput question={question} field={field} readonly={readonly} />;

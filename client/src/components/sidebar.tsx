@@ -2,6 +2,8 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import { useLayout } from "@/contexts/LayoutContext";
+import { X } from "lucide-react";
 import { 
   LayoutDashboard, 
   CheckSquare, 
@@ -12,7 +14,8 @@ import {
   Users, 
   Settings,
   Activity,
-  Database
+  Database,
+  BookOpen
 } from "lucide-react";
 
 // Navigation items for all users
@@ -70,10 +73,10 @@ const adminNavigationItems = [
     badge: null,
   },
   {
-    name: "Flow Simulator",
-    href: "/flow-simulator",
+    name: "Advanced Simulator",
+    href: "/advanced-simulator",
     icon: Activity,
-    badge: null,
+    badge: "New",
   },
   {
     name: "User Management",
@@ -81,16 +84,28 @@ const adminNavigationItems = [
     icon: Users,
     badge: null,
   },
+  // {
+  //   name: "Form Data",
+  //   href: "/form-data-viewer",
+  //   icon: Database,
+  //   badge: null,
+  // },
   {
-    name: "Form Data",
-    href: "/form-data-viewer",
+    name: "MongoDB Data", 
+    href: "/mongo-form-data-viewer",
     icon: Database,
-    badge: null,
+    badge: "New",
   },
   {
     name: "Start Flow API",
     href: "/api-startflow",
     icon: Settings,
+    badge: null,
+  },
+  {
+    name: "API Documentation",
+    href: "/api-documentation",
+    icon: BookOpen,
     badge: null,
   },
   // {
@@ -104,6 +119,7 @@ const adminNavigationItems = [
 export default function Sidebar() {
   const [location] = useLocation();
   const { dbUser } = useAuth();
+  const { sidebarOpen, closeSidebar } = useLayout();
 
   const isActive = (href: string) => {
     if (href === "/") {
@@ -116,8 +132,27 @@ export default function Sidebar() {
   const navigationItems = isAdmin ? [...userNavigationItems, ...adminNavigationItems] : userNavigationItems;
 
   return (
-    <aside className="bg-white w-64 shadow-sm border-r border-gray-200 overflow-y-auto">
-      <nav className="mt-8 px-4">
+    <>
+      {/* Overlay for mobile */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-30 md:hidden"
+          onClick={closeSidebar}
+        />
+      )}
+      <aside
+        className={cn(
+          "fixed md:static inset-y-0 left-0 z-40 transform transition-all duration-300 flex flex-col bg-white border-r border-gray-200 shadow-sm overflow-y-auto",
+          sidebarOpen ? "translate-x-0 w-64" : "-translate-x-full md:translate-x-0 md:w-20"
+        )}
+      >
+        <div className="flex md:hidden items-center justify-between h-16 px-4 border-b">
+          <span className="font-semibold">Menu</span>
+          <button onClick={closeSidebar} aria-label="Close sidebar">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <nav className="mt-4 md:mt-8 px-3 md:px-4 flex-1">
         <div className="space-y-2">
           {navigationItems.map((item: any) => {
             const IconComponent = item.icon;
@@ -125,17 +160,18 @@ export default function Sidebar() {
               <Link key={item.name} href={item.href}>
                 <div
                   className={cn(
-                    "sidebar-nav-item",
-                    isActive(item.href) && "active"
-                  )}
+                      "sidebar-nav-item flex items-center rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 transition group",
+                      isActive(item.href) && "bg-gray-100 text-gray-900",
+                      !sidebarOpen && "md:justify-center md:px-2"
+                    )}
                 >
-                  <IconComponent className="mr-3 h-5 w-5" />
-                  {item.name}
-                  {item.badge && (
-                    <span className="ml-auto bg-orange-500 text-white text-xs px-2 py-1 rounded-full">
-                      {item.badge}
-                    </span>
-                  )}
+                    <IconComponent className={cn("h-5 w-5 mr-3", !sidebarOpen && "md:mr-0")} />
+                    <span className={cn("truncate", !sidebarOpen && "hidden md:inline-block md:opacity-0 md:w-0")}>{item.name}</span>
+                    {item.badge && sidebarOpen && (
+                      <span className="ml-auto bg-orange-500 text-white text-xs px-2 py-1 rounded-full">
+                        {item.badge}
+                      </span>
+                    )}
                 </div>
               </Link>
             );
@@ -143,18 +179,19 @@ export default function Sidebar() {
         </div>
         
         {isAdmin && (
-          <div className="mt-8">
-            <div className="px-3 py-2 bg-blue-50 rounded-lg">
-              <div className="flex items-center">
-                <Users className="w-4 h-4 text-blue-600 mr-2" />
-                <span className="text-xs font-semibold text-blue-700 uppercase tracking-wider">
-                  Admin Access
-                </span>
+            <div className={cn("mt-8", !sidebarOpen && "hidden md:block md:opacity-0") }>
+              <div className="px-3 py-2 bg-blue-50 rounded-lg">
+                <div className="flex items-center">
+                  <Users className="w-4 h-4 text-blue-600 mr-2" />
+                  <span className="text-xs font-semibold text-blue-700 uppercase tracking-wider">
+                    Admin Access
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
         )}
-      </nav>
-    </aside>
+        </nav>
+      </aside>
+    </>
   );
 }

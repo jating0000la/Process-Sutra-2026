@@ -32,6 +32,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql } from "drizzle-orm";
+import { webhooks, type InsertWebhook, type Webhook } from "@shared/schema";
 
 export interface IStorage {
   // Organization operations
@@ -78,6 +79,20 @@ export interface IStorage {
   getFormResponsesByOrganization(organizationId: string, flowId?: string, taskId?: string): Promise<FormResponse[]>;
   createFormResponse(response: InsertFormResponse): Promise<FormResponse>;
   getFormResponsesByFlowId(flowId: string): Promise<FormResponse[]>;
+  getFormResponsesWithTaskDetails(organizationId: string, flowId?: string, taskId?: string): Promise<any[]>;
+
+  // MongoDB Form Response operations
+  getMongoFormResponsesByOrgAndForm(params: {
+    orgId: string;
+    formId?: string;
+    startDate?: string | Date;
+    endDate?: string | Date;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ data: any[]; total: number; page: number; pageSize: number }>;
+  
+  // Get previous form responses by flowId and organizationId from MongoDB for auto-prefill
+  getMongoFormResponsesByFlowId(organizationId: string, flowId: string): Promise<any[]>;
 
   // TAT Configuration operations
   getTATConfig(organizationId: string): Promise<any>;
@@ -148,6 +163,14 @@ export interface IStorage {
   // Password history operations
   createPasswordChangeHistory(history: InsertPasswordChangeHistory): Promise<PasswordChangeHistory>;
   getPasswordHistory(userId: string): Promise<PasswordChangeHistory[]>;
+
+  // Webhook operations
+  createWebhook(webhook: InsertWebhook): Promise<Webhook>;
+  getWebhooksByOrganization(organizationId: string): Promise<Webhook[]>;
+  getActiveWebhooksForEvent(organizationId: string, event: string): Promise<Webhook[]>;
+  updateWebhook(id: string, data: Partial<InsertWebhook>): Promise<Webhook>;
+  deleteWebhook(id: string): Promise<void>;
+  getWebhookById(id: string): Promise<Webhook | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -577,6 +600,42 @@ export class DatabaseStorage implements IStorage {
 
   async createFormResponse(response: InsertFormResponse): Promise<FormResponse> {
     const [newResponse] = await db.insert(formResponses).values(response).returning();
+
+    // Also store in MongoDB (best-effort; non-blocking on failure)
+    try {
+      const { getFormResponsesCollection } = await import('./mongo/client.js');
+      // Fetch related task details to enrich the document
+      const [taskDetails] = await db
+        .select({
+          orderNumber: tasks.orderNumber,
+          system: tasks.system,
+          flowDescription: tasks.flowDescription,
+          flowInitiatedBy: tasks.flowInitiatedBy,
+          flowInitiatedAt: tasks.flowInitiatedAt,
+        })
+        .from(tasks)
+        .where(eq(tasks.id, newResponse.taskId))
+        .limit(1);
+
+      const col = await getFormResponsesCollection();
+      await col.insertOne({
+        orgId: (newResponse as any).organizationId,
+        flowId: newResponse.flowId,
+        taskId: newResponse.taskId,
+        taskName: newResponse.taskName,
+        formId: newResponse.formId,
+        submittedBy: newResponse.submittedBy,
+        orderNumber: (taskDetails?.orderNumber ?? undefined) as any,
+        system: taskDetails?.system ?? undefined,
+        flowDescription: taskDetails?.flowDescription ?? undefined,
+        flowInitiatedBy: taskDetails?.flowInitiatedBy ?? undefined,
+        flowInitiatedAt: (taskDetails?.flowInitiatedAt ?? undefined) as any,
+        formData: (newResponse as any).formData,
+        createdAt: new Date((newResponse as any).timestamp),
+      });
+    } catch (e) {
+      console.error('Mongo insert (formResponses) failed:', e);
+    }
     return newResponse;
   }
 
@@ -586,6 +645,118 @@ export class DatabaseStorage implements IStorage {
       .from(formResponses)
       .where(eq(formResponses.flowId, flowId))
       .orderBy(asc(formResponses.timestamp));
+  }
+
+  // Get form responses with task details including order number (organization-specific)
+  async getFormResponsesWithTaskDetails(organizationId: string, flowId?: string, taskId?: string): Promise<any[]> {
+    const conditions = [eq(formResponses.organizationId, organizationId)];
+    
+    if (flowId) {
+      conditions.push(eq(formResponses.flowId, flowId));
+    }
+    if (taskId) {
+      conditions.push(eq(formResponses.taskId, taskId));
+    }
+    
+    return await db
+      .select({
+        // Form response fields
+        id: formResponses.id,
+        responseId: formResponses.responseId,
+        flowId: formResponses.flowId,
+        taskId: formResponses.taskId,
+        taskName: formResponses.taskName,
+        formId: formResponses.formId,
+        submittedBy: formResponses.submittedBy,
+        formData: formResponses.formData,
+        timestamp: formResponses.timestamp,
+        // Task details
+        orderNumber: tasks.orderNumber,
+        system: tasks.system,
+        flowDescription: tasks.flowDescription,
+        flowInitiatedBy: tasks.flowInitiatedBy,
+        flowInitiatedAt: tasks.flowInitiatedAt,
+      })
+      .from(formResponses)
+      .leftJoin(tasks, eq(formResponses.taskId, tasks.id))
+      .where(and(...conditions))
+      .orderBy(desc(formResponses.timestamp));
+  }
+
+  // MongoDB Form Response operations
+  async getMongoFormResponsesByOrgAndForm(params: {
+    orgId: string;
+    formId?: string;
+    startDate?: string | Date;
+    endDate?: string | Date;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ data: any[]; total: number; page: number; pageSize: number }> {
+    const { orgId, formId, startDate, endDate, page = 1, pageSize = 50 } = params;
+    
+    try {
+      const { getFormResponsesCollection } = await import('./mongo/client.js');
+      const col = await getFormResponsesCollection();
+
+      const filter: any = { orgId };
+      if (formId) filter.formId = formId;
+      if (startDate || endDate) {
+        filter.createdAt = {};
+        if (startDate) filter.createdAt.$gte = new Date(startDate);
+        if (endDate) filter.createdAt.$lte = new Date(endDate);
+      }
+
+      const total = await col.countDocuments(filter);
+      const data = await col
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .toArray();
+
+      return { data, total, page, pageSize };
+    } catch (error) {
+      console.error('Error fetching MongoDB form responses:', error);
+      return { data: [], total: 0, page, pageSize };
+    }
+  }
+
+  // Get previous form responses by flowId and organizationId from MongoDB for auto-prefill
+  async getMongoFormResponsesByFlowId(organizationId: string, flowId: string): Promise<any[]> {
+    try {
+      const { getFormResponsesCollection } = await import('./mongo/client.js');
+      const col = await getFormResponsesCollection();
+
+      const filter = { 
+        orgId: organizationId,
+        flowId: flowId
+      };
+
+      // Get form responses ordered by creation date (oldest first for consistent auto-prefill)
+      const data = await col
+        .find(filter)
+        .sort({ createdAt: 1 })
+        .toArray();
+
+      // Transform MongoDB documents to match the expected format
+      return data.map((doc) => ({
+        id: doc._id?.toString(),
+        taskId: doc.taskId,
+        formData: doc.formData,
+        submittedAt: doc.createdAt ? doc.createdAt.toISOString() : new Date().toISOString(),
+        taskName: doc.taskName,
+        formId: doc.formId,
+        submittedBy: doc.submittedBy,
+        orderNumber: doc.orderNumber,
+        system: doc.system,
+        flowDescription: doc.flowDescription,
+        flowInitiatedBy: doc.flowInitiatedBy,
+        flowInitiatedAt: doc.flowInitiatedAt
+      }));
+    } catch (error) {
+      console.error('Error fetching MongoDB form responses by flowId:', error);
+      return [];
+    }
   }
 
   // Analytics operations
@@ -1207,6 +1378,68 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, id))
       .returning();
     return user;
+  }
+
+  // Webhook operations
+  async createWebhook(webhookData: InsertWebhook): Promise<Webhook> {
+    try {
+      console.log('[webhooks][createWebhook] inserting', {
+        organizationId: webhookData.organizationId,
+        event: (webhookData as any).event,
+        targetUrl: (webhookData as any).targetUrl,
+      });
+      const [record] = await db.insert(webhooks).values(webhookData).returning();
+      console.log('[webhooks][createWebhook] inserted id', record?.id);
+      return record;
+    } catch (err:any) {
+      console.error('[webhooks][createWebhook] failed:', err?.message, err);
+      throw err;
+    }
+  }
+
+  async getWebhooksByOrganization(organizationId: string): Promise<Webhook[]> {
+    try {
+      const rows = await db
+        .select()
+        .from(webhooks)
+        .where(eq(webhooks.organizationId, organizationId))
+        .orderBy(desc(webhooks.createdAt));
+      console.log('[webhooks][list] org', organizationId, 'count', rows.length);
+      return rows;
+    } catch (err:any) {
+      console.error('[webhooks][list] failed for org', organizationId, err?.message);
+      if (err?.message?.includes('relation') && err?.message?.includes('webhooks')) {
+        const friendly = new Error('WEBHOOKS_TABLE_MISSING');
+        (friendly as any).original = err;
+        throw friendly;
+      }
+      throw err;
+    }
+  }
+
+  async getActiveWebhooksForEvent(organizationId: string, event: string): Promise<Webhook[]> {
+    return await db
+      .select()
+      .from(webhooks)
+      .where(and(eq(webhooks.organizationId, organizationId), eq(webhooks.event, event), eq(webhooks.isActive, true)));
+  }
+
+  async updateWebhook(id: string, data: Partial<InsertWebhook>): Promise<Webhook> {
+    const [record] = await db
+      .update(webhooks)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(webhooks.id, id))
+      .returning();
+    return record;
+  }
+
+  async deleteWebhook(id: string): Promise<void> {
+    await db.delete(webhooks).where(eq(webhooks.id, id));
+  }
+
+  async getWebhookById(id: string): Promise<Webhook | undefined> {
+    const [hook] = await db.select().from(webhooks).where(eq(webhooks.id, id));
+    return hook;
   }
 
   // Login Log operations

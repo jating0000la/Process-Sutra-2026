@@ -4,6 +4,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { NotificationProvider } from "@/contexts/NotificationContext";
+import { LayoutProvider } from "@/contexts/LayoutContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
@@ -14,15 +16,17 @@ import FormBuilder from "@/pages/form-builder";
 import Analytics from "@/pages/analytics";
 import TATConfig from "@/pages/tat-config";
 import FlowData from "@/pages/flow-data";
-import FlowSimulator from "@/pages/flow-simulator";
+import AdvancedSimulator from "@/pages/advanced-simulator";
 import UserManagement from "@/pages/user-management";
 import OrganizationSettings from "@/pages/organization-settings";
 import Profile from "@/pages/profile";
 import { useNotifications } from "@/hooks/useNotifications";
 import ApiStartFlow from "@/pages/api-startflow";
+import ApiDocumentation from "@/pages/api-documentation";
 import FormResponses from "@/pages/form-responses";
 
 import FormDataViewer from "@/pages/form-data-viewer";
+import MongoFormDataViewer from "@/pages/mongo-form-data-viewer";
 
 function Router() {
   const { user, loading } = useAuth();
@@ -71,9 +75,9 @@ function Router() {
               <FlowData />
             </ProtectedRoute>
           </Route>
-          <Route path="/flow-simulator">
+          <Route path="/advanced-simulator">
             <ProtectedRoute requireAdmin>
-              <FlowSimulator />
+              <AdvancedSimulator />
             </ProtectedRoute>
           </Route>
           <Route path="/user-management">
@@ -91,6 +95,11 @@ function Router() {
               <ApiStartFlow />
             </ProtectedRoute>
           </Route>
+          <Route path="/api-documentation">
+            <ProtectedRoute requireAdmin>
+              <ApiDocumentation />
+            </ProtectedRoute>
+          </Route>
           <Route path="/form-responses">
             <ProtectedRoute requireAdmin>
               <FormResponses />
@@ -100,6 +109,12 @@ function Router() {
           <Route path="/form-data-viewer">
             <ProtectedRoute requireAdmin>
               <FormDataViewer />
+            </ProtectedRoute>
+          </Route>
+          
+          <Route path="/mongo-form-data-viewer">
+            <ProtectedRoute requireAdmin>
+              <MongoFormDataViewer />
             </ProtectedRoute>
           </Route>
         </>
@@ -112,10 +127,14 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
+        <NotificationProvider>
+          <LayoutProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Router />
+            </TooltipProvider>
+          </LayoutProvider>
+        </NotificationProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

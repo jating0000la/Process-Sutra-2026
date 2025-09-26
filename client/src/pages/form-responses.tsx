@@ -21,6 +21,11 @@ interface FormResponse {
   submittedBy: string;
   formData: Record<string, any>;
   timestamp: string;
+  orderNumber?: string;
+  system?: string;
+  flowDescription?: string;
+  flowInitiatedBy?: string;
+  flowInitiatedAt?: string;
 }
 
 interface FormTemplate {
@@ -32,6 +37,7 @@ interface FormTemplate {
 
 export default function FormResponses() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [orderNumberFilter, setOrderNumberFilter] = useState("");
   const [selectedFormId, setSelectedFormId] = useState<string>("all");
   const [selectedTaskName, setSelectedTaskName] = useState<string>("all");
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
@@ -70,21 +76,25 @@ export default function FormResponses() {
         response.taskName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         response.formId.toLowerCase().includes(searchTerm.toLowerCase()) ||
         response.submittedBy.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        response.flowId.toLowerCase().includes(searchTerm.toLowerCase());
+        response.flowId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (response.orderNumber && response.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()));
 
       const matchesFormId = selectedFormId === "all" || response.formId === selectedFormId;
       const matchesTaskName = selectedTaskName === "all" || response.taskName === selectedTaskName;
+      
+      const matchesOrderNumber = !orderNumberFilter || 
+        (response.orderNumber && response.orderNumber.toLowerCase().includes(orderNumberFilter.toLowerCase()));
 
       const responseDate = new Date(response.timestamp);
       const matchesDateRange = 
         (!dateRange.start || responseDate >= new Date(dateRange.start)) &&
         (!dateRange.end || responseDate <= new Date(dateRange.end));
 
-      return matchesSearch && matchesFormId && matchesTaskName && matchesDateRange;
+      return matchesSearch && matchesFormId && matchesTaskName && matchesOrderNumber && matchesDateRange;
     });
 
     // Sort by timestamp (newest first)
-    const sorted = filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const sorted = filtered.sort((a: FormResponse, b: FormResponse) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     
     // Paginate
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -96,11 +106,11 @@ export default function FormResponses() {
       paginatedResponses: paginated,
       totalPages
     };
-  }, [responses, searchTerm, selectedFormId, selectedTaskName, dateRange, currentPage, itemsPerPage]);
+  }, [responses, searchTerm, orderNumberFilter, selectedFormId, selectedTaskName, dateRange, currentPage, itemsPerPage]);
 
   // Get unique task names for filter
   const uniqueTaskNames = useMemo(() => 
-    [...new Set(responses.map((r: FormResponse) => r.taskName))],
+    Array.from(new Set(responses.map((r: FormResponse) => r.taskName))) as string[],
     [responses]
   );
 
@@ -109,10 +119,12 @@ export default function FormResponses() {
 
   // Export filtered data as CSV
   const exportToCSV = () => {
-    const headers = ["Response ID", "Flow ID", "Task Name", "Form ID", "Submitted By", "Timestamp", "Form Data"];
+    const headers = ["Response ID", "Flow ID", "Order Number", "System", "Task Name", "Form ID", "Submitted By", "Timestamp", "Form Data"];
     const csvData = filteredResponses.map((response: FormResponse) => [
       response.responseId,
       response.flowId,
+      response.orderNumber || "",
+      response.system || "",
       response.taskName,
       response.formId,
       response.submittedBy,
@@ -121,7 +133,7 @@ export default function FormResponses() {
     ]);
 
     const csvContent = [headers, ...csvData]
-      .map(row => row.map(cell => `"${cell}"`).join(","))
+      .map(row => row.map((cell: any) => `"${cell}"`).join(","))
       .join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv" });
@@ -173,7 +185,7 @@ export default function FormResponses() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
               {/* Search */}
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
@@ -182,6 +194,20 @@ export default function FormResponses() {
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
+                    resetPage();
+                  }}
+                  className="pl-10"
+                />
+              </div>
+
+              {/* Order Number Filter */}
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Filter by order number..."
+                  value={orderNumberFilter}
+                  onChange={(e) => {
+                    setOrderNumberFilter(e.target.value);
                     resetPage();
                   }}
                   className="pl-10"
@@ -277,7 +303,7 @@ export default function FormResponses() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600">Unique Forms</p>
-                  <p className="text-2xl font-bold">{new Set(filteredResponses.map(r => r.formId)).size}</p>
+                  <p className="text-2xl font-bold">{new Set(filteredResponses.map((r: FormResponse) => r.formId)).size}</p>
                 </div>
                 <Calendar className="h-8 w-8 text-green-500" />
               </div>
@@ -288,7 +314,7 @@ export default function FormResponses() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600">Unique Flows</p>
-                  <p className="text-2xl font-bold">{new Set(filteredResponses.map(r => r.flowId)).size}</p>
+                  <p className="text-2xl font-bold">{new Set(filteredResponses.map((r: FormResponse) => r.flowId)).size}</p>
                 </div>
                 <Eye className="h-8 w-8 text-purple-500" />
               </div>
@@ -300,7 +326,7 @@ export default function FormResponses() {
                 <div>
                   <p className="text-sm text-gray-600">Today's Responses</p>
                   <p className="text-2xl font-bold">
-                    {filteredResponses.filter(r => 
+                    {filteredResponses.filter((r: FormResponse) => 
                       format(new Date(r.timestamp), "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd")
                     ).length}
                   </p>
@@ -328,6 +354,8 @@ export default function FormResponses() {
                   <TableRow>
                     <TableHead>Response ID</TableHead>
                     <TableHead>Flow ID</TableHead>
+                    <TableHead>Order Number</TableHead>
+                    <TableHead>System</TableHead>
                     <TableHead>Task Name</TableHead>
                     <TableHead>Form ID</TableHead>
                     <TableHead>Submitted By</TableHead>
@@ -338,7 +366,7 @@ export default function FormResponses() {
                 <TableBody>
                   {paginatedResponses.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                      <TableCell colSpan={9} className="text-center py-8 text-gray-500">
                         No form responses found matching your criteria
                       </TableCell>
                     </TableRow>
@@ -350,6 +378,12 @@ export default function FormResponses() {
                         </TableCell>
                         <TableCell className="font-mono text-sm">
                           {response.flowId.slice(0, 8)}...
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {response.orderNumber || "-"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{response.system || "-"}</Badge>
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline">{response.taskName}</Badge>
@@ -389,6 +423,14 @@ export default function FormResponses() {
                                       <p className="font-mono text-sm">{response.flowId}</p>
                                     </div>
                                     <div>
+                                      <label className="font-medium">Order Number:</label>
+                                      <p className="font-medium">{response.orderNumber || "-"}</p>
+                                    </div>
+                                    <div>
+                                      <label className="font-medium">System:</label>
+                                      <p>{response.system || "-"}</p>
+                                    </div>
+                                    <div>
                                       <label className="font-medium">Task Name:</label>
                                       <p>{response.taskName}</p>
                                     </div>
@@ -405,6 +447,12 @@ export default function FormResponses() {
                                       <p>{format(new Date(response.timestamp), "MMM dd, yyyy HH:mm:ss")}</p>
                                     </div>
                                   </div>
+                                  {response.flowDescription && (
+                                    <div>
+                                      <label className="font-medium">Flow Description:</label>
+                                      <p className="text-sm text-gray-600 mt-1">{response.flowDescription}</p>
+                                    </div>
+                                  )}
                                   <div>
                                     <label className="font-medium">Form Data:</label>
                                     <div className="mt-2 p-4 bg-gray-50 rounded-lg">

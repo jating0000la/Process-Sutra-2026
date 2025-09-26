@@ -1,6 +1,5 @@
 
 import type { Express } from "express";
-import { startFlowWebhook } from './flowController';
 import { addClient, removeClient, sendToEmail } from './notifications';
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
@@ -17,8 +16,11 @@ import {
 import { randomUUID } from "crypto";
 import { randomBytes } from "crypto";
 import { calculateTAT, TATConfig } from "./tatCalculator";
+import uploadsRouter from './uploads.js';
+import * as crypto from 'crypto';
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  console.log('[routes] registerRoutes invoked - NODE_ENV=', process.env.NODE_ENV);
   // Auth middleware
   await setupAuth(app);
 
@@ -57,6 +59,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+
+  // File uploads (GridFS)
+  app.use('/api/uploads', uploadsRouter);
 
   // Role-based middleware with status check
   const requireAdmin = async (req: any, res: any, next: any) => {
@@ -287,8 +292,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rule => rule.currentTask === task.taskName && rule.status === completionStatus
       );
 
-      // Get all previous form data for this flow to include in new tasks
-      const previousFormResponses = await storage.getFormResponsesByFlowId(task.flowId);
+      // Get all previous form data for this flow to include in new tasks (using MongoDB)
+      const previousFormResponses = await storage.getMongoFormResponsesByFlowId(user.organizationId, task.flowId);
       const flowInitialData = previousFormResponses.length > 0 ? previousFormResponses[0].formData : null;
 
       if (nextRules.length > 0) {
@@ -367,8 +372,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rule => rule.currentTask === task.taskName && rule.status === ruleStatus
       );
       
-      // Get all previous form data for this flow to include in new tasks
-      const previousFormResponses = await storage.getFormResponsesByFlowId(task.flowId);
+      // Get all previous form data for this flow to include in new tasks (using MongoDB)
+      const previousFormResponses = await storage.getMongoFormResponsesByFlowId(req.currentUser.organizationId, task.flowId);
       const flowInitialData = previousFormResponses.length > 0 ? previousFormResponses[0].formData : null;
       
       if (nextRules.length > 0) {
@@ -408,11 +413,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Task transfer route
-  app.post("/api/tasks/:id/transfer", isAuthenticated, async (req, res) => {
+  app.post("/api/tasks/:id/transfer", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const { id } = req.params;
       const { toEmail, reason } = req.body;
-      const userId = (req.user as any)?.claims?.sub;
+      const user = req.currentUser;
       
       if (!toEmail) {
         return res.status(400).json({ message: "Transfer email is required" });
@@ -425,8 +430,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if task is transferable (get flow rule) - organization-specific
-      const user = await storage.getUser((req.user as any)?.claims?.sub);
-      const flowRules = await storage.getFlowRulesByOrganization(user?.organizationId!, task.system);
+      const flowRules = await storage.getFlowRulesByOrganization(user.organizationId, task.system);
       const currentRule = flowRules.find(rule => rule.nextTask === task.taskName);
       
       if (!currentRule?.transferable) {
@@ -437,7 +441,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const transferredTask = await storage.updateTask(id, {
         doerEmail: toEmail,
         originalAssignee: task.originalAssignee || task.doerEmail,
-        transferredBy: userId,
+        transferredBy: user.id,
         transferredAt: new Date(),
         transferReason: reason || null,
       });
@@ -529,8 +533,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('SSE notify error:', e);
       }
 
-      res.status(201).json({ 
-        flowId, 
+      // Fire webhooks (non-blocking)
+      (async () => {
+        try {
+          const hooks = await storage.getActiveWebhooksForEvent(user.organizationId, 'flow.started');
+          for (const hook of hooks) {
+            const payload = {
+              id: randomUUID(),
+              type: 'flow.started',
+              createdAt: new Date().toISOString(),
+              data: { flowId, orderNumber, system, description, initiatedBy: userId, initiatedAt: flowStartTime, task: { id: task.id, name: task.taskName, assignee: task.doerEmail } }
+            };
+            const body = JSON.stringify(payload);
+            const sig = crypto.createHmac('sha256', hook.secret).update(body).digest('hex');
+            fetch(hook.targetUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Webhook-Signature': sig, 'X-Webhook-Id': payload.id, 'X-Webhook-Type': payload.type }, body }).catch(()=>{});
+          }
+        } catch {}
+      })();
+
+      res.status(201).json({
+        flowId,
         task,
         orderNumber,
         description,
@@ -834,26 +856,17 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     try {
       const { flowId } = req.params;
       const user = req.currentUser;
-      // Restrict by organization to avoid cross-tenant data access
-      const formResponses = await storage.getFormResponsesByOrganization(user.organizationId, flowId);
+      
+      console.log(`[DEBUG] Fetching form responses for flowId: ${flowId}, orgId: ${user.organizationId}`);
+      
+      // Use MongoDB instead of PostgreSQL for fetching previous form responses
+      const responses = await storage.getMongoFormResponsesByFlowId(user.organizationId, flowId);
 
-      // Return all form responses in chronological order for auto-prefill
-      const responses = formResponses
-        .map((response) => ({
-          id: response.id,
-          taskId: response.taskId,
-          formData: response.formData,
-          submittedAt: response.timestamp
-            ? new Date(response.timestamp).toISOString()
-            : new Date().toISOString(),
-        }))
-        .sort(
-          (a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime()
-        );
+      console.log(`[DEBUG] MongoDB returned ${responses.length} responses:`, responses);
 
       res.json(responses);
     } catch (error) {
-      console.error("Error fetching flow responses:", error);
+      console.error("Error fetching flow responses from MongoDB:", error);
       res.status(500).json({ message: "Failed to fetch flow responses" });
     }
   });
@@ -905,7 +918,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     try {
       const user = req.currentUser;
       const { flowId, taskId } = req.query;
-      const responses = await storage.getFormResponsesByOrganization(user.organizationId, flowId as string, taskId as string);
+      const responses = await storage.getFormResponsesWithTaskDetails(user.organizationId, flowId as string, taskId as string);
       res.json(responses);
     } catch (error) {
       console.error("Error fetching form responses:", error);
@@ -924,10 +937,162 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
         responseId: randomUUID(),
       });
       const response = await storage.createFormResponse(validatedData);
+
+      // Fire webhooks (non-blocking)
+      (async () => {
+        try {
+          const hooks = await storage.getActiveWebhooksForEvent(user.organizationId, 'form.submitted');
+          for (const hook of hooks) {
+            const payload = {
+              id: randomUUID(),
+              type: 'form.submitted',
+              createdAt: new Date().toISOString(),
+              data: { responseId: response.responseId, taskId: response.taskId, flowId: response.flowId, formId: response.formId, formData: response.formData, submittedBy: response.submittedBy, timestamp: response.timestamp }
+            };
+            const body = JSON.stringify(payload);
+            const sig = crypto.createHmac('sha256', hook.secret).update(body).digest('hex');
+            fetch(hook.targetUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Webhook-Signature': sig, 'X-Webhook-Id': payload.id, 'X-Webhook-Type': payload.type }, body }).catch(()=>{});
+          }
+        } catch {}
+      })();
+
       res.status(201).json(response);
     } catch (error) {
       console.error("Error creating form response:", error);
       res.status(400).json({ message: "Invalid form response data" });
+    }
+  });
+
+  // Webhook CRUD (admin)
+  app.get('/api/webhooks', isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      if (user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+      const hooks = await storage.getWebhooksByOrganization(user.organizationId);
+      res.json(hooks);
+    } catch (e) {
+      if ((e as any)?.message === 'WEBHOOKS_TABLE_MISSING') {
+        return res.status(500).json({
+          message: 'Webhooks table missing. Run database migration (drizzle-kit push) to create it.'
+        });
+      }
+      res.status(500).json({ message: 'Failed to list webhooks' });
+    }
+  });
+
+  app.post('/api/webhooks', isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      if (user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+      const { event, targetUrl, secret, description, isActive } = req.body;
+      if (!event || !targetUrl || !secret) return res.status(400).json({ message: 'event, targetUrl, secret required' });
+      const record = await storage.createWebhook({ organizationId: user.organizationId, event, targetUrl, secret, description, isActive });
+      res.status(201).json(record);
+    } catch (e) {
+      res.status(500).json({ message: 'Failed to create webhook' });
+    }
+  });
+
+  app.put('/api/webhooks/:id', isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      if (user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+      const record = await storage.updateWebhook(req.params.id, req.body);
+      res.json(record);
+    } catch (e) {
+      res.status(500).json({ message: 'Failed to update webhook' });
+    }
+  });
+
+  app.delete('/api/webhooks/:id', isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      if (user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+      await storage.deleteWebhook(req.params.id);
+      res.status(204).send();
+    } catch (e) {
+      res.status(500).json({ message: 'Failed to delete webhook' });
+    }
+  });
+
+  // Test webhook delivery (admin)
+  app.post('/api/webhooks/test', isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      if (user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+      const { targetUrl, webhookId, event = 'flow.started' } = req.body || {};
+      if (!targetUrl && !webhookId) return res.status(400).json({ message: 'Provide targetUrl or webhookId' });
+      let hook: any = null;
+      if (webhookId) {
+        hook = await storage.getWebhookById(webhookId);
+        if (!hook || hook.organizationId !== user.organizationId) return res.status(404).json({ message: 'Webhook not found' });
+      }
+      const url = targetUrl || hook.targetUrl;
+      const secret = hook?.secret || 'test_secret';
+      const payload = {
+        id: randomUUID(),
+        type: event,
+        test: true,
+        createdAt: new Date().toISOString(),
+        data: {
+          message: 'Webhook test from ProcessSutra',
+          example: event === 'form.submitted' ? { responseId: 'r123', formId: 'f001', formData: { field: 'value' } } : { flowId: 'flow_123', orderNumber: 'ORD-TEST' }
+        }
+      };
+      const body = JSON.stringify(payload);
+      const sig = crypto.createHmac('sha256', secret).update(body).digest('hex');
+      const started = Date.now();
+      let status = 0; let responseText = '';
+      try {
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Webhook-Signature': sig, 'X-Webhook-Id': payload.id, 'X-Webhook-Type': payload.type }, body });
+        status = r.status; responseText = await r.text();
+      } catch (e:any) {
+        responseText = e.message || 'Network error';
+      }
+      res.json({ deliveredTo: url, status, elapsedMs: Date.now() - started, responseText, signature: sig, payload });
+    } catch (e) {
+      res.status(500).json({ message: 'Webhook test failed' });
+    }
+  });
+
+  // Simple ping to confirm block executed
+  console.log('[webhooks] registering webhook routes');
+  app.get('/api/webhooks/ping', (_req, res) => {
+    res.json({ ok: true, ts: Date.now() });
+  });
+
+  // Optional: list registered API routes when DEBUG_ROUTES=1
+  if (process.env.DEBUG_ROUTES) {
+    const routes: string[] = [];
+    // @ts-ignore
+    app._router?.stack?.forEach((r: any) => {
+      if (r.route && r.route.path) {
+        const methods = Object.keys(r.route.methods).join(',').toUpperCase();
+        routes.push(`${methods} ${r.route.path}`);
+      }
+    });
+    console.log('[routes] Registered endpoints:', routes.filter(r=>r.includes('/api/')));
+  }
+
+  // MongoDB Form Responses API (Organization-specific)
+  app.get("/api/mongo/form-responses", isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      const { formId, startDate, endDate, page = "1", pageSize = "50" } = req.query;
+      
+      const responses = await storage.getMongoFormResponsesByOrgAndForm({
+        orgId: user.organizationId,
+        formId: formId as string,
+        startDate: startDate as string,
+        endDate: endDate as string,
+        page: parseInt(page as string),
+        pageSize: parseInt(pageSize as string),
+      });
+      
+      res.json(responses);
+    } catch (error) {
+      console.error("Error fetching MongoDB form responses:", error);
+      res.status(500).json({ message: "Failed to fetch MongoDB form responses" });
     }
   });
 

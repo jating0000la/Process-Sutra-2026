@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import Header from "@/components/header";
 import Sidebar from "@/components/sidebar";
+import { useLayout } from "@/contexts/LayoutContext";
 import MetricCard from "@/components/metric-card";
 import TaskCard from "@/components/task-card";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import { CheckCircle, Clock, AlertTriangle, TrendingUp, Plus, FileText, Workflow
 export default function Dashboard() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading } = useAuth();
+  const { sidebarOpen } = useLayout();
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -72,9 +74,9 @@ export default function Dashboard() {
 
   if (isLoading || metricsLoading) {
     return (
-      <div className="flex h-screen bg-neutral">
+      <div className="h-screen flex bg-neutral">
         <Sidebar />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto pt-16" style={{ paddingLeft: sidebarOpen ? undefined : undefined }}>
           <Header title="Dashboard" description="Manage your tasks and workflows efficiently" />
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -93,18 +95,18 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="flex h-screen bg-neutral">
+    <div className="h-screen flex bg-neutral">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto pt-16">
         <Header 
           title="Dashboard" 
           description="Manage your tasks and workflows efficiently"
           actions={
             <div className="flex space-x-3">
-              <Button variant="outline" className="flex items-center">
+              {/* <Button variant="outline" className="flex items-center">
                 <FileText className="w-4 h-4 mr-2" />
                 Export
-              </Button>
+              </Button> */}
               <Button className="flex items-center">
                 <Plus className="w-4 h-4 mr-2" />
                 New Flow

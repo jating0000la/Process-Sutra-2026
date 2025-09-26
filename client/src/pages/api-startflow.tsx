@@ -23,6 +23,102 @@ export default function ApiStartFlow() {
   const [testError, setTestError] = useState<string>("");
   const [tokenError, setTokenError] = useState<string>("");
 
+  // Webhook state
+  const [webhooks, setWebhooks] = useState<any[]>([]);
+  const [hooksLoading, setHooksLoading] = useState<boolean>(false);
+  const [hookError, setHookError] = useState<string>("");
+  const [creatingHook, setCreatingHook] = useState<boolean>(false);
+  const [newEvent, setNewEvent] = useState<string>('flow.started');
+  const [newTargetUrl, setNewTargetUrl] = useState<string>('https://example.com/webhooks/processsutra');
+  const [newSecret, setNewSecret] = useState<string>('');
+  const [newDescription, setNewDescription] = useState<string>('');
+  const [newActive, setNewActive] = useState<boolean>(true);
+  const [revealSecretId, setRevealSecretId] = useState<string | null>(null);
+  const [testHookUrl, setTestHookUrl] = useState<string>('');
+  const [hookTestResult, setHookTestResult] = useState<string>('');
+  const [hookTesting, setHookTesting] = useState<boolean>(false);
+
+  const generateSecret = () => {
+    const random = cryptoRandomString(48);
+    setNewSecret(random);
+  };
+
+  // Simple random secret without external deps
+  function cryptoRandomString(length: number) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let out = '';
+    const array = new Uint32Array(length);
+    window.crypto.getRandomValues(array);
+    for (let i = 0; i < length; i++) {
+      out += chars[array[i] % chars.length];
+    }
+    return out;
+  }
+
+  const loadWebhooks = async () => {
+    if (!isAdmin) return;
+    setHooksLoading(true); setHookError('');
+    try {
+      const res = await fetch('/api/webhooks');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setWebhooks(data);
+    } catch (e:any) {
+      setHookError(e.message || 'Failed to load webhooks');
+    } finally { setHooksLoading(false); }
+  };
+
+  useEffect(() => { loadWebhooks(); }, [isAdmin]);
+
+  const handleCreateWebhook = async () => {
+    if (!isAdmin) return;
+    if (!newEvent || !newTargetUrl || !newSecret) {
+      setHookError('Event, Target URL, Secret required');
+      return;
+    }
+    setCreatingHook(true); setHookError('');
+    try {
+      const res = await fetch('/api/webhooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: newEvent, targetUrl: newTargetUrl, secret: newSecret, description: newDescription, isActive: newActive })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // Reset form minimal
+      setNewDescription('');
+      // keep secret so user can copy again
+      await loadWebhooks();
+    } catch (e:any) {
+      setHookError(e.message || 'Failed to create webhook');
+    } finally { setCreatingHook(false); }
+  };
+
+  const toggleHookActive = async (hook: any) => {
+    try {
+      const res = await fetch(`/api/webhooks/${hook.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: !hook.isActive }) });
+      if (res.ok) await loadWebhooks();
+    } catch {}
+  };
+
+  const deleteHook = async (hook: any) => {
+    if (!window.confirm('Delete this webhook?')) return;
+    try {
+      const res = await fetch(`/api/webhooks/${hook.id}`, { method: 'DELETE' });
+      if (res.ok) await loadWebhooks();
+    } catch {}
+  };
+
+  const sendWebhookTest = async (opts: { url?: string; id?: string; event?: string }) => {
+    setHookTesting(true); setHookTestResult('');
+    try {
+      const res = await fetch('/api/webhooks/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetUrl: opts.url, webhookId: opts.id, event: opts.event }) });
+      const json = await res.json();
+      setHookTestResult(JSON.stringify(json, null, 2));
+    } catch (e:any) {
+      setHookTestResult(e.message || 'Test failed');
+    } finally { setHookTesting(false); }
+  };
+
   // Keep local orgId in sync and try fetching it if missing
   useEffect(() => {
     setOrgId(dbUser?.organizationId);
@@ -295,6 +391,97 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
                     )}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          )}
+
+          {isAdmin && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Webhooks</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="text-sm text-gray-600">Configure outbound webhooks for events: <code className="bg-gray-100 px-1 rounded">flow.started</code>, <code className="bg-gray-100 px-1 rounded">form.submitted</code>. Your server must verify signatures (HMAC SHA256) sent in <code className="bg-gray-100 px-1 rounded">X-Webhook-Signature</code>.</div>
+                <div className="border rounded-md p-4 space-y-4 bg-white/50">
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <Label>Event</Label>
+                      <select className="w-full border rounded-md h-9 px-2 text-sm" value={newEvent} onChange={e=>setNewEvent(e.target.value)}>
+                        <option value="flow.started">flow.started</option>
+                        <option value="form.submitted">form.submitted</option>
+                      </select>
+                    </div>
+                    <div>
+                      <Label>Target URL</Label>
+                      <Input value={newTargetUrl} onChange={e=>setNewTargetUrl(e.target.value)} placeholder="https://..." />
+                    </div>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-4 items-end">
+                    <div>
+                      <Label>Secret</Label>
+                      <Input value={newSecret} onChange={e=>setNewSecret(e.target.value)} placeholder="Generate secret" />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button type="button" variant="outline" onClick={generateSecret}>Generate Secret</Button>
+                      <Button type="button" onClick={()=>{ if(newSecret){navigator.clipboard.writeText(newSecret);} }}>Copy Secret</Button>
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Description (optional)</Label>
+                    <Input value={newDescription} onChange={e=>setNewDescription(e.target.value)} placeholder="Webhook description" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox id="activeHook" checked={newActive} onCheckedChange={(v)=>setNewActive(Boolean(v))} />
+                    <Label htmlFor="activeHook">Active</Label>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button disabled={creatingHook || !newSecret || !newTargetUrl} onClick={handleCreateWebhook}>{creatingHook? 'Creating...' : 'Add Webhook'}</Button>
+                    <Button variant="outline" type="button" onClick={loadWebhooks} disabled={hooksLoading}>{hooksLoading? 'Refreshing...' : 'Refresh'}</Button>
+                  </div>
+                  {hookError && <div className="text-xs text-red-600">{hookError}</div>}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Existing Webhooks</div>
+                  {hooksLoading && <div className="text-sm text-gray-500">Loading...</div>}
+                  {!hooksLoading && webhooks.length === 0 && <div className="text-xs text-gray-500">No webhooks configured.</div>}
+                  <div className="space-y-2">
+                    {webhooks.map(hook => (
+                      <div key={hook.id} className="border rounded-md p-3 bg-white/70 flex flex-col gap-2">
+                        <div className="flex flex-wrap gap-2 items-center justify-between">
+                          <div className="font-mono text-xs break-all max-w-[55ch]">{hook.targetUrl}</div>
+                          <div className="flex gap-2 items-center">
+                            <Button size="sm" variant="outline" onClick={()=>sendWebhookTest({ id: hook.id, event: hook.event })}>Test</Button>
+                            <Button size="sm" variant={hook.isActive? 'secondary':'outline'} onClick={()=>toggleHookActive(hook)}>{hook.isActive? 'Disable':'Enable'}</Button>
+                            <Button size="sm" variant="destructive" onClick={()=>deleteHook(hook)}>Delete</Button>
+                          </div>
+                        </div>
+                        <div className="grid md:grid-cols-4 gap-2 text-xs">
+                          <div><span className="font-semibold">Event:</span> {hook.event}</div>
+                          <div className="truncate"><span className="font-semibold">Secret:</span> {revealSecretId===hook.id? hook.secret : '••••••••••'} <button className="underline ml-1" onClick={()=> setRevealSecretId(revealSecretId===hook.id? null : hook.id)}>{revealSecretId===hook.id? 'hide':'show'}</button></div>
+                          <div><span className="font-semibold">Created:</span> {hook.createdAt ? new Date(hook.createdAt).toLocaleString() : ''}</div>
+                          <div className="truncate"><span className="font-semibold">Desc:</span> {hook.description || '-'}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {webhooks.length > 0 && (
+                    <div className="text-xs text-gray-500">Store secrets securely. Rotate if leaked.</div>
+                  )}
+                </div>
+                <div className="text-xs text-gray-500 border-t pt-3">
+                  Signature = HMAC_SHA256(secret, raw_body). Verify with constant-time compare. Headers: X-Webhook-Type, X-Webhook-Id, X-Webhook-Signature.
+                </div>
+                <div className="border-t pt-4 space-y-3">
+                  <div className="text-sm font-medium">Ad-hoc Test URL</div>
+                  <div className="flex flex-col md:flex-row gap-2">
+                    <Input placeholder="https://your-server.com/webhook" value={testHookUrl} onChange={e=>setTestHookUrl(e.target.value)} />
+                    <Button disabled={!testHookUrl || hookTesting} onClick={()=>sendWebhookTest({ url: testHookUrl, event: newEvent })}>{hookTesting? 'Testing...':'Send Test'}</Button>
+                  </div>
+                  {hookTestResult && (
+                    <pre className="text-xs bg-gray-50 p-3 rounded-md border whitespace-pre-wrap max-h-64 overflow-auto">{hookTestResult}</pre>
+                  )}
+                </div>
               </CardContent>
             </Card>
           )}

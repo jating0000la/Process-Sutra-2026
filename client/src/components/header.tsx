@@ -8,9 +8,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bell, ChevronDown, LogOut, User, Settings } from "lucide-react";
+import { ChevronDown, LogOut, User, Settings } from "lucide-react";
 import { useLocation } from "wouter";
-import { useState } from "react";
+import { NotificationDropdown } from "@/components/notification-dropdown";
+import { Menu, PanelLeftOpen } from "lucide-react";
+import { useLayout } from "@/contexts/LayoutContext";
 
 interface HeaderProps {
   title: string;
@@ -21,7 +23,7 @@ interface HeaderProps {
 export default function Header({ title, description, actions }: HeaderProps) {
   const { user, logout } = useAuth();
   const [ , setLocation ] = useLocation();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const { toggleSidebar, sidebarOpen } = useLayout();
 
   const handleLogout = async () => {
     await logout();
@@ -47,72 +49,76 @@ export default function Header({ title, description, actions }: HeaderProps) {
   return (
     <>
       {/* Navigation Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <div className="flex items-center">
-                  <img
-                    src="/src/logo/ProcessSutra2.png"
-                    alt="ProcessSutra Logo"
-                    className="h-12 w-35 object-contain"
-                  />
-                  {/* <span className="ml-3 text-xl font-bold text-gray-900">ProcessSutra</span> */}
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-4">
-              <Button variant="ghost" size="sm" className="relative">
-                <Bell className="h-5 w-5" />
-                <span className="absolute -top-1 -right-1 bg-orange-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-                  3
-                </span>
+      <header className="fixed top-0 inset-x-0 h-16 bg-white/80 backdrop-blur border-b border-gray-200 z-40">
+        <div className="px-4 sm:px-6 lg:px-8 h-full flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden"
+              onClick={toggleSidebar}
+              aria-label="Toggle navigation"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+            <div className="hidden md:block">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleSidebar}
+                aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+              >
+                <PanelLeftOpen className={`h-5 w-5 transition-transform ${sidebarOpen ? '' : 'rotate-180'}`} />
               </Button>
-              
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="flex items-center space-x-3 p-2">
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage 
-                        // src={user?.photoURL} 
-                        alt="User profile"
-                        className="profile-image"
-                      />
-                      <AvatarFallback>
-                        {getInitials(user?.displayName)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="text-sm font-medium text-gray-700">
-                      {getDisplayName(user?.displayName)}
-                    </span>
-                    <ChevronDown className="h-4 w-4 text-gray-500" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuItem onSelect={() => setLocation("/profile")}>
-                    <User className="mr-2 h-4 w-4" />
-                    Profile
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setLocation("/organization-settings") }>
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={handleLogout}>
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Log out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
             </div>
+            <img
+              src="/src/logo/ProcessSutra2.png"
+              alt="ProcessSutra Logo"
+              className="h-10 w-auto object-contain"
+            />
+          </div>
+          <div className="flex items-center space-x-4">
+            <NotificationDropdown />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="flex items-center space-x-3 p-2">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage 
+                      alt="User profile"
+                      className="profile-image"
+                    />
+                    <AvatarFallback>
+                      {getInitials(user?.displayName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="hidden sm:inline text-sm font-medium text-gray-700">
+                    {getDisplayName(user?.displayName)}
+                  </span>
+                  <ChevronDown className="h-4 w-4 text-gray-500" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onSelect={() => setLocation("/profile")}>
+                  <User className="mr-2 h-4 w-4" />
+                  Profile
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setLocation("/organization-settings") }>
+                  <Settings className="mr-2 h-4 w-4" />
+                  Settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={handleLogout}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Log out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>
 
       {/* Page Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
+  <div className="bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60 border-b border-gray-200 px-6 py-4 mt-16 sticky top-16 z-30">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
@@ -123,12 +129,7 @@ export default function Header({ title, description, actions }: HeaderProps) {
           {actions && <div>{actions}</div>}
         </div>
       </div>
-      {isSidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40"
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
+  {/* Overlay handled at layout level */}
     </>
   )
 }
