@@ -165,7 +165,7 @@ export default function AdvancedSimulator() {
   const utilSnapshot = useMemo(() => {
     const inProg = tasks.filter((x) => x.status === "started").length;
     const capTotal = Object.values(resourceCaps).reduce((a, b) => a + (b || 0), 0) || 1;
-    const util = Math.round((inProg / capTotal) * 100);
+    const util = Math.min(100, Math.round((inProg / capTotal) * 10000) / 100);
     const queue = tasks.filter((x) => x.status === "queued" || x.status === "pending").length;
     return { inProg, capTotal, util, queue };
   }, [tasks, resourceCaps]);
@@ -191,10 +191,10 @@ export default function AdvancedSimulator() {
       if (t.status === "completed" && t.createdAt && t.completedAt) {
         const task = t.taskName;
         if (!map[task]) map[task] = { task, onTime: 0, late: 0, total: 0, onTimePct: 0, latePct: 0 };
-        const cycleMin = Math.max(0, (t.completedAt.getTime() - t.createdAt.getTime()) / 60000);
+        const cycleMin = Math.round(Math.max(0, (t.completedAt.getTime() - t.createdAt.getTime()) / 60000) * 1000) / 1000;
         const planned = Math.max(1, t.plannedMinutes);
         const buffer = Math.max(0, settings.onTimeBufferPct || 0) / 100;
-        const threshold = planned * (1 + buffer);
+        const threshold = Math.round(planned * (1 + buffer) * 1000) / 1000;
         const onTime = cycleMin <= threshold;
         if (onTime) map[task].onTime += 1; else map[task].late += 1;
         map[task].total += 1;
@@ -213,12 +213,12 @@ export default function AdvancedSimulator() {
     const rows: DrillRow[] = [];
     for (const t of tasks) {
       if (t.taskName !== taskName || !(t.createdAt && t.completedAt) || t.status !== "completed") continue;
-      const cycleMin = Math.max(0, (t.completedAt.getTime() - t.createdAt.getTime()) / 60000);
+      const cycleMin = Math.round(Math.max(0, (t.completedAt.getTime() - t.createdAt.getTime()) / 60000) * 1000) / 1000;
       const plannedMin = Math.max(1, t.plannedMinutes);
-      const threshold = plannedMin * (1 + buffer);
+      const threshold = Math.round(plannedMin * (1 + buffer) * 1000) / 1000;
       const onTime = cycleMin <= threshold;
       if (onTime === wantOnTime) {
-        rows.push({ instanceId: t.instanceId, task: t.taskName, cycleMin: Math.round(cycleMin * 100) / 100, plannedMin, onTime, createdAt: t.createdAt, completedAt: t.completedAt });
+        rows.push({ instanceId: t.instanceId, task: t.taskName, cycleMin, plannedMin, onTime, createdAt: t.createdAt, completedAt: t.completedAt });
       }
     }
     setDrill({ open: true, task: taskName, onTime: wantOnTime, rows });
@@ -250,7 +250,7 @@ export default function AdvancedSimulator() {
   // Elapsed time for throughput denominator: minutes when processing was allowed (fast mode or within working hours)
   const denomMinutes = Math.max(1, elapsedProcessingWindowMinutes);
     const totalHours = Math.max(1 / 60, denomMinutes / 60);
-    const throughputPerHour = completed / totalHours;
+    const throughputPerHour = Math.round((completed / totalHours) * 100) / 100;
 
     // Measured waiting time: queue + pending actual durations
     let totalWaitMin = 0;
@@ -276,7 +276,7 @@ export default function AdvancedSimulator() {
 
     const productive = totalProcMin;
     const available = totalProcMin + totalWaitMin;
-    const productivityPct = available > 0 ? Math.round((productive / available) * 100) : 0;
+    const productivityPct = available > 0 ? Math.min(100, Math.round((productive / available) * 10000) / 100) : 0;
 
     // Performance vs planned (completed only): compare sum(planned for completed) to sum(actual processing time for completed)
     const totalPlannedMin = completedTasks.reduce((s, t) => s + (t.plannedMinutes || 0), 0);
@@ -288,7 +288,7 @@ export default function AdvancedSimulator() {
         totalProcCompletedMin += t.processMinutes;
       }
     }
-    const performancePct = totalPlannedMin > 0 ? Math.round((totalPlannedMin / Math.max(1, totalProcCompletedMin)) * 100) : 0;
+    const performancePct = totalPlannedMin > 0 ? Math.min(100, Math.round((totalPlannedMin / Math.max(1, totalProcCompletedMin)) * 10000) / 100) : 0;
 
     // Loss cost from waiting
     const wastedHours = totalWaitMin / 60;
@@ -322,7 +322,7 @@ export default function AdvancedSimulator() {
     const entries = Object.entries(byTask);
     for (const [name, agg] of entries) {
       const cap = Math.max(1, resourceCaps[name] ?? 1);
-      const utilPct = Math.min(100, Math.round((agg.activeProcMin / (windowMin * cap)) * 100));
+      const utilPct = Math.min(100, Math.round((agg.activeProcMin / (windowMin * cap)) * 10000) / 100);
       const avgWait = agg.qCount ? agg.queueSum / agg.qCount : 0;
       if (
         utilPct > bottleneckUtilPct ||
@@ -345,7 +345,7 @@ export default function AdvancedSimulator() {
         queueCount += 1;
       }
     }
-    const avgQueueMin = queueCount ? Math.round((queueSum / queueCount) * 100) / 100 : 0;
+    const avgQueueMin = queueCount ? Math.round((queueSum / queueCount) * 1000) / 1000 : 0;
 
     // Average cycle time for completed tasks
     let cycleSum = 0;
@@ -357,21 +357,21 @@ export default function AdvancedSimulator() {
         cycleCount += 1;
       }
     }
-    const avgCycleMin = cycleCount ? Math.round((cycleSum / cycleCount) * 100) / 100 : 0;
+    const avgCycleMin = cycleCount ? Math.round((cycleSum / cycleCount) * 1000) / 1000 : 0;
 
     const wip = tasks.filter((t) => t.status !== "completed").length;
 
     return {
-      totalHours: Math.round((denomMinutes / 60) * 100) / 100,
+      totalHours: Math.round((denomMinutes / 60) * 1000) / 1000,
       completed,
-      throughputPerHour: Math.round(throughputPerHour * 100) / 100,
+      throughputPerHour,
       totalWaitMin: Math.round(totalWaitMin),
       totalProcMin: Math.round(totalProcMin),
       productivityPct,
       performancePct,
       lossCost: Math.round(lossCost * 100) / 100,
       bottleneckTask,
-      bottleneckAvgWait: Math.round(bottleneckAvgWait),
+      bottleneckAvgWait: Math.round(bottleneckAvgWait * 100) / 100,
       bottleneckUtilPct,
       avgQueueMin,
       avgCycleMin,
@@ -414,7 +414,7 @@ export default function AdvancedSimulator() {
   const canProcessNow = (d: Date): boolean => settings.ignoreWorkingHours ? true : isWorking(d);
 
   // UI helpers
-  const fmtNum = (n: number) => new Intl.NumberFormat().format(Math.round((n + Number.EPSILON) * 100) / 100);
+  const fmtNum = (n: number) => new Intl.NumberFormat(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3 }).format(Math.round((n + Number.EPSILON) * 1000) / 1000);
   const fmtCurrency = (n: number) => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
   const badgeClassForStatus = (s: SimStatus): string => {
     switch (s) {
@@ -1085,7 +1085,7 @@ export default function AdvancedSimulator() {
       const queueLen = items.filter((x) => x.status === "queued" || x.status === "pending").length;
       const inProg = items.filter((x) => x.status === "started").length;
       const capTotal = Object.values(resourceCaps).reduce((a, b) => a + (b || 0), 0) || 1;
-      const util = Math.round((inProg / capTotal) * 100);
+      const util = Math.min(100, Math.round((inProg / capTotal) * 10000) / 100);
       setSeries((s) => [{ t: now.toISOString(), created, completed: completedNow, queue: queueLen, inProgress: inProg, util }, ...s].slice(0, 240));
       return items;
     });

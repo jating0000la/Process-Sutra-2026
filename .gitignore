@@ -79,13 +79,15 @@ vite.config.ts.*
 !.env.production.template
 !.env.*.template
 
-# Shell scripts (security - exclude all shell scripts)
+# Shell scripts (security - exclude all shell scripts except deployment)
 *.sh
+!deploy.sh
+!backup.sh
+!update.sh
 
 # Deployment files
 deployment/
 *.deployment.yml
-*.deploy.sh
 
 # GCP specific files
 gcp-*.sh
@@ -109,7 +111,6 @@ secrets/
 *firebase-adminsdk*.json
 
 # PM2 files
-ecosystem.config.js
 .pm2/
 
 # Certificates

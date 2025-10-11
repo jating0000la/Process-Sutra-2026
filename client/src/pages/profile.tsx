@@ -1,4 +1,4 @@
-import Header from "@/components/header";
+import { AppLayout } from "@/components/app-layout";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 
@@ -6,10 +6,8 @@ export default function Profile() {
   const { user, dbUser, logout } = useAuth();
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header title="Profile" description="Your account information" />
-
-      <main className="max-w-4xl mx-auto p-6">
+    <AppLayout title="Profile" description="Your account information">
+      <div className="max-w-4xl mx-auto">
         <div className="bg-white shadow-sm rounded-lg p-6 space-y-6">
           <section>
             <h2 className="text-lg font-semibold mb-2">Basic</h2>
@@ -45,7 +43,7 @@ export default function Profile() {
             <Button variant="outline" onClick={logout}>Log out</Button>
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 }

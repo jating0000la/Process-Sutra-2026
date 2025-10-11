@@ -798,14 +798,14 @@ export class DatabaseStorage implements IStorage {
     const completedTasks = completedResult[0].count;
     const overdueTasks = overdueResult[0].count;
     const onTimeTasks = onTimeResult[0].count;
-    const onTimeRate = completedTasks > 0 ? (onTimeTasks / completedTasks) * 100 : 0;
+    const onTimeRate = completedTasks > 0 ? Math.min(100, (onTimeTasks / completedTasks) * 100) : 0;
     const avgResolutionTime = avgResolutionResult[0]?.avgTime || 0;
 
     return {
       totalTasks,
       completedTasks,
       overdueTasks,
-      onTimeRate: Math.round(onTimeRate),
+      onTimeRate: Math.round(onTimeRate * 100) / 100,
       avgResolutionTime: Math.round(avgResolutionTime * 10) / 10,
     };
   }
@@ -854,14 +854,14 @@ export class DatabaseStorage implements IStorage {
     const completedTasks = completedResult[0].count;
     const overdueTasks = overdueResult[0].count;
     const onTimeTasks = onTimeResult[0].count;
-    const onTimeRate = completedTasks > 0 ? (onTimeTasks / completedTasks) * 100 : 0;
+    const onTimeRate = completedTasks > 0 ? Math.min(100, (onTimeTasks / completedTasks) * 100) : 0;
     const avgResolutionTime = avgResolutionResult[0]?.avgTime || 0;
 
   return {
       totalTasks,
       completedTasks,
       overdueTasks,
-      onTimeRate: Math.round(onTimeRate),
+      onTimeRate: Math.round(onTimeRate * 100) / 100,
       avgResolutionTime: Math.round(avgResolutionTime * 10) / 10,
     };
   }

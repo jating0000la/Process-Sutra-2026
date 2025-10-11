@@ -74,7 +74,8 @@ export default function Header({ title, description, actions }: HeaderProps) {
             <img
               src="/src/logo/ProcessSutra2.png"
               alt="ProcessSutra Logo"
-              className="h-10 w-auto object-contain"
+              className="h-10 w-auto object-contain cursor-pointer"
+              onClick={() => setLocation("/")}
             />
           </div>
           <div className="flex items-center space-x-4">
