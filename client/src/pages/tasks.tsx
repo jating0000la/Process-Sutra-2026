@@ -16,10 +16,21 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CheckCircle, Clock, AlertTriangle, Eye, Edit, Plus, Database, Download, UserCheck, Grid, List, MoreHorizontal } from "lucide-react";
+import { CheckCircle, Clock, AlertTriangle, Eye, Edit, Plus, Database, Download, UserCheck, Grid, List, MoreHorizontal, Play } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import FormRenderer from "@/components/form-renderer";
 import { format } from "date-fns";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+
+const startFlowSchema = z.object({
+  system: z.string().min(1, "System is required"),
+  orderNumber: z.string().min(1, "Order Number/Unique ID is required"),
+  description: z.string().min(1, "Flow description is required"),
+  initialFormData: z.string().optional(), // JSON string of initial form data
+});
 
 export default function Tasks() {
   const { toast } = useToast();
@@ -45,6 +56,18 @@ export default function Tasks() {
   const [transferReason, setTransferReason] = useState("");
   const [expandedDataTasks, setExpandedDataTasks] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<"cards" | "table">("table");
+  const [isStartFlowDialogOpen, setIsStartFlowDialogOpen] = useState(false);
+
+  // Start flow form
+  const startFlowForm = useForm({
+    resolver: zodResolver(startFlowSchema),
+    defaultValues: {
+      system: "",
+      orderNumber: "",
+      description: "",
+      initialFormData: "",
+    },
+  });
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -422,9 +445,30 @@ export default function Tasks() {
         return false;
       }
       
-      // Search query filter
-      if (searchQuery.trim() && !task.taskName.toLowerCase().includes(searchQuery.toLowerCase().trim())) {
-        return false;
+      // Enhanced search query filter - search across multiple fields
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase().trim();
+        const searchableText = [
+          task.taskName || '',
+          task.doerEmail || '',
+          task.system || '',
+          task.flowId || '',
+          task.orderNumber?.toString() || '',
+          task.status || '',
+          // Search in form data if available
+          task.formId || '',
+          // Convert dates to searchable format
+          task.createdAt ? format(new Date(task.createdAt), 'MMM dd yyyy') : '',
+          task.plannedTime ? format(new Date(task.plannedTime), 'MMM dd yyyy') : '',
+        ].join(' ').toLowerCase();
+        
+        // Support for multiple search terms (AND logic)
+        const searchTerms = query.split(' ').filter(term => term.length > 0);
+        const matchesAllTerms = searchTerms.every(term => searchableText.includes(term));
+        
+        if (!matchesAllTerms) {
+          return false;
+        }
       }
       
       // Priority filter (based on due date)
@@ -817,6 +861,40 @@ export default function Tasks() {
     },
   });
 
+  const startFlowMutation = useMutation({
+    mutationFn: async (data: z.infer<typeof startFlowSchema>) => {
+      const response = await apiRequest("POST", "/api/flows/start", data);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Success",
+        description: `Flow started successfully. Flow ID: ${data.flowId}`,
+      });
+      setIsStartFlowDialogOpen(false);
+      startFlowForm.reset();
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        toast({
+          title: "Unauthorized",
+          description: "You are logged out. Logging in again...",
+          variant: "destructive",
+        });
+        setTimeout(() => {
+          window.location.href = "/api/login";
+        }, 500);
+        return;
+      }
+      toast({
+        title: "Error",
+        description: "Failed to start flow",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleCompleteClick = (task: any) => {
     setTaskToComplete(task);
     setCompletionStatus(""); // Reset completion status
@@ -850,6 +928,13 @@ export default function Tasks() {
       });
     }
   };
+
+  const onSubmitStartFlow = (data: z.infer<typeof startFlowSchema>) => {
+    startFlowMutation.mutate(data);
+  };
+
+  // Get available systems from flow rules
+  const availableSystems = Array.from(new Set((flowRules as any[])?.map(rule => rule.system) || []));
 
   const handleViewFlowData = async (task: any) => {
     try {
@@ -926,6 +1011,39 @@ export default function Tasks() {
     }
   };
 
+  // Helper function to highlight search terms in text
+  const highlightSearchTerms = (text: string, searchQuery: string) => {
+    if (!searchQuery.trim()) return text;
+    
+    const terms = searchQuery.toLowerCase().split(' ').filter(term => term.length > 0);
+    let highlightedText = text;
+    
+    terms.forEach(term => {
+      const regex = new RegExp(`(${term})`, 'gi');
+      highlightedText = highlightedText.replace(regex, '<mark class="bg-yellow-200 dark:bg-yellow-800 px-1 rounded">$1</mark>');
+    });
+    
+    return highlightedText;
+  };
+
+  // Helper function to get search suggestions
+  const getSearchSuggestions = () => {
+    if (!tasks || !Array.isArray(tasks)) return [];
+    
+    const suggestions = new Set<string>();
+    
+    tasks.forEach((task: any) => {
+      // Add unique systems
+      if (task.system) suggestions.add(task.system);
+      // Add unique assignees
+      if (task.doerEmail) suggestions.add(task.doerEmail);
+      // Add status values
+      if (task.status) suggestions.add(task.status);
+    });
+    
+    return Array.from(suggestions).slice(0, 10); // Limit to 10 suggestions
+  };
+
 
 
   if (isLoading) {
@@ -988,78 +1106,183 @@ export default function Tasks() {
                 </Button>
               </div>
               
-              <Button onClick={() => window.location.href = '/flows'}>
-                <Plus className="w-4 h-4 mr-2" />
-                New Task
+              <Button 
+                onClick={handleExportData} 
+                disabled={isExporting}
+                variant="outline"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                {isExporting ? "Exporting..." : "Export Data"}
               </Button>
+
+              <Dialog open={isStartFlowDialogOpen} onOpenChange={setIsStartFlowDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Play className="w-4 h-4 mr-2" />
+                    Start Flow
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Start New Flow</DialogTitle>
+                  </DialogHeader>
+                  <Form {...startFlowForm}>
+                    <form onSubmit={startFlowForm.handleSubmit(onSubmitStartFlow)} className="space-y-4">
+                      <FormField
+                        control={startFlowForm.control}
+                        name="system"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>System</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select system" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {availableSystems.map((system: string) => (
+                                  <SelectItem key={system} value={system}>
+                                    {system}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={startFlowForm.control}
+                        name="orderNumber"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Order Number/Unique ID *</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="Enter unique order/case number" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={startFlowForm.control}
+                        name="description"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Flow Description *</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="What is this flow for? (e.g., Wedding order for John & Jane)" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={startFlowForm.control}
+                        name="initialFormData"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Initial Form Data (Optional)</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder='Enter key information as JSON: {"customer": "John", "priority": "High"}' />
+                            </FormControl>
+                            <div className="text-xs text-gray-500">
+                              This data will be visible in all tasks of this flow for easy identification
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <div className="flex justify-end space-x-3">
+                        <Button type="button" variant="outline" onClick={() => setIsStartFlowDialogOpen(false)}>
+                          Cancel
+                        </Button>
+                        <Button type="submit" disabled={startFlowMutation.isPending}>
+                          {startFlowMutation.isPending ? "Starting..." : "Start Flow"}
+                        </Button>
+                      </div>
+                    </form>
+                  </Form>
+                </DialogContent>
+              </Dialog>
             </div>
           }
         />
 
         <div className="p-6 bg-gradient-to-br from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 min-h-screen">
-          {/* Enhanced Filters Section */}
-          <div className="mb-8">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-6">
-              {/* Filter Header */}
-              <div className="flex items-center space-x-3 mb-6">
-                <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                  <Clock className="w-4 h-4 text-white" />
+          {/* Compact Filters Section */}
+          <div className="mb-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-4">
+              {/* Compact Filter Header */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-2">
+                  <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                    <Clock className="w-3 h-3 text-white" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Filters</h3>
+                  {(statusFilter !== "all" || systemFilter !== "all" || assigneeFilter !== "all" || priorityFilter !== "all" || dateFilter !== "all" || searchQuery) && (
+                    <div className="flex items-center space-x-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 rounded-md">
+                      <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
+                      <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
+                        {[statusFilter, systemFilter, assigneeFilter, priorityFilter, dateFilter].filter(f => f !== "all").length + (searchQuery ? 1 : 0)}
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Filter Tasks</h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Use multiple filters to find tasks quickly</p>
-                </div>
+                
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => {
+                    setStatusFilter("all");
+                    setSystemFilter("all");
+                    setAssigneeFilter("all");
+                    setPriorityFilter("all");
+                    setDateFilter("all");
+                    setSearchQuery("");
+                  }}
+                  className="h-7 px-3 text-xs"
+                >
+                  Clear All
+                </Button>
               </div>
 
-              {/* Filter Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
+              {/* Compact Filter Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
                 {/* Status Filter */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Status</Label>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-gray-600 dark:text-gray-400">Status</Label>
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="h-10 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-600 border border-gray-200 dark:border-gray-600 rounded-lg">
+                    <SelectTrigger className={`h-8 text-sm ${
+                      statusFilter !== "all" 
+                        ? "bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-600" 
+                        : "bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600"
+                    } rounded-lg`}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
-                          <span>All Status</span>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="pending">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-2 h-2 bg-yellow-400 rounded-full"></div>
-                          <span>Pending</span>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="in_progress">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
-                          <span>In Progress</span>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="completed">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                          <span>Completed</span>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="overdue">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-2 h-2 bg-red-400 rounded-full"></div>
-                          <span>Overdue</span>
-                        </div>
-                      </SelectItem>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="pending">🟡 Pending</SelectItem>
+                      <SelectItem value="in_progress">🔵 In Progress</SelectItem>
+                      <SelectItem value="completed">🟢 Completed</SelectItem>
+                      <SelectItem value="overdue">🔴 Overdue</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
                 {/* System Filter */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">System</Label>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-gray-600 dark:text-gray-400">System</Label>
                   <Select value={systemFilter} onValueChange={setSystemFilter}>
-                    <SelectTrigger className="h-10 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-600 border border-gray-200 dark:border-gray-600 rounded-lg">
+                    <SelectTrigger className={`h-8 text-sm ${
+                      systemFilter !== "all" 
+                        ? "bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-600" 
+                        : "bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600"
+                    } rounded-lg`}>
                       <SelectValue placeholder="All Systems" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1072,10 +1295,14 @@ export default function Tasks() {
                 </div>
 
                 {/* Assignee Filter */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Assignee</Label>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-gray-600 dark:text-gray-400">Assignee</Label>
                   <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
-                    <SelectTrigger className="h-10 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-600 border border-gray-200 dark:border-gray-600 rounded-lg">
+                    <SelectTrigger className={`h-8 text-sm ${
+                      assigneeFilter !== "all" 
+                        ? "bg-purple-50 dark:bg-purple-900/20 border-purple-300 dark:border-purple-600" 
+                        : "bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600"
+                    } rounded-lg`}>
                       <SelectValue placeholder="All Assignees" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1088,199 +1315,156 @@ export default function Tasks() {
                 </div>
 
                 {/* Priority Filter */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Priority</Label>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-gray-600 dark:text-gray-400">Priority</Label>
                   <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                    <SelectTrigger className="h-10 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-600 border border-gray-200 dark:border-gray-600 rounded-lg">
+                    <SelectTrigger className={`h-8 text-sm ${
+                      priorityFilter !== "all" 
+                        ? "bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-600" 
+                        : "bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600"
+                    } rounded-lg`}>
                       <SelectValue placeholder="All Priorities" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Priorities</SelectItem>
-                      <SelectItem value="overdue">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                          <span>Overdue</span>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="urgent">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                          <span>Urgent (≤24h)</span>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="high">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-                          <span>High (≤3 days)</span>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="medium">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                          <span>Medium (≤1 week)</span>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="low">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                          <span>Low (&gt;1 week)</span>
-                        </div>
-                      </SelectItem>
+                      <SelectItem value="overdue">🚨 Overdue</SelectItem>
+                      <SelectItem value="urgent">⚡ Urgent</SelectItem>
+                      <SelectItem value="high">🔥 High</SelectItem>
+                      <SelectItem value="medium">📋 Medium</SelectItem>
+                      <SelectItem value="low">🌱 Low</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
                 {/* Date Filter */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Created</Label>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-gray-600 dark:text-gray-400">Created</Label>
                   <Select value={dateFilter} onValueChange={setDateFilter}>
-                    <SelectTrigger className="h-10 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-600 border border-gray-200 dark:border-gray-600 rounded-lg">
+                    <SelectTrigger className={`h-8 text-sm ${
+                      dateFilter !== "all" 
+                        ? "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-300 dark:border-indigo-600" 
+                        : "bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600"
+                    } rounded-lg`}>
                       <SelectValue placeholder="All Dates" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Dates</SelectItem>
-                      <SelectItem value="today">Today</SelectItem>
-                      <SelectItem value="week">This Week</SelectItem>
-                      <SelectItem value="month">This Month</SelectItem>
-                      <SelectItem value="quarter">Last 3 Months</SelectItem>
+                      <SelectItem value="today">📅 Today</SelectItem>
+                      <SelectItem value="week">📆 This Week</SelectItem>
+                      <SelectItem value="month">🗓️ This Month</SelectItem>
+                      <SelectItem value="quarter">📊 Last 3 Months</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                {/* Search Filter */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Search</Label>
-                  <Input
-                    placeholder="Search task name..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="h-10 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-600 border border-gray-200 dark:border-gray-600 rounded-lg"
-                  />
+                {/* Enhanced Search Filter */}
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-gray-600 dark:text-gray-400">Smart Search</Label>
+                  <div className="relative">
+                    <Input
+                      placeholder="Search tasks, assignees, systems, IDs..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className={`h-8 text-sm pl-8 pr-8 transition-all duration-200 ${
+                        searchQuery 
+                          ? "bg-pink-50 dark:bg-pink-900/20 border-pink-300 dark:border-pink-600 shadow-sm" 
+                          : "bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-600"
+                      } rounded-lg focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800`}
+                    />
+                    {/* Search Icon */}
+                    <div className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400">
+                      🔍
+                    </div>
+                    {/* Clear Button */}
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-sm transition-colors rounded-full w-4 h-4 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-600"
+                        title="Clear search"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  {/* Search Help Text */}
+                  {searchQuery && (
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      {searchQuery.includes(' ') ? 
+                        `Searching for: ${searchQuery.split(' ').length} terms (AND logic)` :
+                        'Tip: Use multiple words to narrow results'
+                      }
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Filter Summary and Actions */}
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <div className="text-sm text-gray-600 dark:text-gray-400">
-                  Showing {filteredTasks.length} of {Array.isArray(tasks) ? tasks.length : 0} tasks
+              {/* Enhanced Compact Summary */}
+              <div className="flex items-center justify-between text-sm pt-3 border-t border-gray-200 dark:border-gray-700">
+                <div className="flex items-center space-x-4">
+                  <span className="text-gray-600 dark:text-gray-400">
+                    <span className="font-semibold text-blue-600 dark:text-blue-400">{filteredTasks.length}</span>
+                    /{Array.isArray(tasks) ? tasks.length : 0} tasks
+                    {searchQuery && (
+                      <span className="ml-2 px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 rounded-md text-xs">
+                        🔍 "{searchQuery}"
+                      </span>
+                    )}
+                  </span>
+                  {filteredTasks.length > 0 && (
+                    <div className="flex space-x-2 text-xs">
+                      <span className="text-red-500" title="Overdue tasks">
+                        🔴 {filteredTasks.filter(t => new Date(t.plannedTime) < new Date() && t.status !== 'completed').length}
+                      </span>
+                      <span className="text-yellow-500" title="Pending tasks">
+                        🟡 {filteredTasks.filter(t => t.status === 'pending').length}
+                      </span>
+                      <span className="text-green-500" title="Completed tasks">
+                        🟢 {filteredTasks.filter(t => t.status === 'completed').length}
+                      </span>
+                    </div>
+                  )}
+                  {searchQuery && filteredTasks.length === 0 && (
+                    <span className="text-orange-600 dark:text-orange-400 text-xs">
+                      No matches found
+                    </span>
+                  )}
                 </div>
                 
-                <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-2">
+                  {searchQuery && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => setSearchQuery("")}
+                      className="h-7 px-2 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-900/20"
+                      title="Clear search"
+                    >
+                      🔍✕
+                    </Button>
+                  )}
                   <Button 
                     variant="outline" 
                     size="sm"
-                    onClick={() => {
-                      setStatusFilter("all");
-                      setSystemFilter("all");
-                      setAssigneeFilter("all");
-                      setPriorityFilter("all");
-                      setDateFilter("all");
-                      setSearchQuery("");
-                    }}
-                    className="h-9 px-4 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-600 border border-gray-200 dark:border-gray-600 rounded-lg"
-                  >
-                    Clear Filters
-                  </Button>
-                  
-                  <Button 
-                    variant="outline" 
                     onClick={handleExportData}
                     disabled={isExporting}
-                    className="h-9 px-4 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 border border-emerald-200 dark:border-emerald-700 hover:from-emerald-100 hover:to-teal-100 dark:hover:from-emerald-900/30 dark:hover:to-teal-900/30 text-emerald-700 dark:text-emerald-300 rounded-lg"
+                    className="h-7 px-3 text-xs"
                   >
-                    <Download className="w-4 h-4 mr-2" />
-                    {isExporting ? "Exporting..." : "Export"}
+                    📥 Export
                   </Button>
-                  
                   <Button 
                     variant="outline" 
+                    size="sm"
                     onClick={() => window.location.href = '/flow-data'}
-                    className="h-9 px-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-700 hover:from-blue-100 hover:to-indigo-100 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30 text-blue-700 dark:text-blue-300 rounded-lg"
+                    className="h-7 px-3 text-xs"
                   >
-                    <Database className="w-4 h-4 mr-2" />
-                    Flow Data
+                    📊 Data
                   </Button>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Quick Filter Buttons */}
-          <div className="mb-6">
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant={priorityFilter === "overdue" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setPriorityFilter(priorityFilter === "overdue" ? "all" : "overdue")}
-                className={`h-8 px-3 rounded-full transition-all ${
-                  priorityFilter === "overdue" 
-                    ? "bg-red-500 hover:bg-red-600 text-white" 
-                    : "border-red-200 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
-                }`}
-              >
-                🚨 Overdue ({filteredTasks.filter(t => new Date(t.plannedTime) < new Date() && t.status !== 'completed').length})
-              </Button>
-              
-              <Button
-                variant={priorityFilter === "urgent" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setPriorityFilter(priorityFilter === "urgent" ? "all" : "urgent")}
-                className={`h-8 px-3 rounded-full transition-all ${
-                  priorityFilter === "urgent" 
-                    ? "bg-orange-500 hover:bg-orange-600 text-white" 
-                    : "border-orange-200 text-orange-600 hover:bg-orange-50 dark:border-orange-800 dark:text-orange-400 dark:hover:bg-orange-900/20"
-                }`}
-              >
-                ⚡ Urgent ({filteredTasks.filter(t => {
-                  const hours = (new Date(t.plannedTime).getTime() - new Date().getTime()) / (1000 * 60 * 60);
-                  return hours > 0 && hours <= 24 && t.status !== 'completed';
-                }).length})
-              </Button>
-              
-              <Button
-                variant={statusFilter === "pending" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setStatusFilter(statusFilter === "pending" ? "all" : "pending")}
-                className={`h-8 px-3 rounded-full transition-all ${
-                  statusFilter === "pending" 
-                    ? "bg-yellow-500 hover:bg-yellow-600 text-white" 
-                    : "border-yellow-200 text-yellow-600 hover:bg-yellow-50 dark:border-yellow-800 dark:text-yellow-400 dark:hover:bg-yellow-900/20"
-                }`}
-              >
-                ⏳ Pending ({filteredTasks.filter(t => t.status === 'pending').length})
-              </Button>
-              
-              <Button
-                variant={statusFilter === "completed" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setStatusFilter(statusFilter === "completed" ? "all" : "completed")}
-                className={`h-8 px-3 rounded-full transition-all ${
-                  statusFilter === "completed" 
-                    ? "bg-green-500 hover:bg-green-600 text-white" 
-                    : "border-green-200 text-green-600 hover:bg-green-50 dark:border-green-800 dark:text-green-400 dark:hover:bg-green-900/20"
-                }`}
-              >
-                ✅ Completed ({filteredTasks.filter(t => t.status === 'completed').length})
-              </Button>
-              
-              <Button
-                variant={dateFilter === "today" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setDateFilter(dateFilter === "today" ? "all" : "today")}
-                className={`h-8 px-3 rounded-full transition-all ${
-                  dateFilter === "today" 
-                    ? "bg-blue-500 hover:bg-blue-600 text-white" 
-                    : "border-blue-200 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/20"
-                }`}
-              >
-                📅 Today ({filteredTasks.filter(t => {
-                  const taskDate = new Date(t.createdAt);
-                  const today = new Date();
-                  return taskDate.toDateString() === today.toDateString();
-                }).length})
-              </Button>
-            </div>
-          </div>
+
 
           {/* Enhanced Task List */}
           <div className="space-y-6">
@@ -1303,37 +1487,91 @@ export default function Tasks() {
               <Card className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border-0 overflow-hidden">
                 <CardContent className="p-16 text-center">
                   <div className="w-24 h-24 bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <Clock className="w-12 h-12 text-blue-600 dark:text-blue-400" />
+                    {searchQuery ? (
+                      <div className="text-4xl">🔍</div>
+                    ) : (
+                      <Clock className="w-12 h-12 text-blue-600 dark:text-blue-400" />
+                    )}
                   </div>
-                  <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">No tasks found</h3>
+                  <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
+                    {searchQuery ? 'No search results' : 'No tasks found'}
+                  </h3>
                   <p className="text-gray-500 dark:text-gray-400 mb-8 text-lg">
-                    {statusFilter === "all" && systemFilter === "all" && assigneeFilter === "all" && priorityFilter === "all" && dateFilter === "all" && !searchQuery
-                      ? "You don't have any tasks assigned yet. Create a new flow to get started!"
-                      : "No tasks match your current filters. Try adjusting your filter criteria."
-                    }
+                    {searchQuery ? (
+                      <>
+                        No tasks match your search for <strong>"{searchQuery}"</strong>.<br />
+                        Try different keywords or check your spelling.
+                      </>
+                    ) : statusFilter === "all" && systemFilter === "all" && assigneeFilter === "all" && priorityFilter === "all" && dateFilter === "all" ? (
+                      "You don't have any tasks assigned yet. Create a new flow to get started!"
+                    ) : (
+                      "No tasks match your current filters. Try adjusting your filter criteria."
+                    )}
                   </p>
+                  
+                  {/* Search suggestions */}
+                  {searchQuery && (
+                    <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-700">
+                      <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2">Search Tips:</h4>
+                      <ul className="text-sm text-blue-700 dark:text-blue-300 text-left space-y-1">
+                        <li>• Search across: task names, assignees, systems, order numbers, dates</li>
+                        <li>• Use multiple words to narrow results (e.g., "john pending")</li>
+                        <li>• Try searching by date (e.g., "Oct 2025" or "yesterday")</li>
+                        <li>• Search by status: "completed", "pending", "overdue"</li>
+                      </ul>
+                    </div>
+                  )}
+                  
                   <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                    <Button 
-                      onClick={() => {
-                        setStatusFilter("all");
-                        setSystemFilter("all");
-                        setAssigneeFilter("all");
-                        setPriorityFilter("all");
-                        setDateFilter("all");
-                        setSearchQuery("");
-                      }}
-                      variant="outline"
-                      className="px-6 py-3 rounded-xl"
-                    >
-                      Clear All Filters
-                    </Button>
-                    <Button 
-                      onClick={() => window.location.href = '/flows'}
-                      className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all transform hover:scale-105"
-                    >
-                      <Plus className="w-5 h-5 mr-2" />
-                      Create New Flow
-                    </Button>
+                    {searchQuery ? (
+                      <>
+                        <Button 
+                          onClick={() => setSearchQuery("")}
+                          variant="outline"
+                          className="px-6 py-3 rounded-xl"
+                        >
+                          🔍✕ Clear Search
+                        </Button>
+                        <Button 
+                          onClick={() => {
+                            setSearchQuery("");
+                            setStatusFilter("all");
+                            setSystemFilter("all");
+                            setAssigneeFilter("all");
+                            setPriorityFilter("all");
+                            setDateFilter("all");
+                          }}
+                          variant="outline"
+                          className="px-6 py-3 rounded-xl"
+                        >
+                          🔄 Reset All Filters
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button 
+                          onClick={() => {
+                            setStatusFilter("all");
+                            setSystemFilter("all");
+                            setAssigneeFilter("all");
+                            setPriorityFilter("all");
+                            setDateFilter("all");
+                            setSearchQuery("");
+                          }}
+                          variant="outline"
+                          className="px-6 py-3 rounded-xl"
+                        >
+                          Clear All Filters
+                        </Button>
+                        <Button 
+                          onClick={() => window.location.href = '/flows'}
+                          className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all transform hover:scale-105"
+                        >
+                          <Plus className="w-5 h-5 mr-2" />
+                          Create New Flow
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -1588,341 +1826,129 @@ export default function Tasks() {
                 </div>
               </Card>
             ) : (
-              /* Card View - Original Implementation */
-              filteredTasks.map((task: any) => (
-                <Card key={task.id} className="group bg-white dark:bg-gray-800 rounded-2xl shadow-lg border-0 hover:shadow-2xl hover:scale-[1.02] transition-all duration-300 overflow-hidden">
-                  <CardContent className="p-0">
-                    {/* Task Header with Status Indicator */}
-                    <div className="p-6 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 dark:from-blue-900/20 dark:via-indigo-900/20 dark:to-purple-900/20 border-b border-blue-100 dark:border-blue-800/30">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
-                          <div className={`relative p-4 rounded-2xl shadow-lg transform group-hover:scale-110 transition-transform ${
-                            task.status === 'completed' 
-                              ? 'bg-gradient-to-br from-green-400 to-emerald-500' 
-                              : task.status === 'overdue'
-                              ? 'bg-gradient-to-br from-red-400 to-pink-500'
-                              : 'bg-gradient-to-br from-yellow-400 to-orange-500'
-                          }`}>
-                            {getStatusIcon(task.status)}
-                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-white dark:bg-gray-800 rounded-full flex items-center justify-center">
-                              <div className={`w-2 h-2 rounded-full ${
-                                task.status === 'completed' ? 'bg-green-500' 
-                                : task.status === 'overdue' ? 'bg-red-500' 
-                                : 'bg-yellow-500'
-                              } animate-pulse`}></div>
+              /* Compact Card View */
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredTasks.map((task: any) => {
+                  const priority = getPriorityInfo(task);
+                  return (
+                    <Card key={task.id} className="group bg-white dark:bg-gray-800 rounded-lg shadow-md border hover:shadow-lg transition-all duration-200 overflow-hidden">
+                      <CardContent className="p-4">
+                        {/* Compact Header */}
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center space-x-2 flex-1 min-w-0">
+                            <div className={`p-2 rounded-lg ${
+                              task.status === 'completed' 
+                                ? 'bg-green-100 dark:bg-green-900/30' 
+                                : task.status === 'overdue'
+                                ? 'bg-red-100 dark:bg-red-900/30'
+                                : 'bg-yellow-100 dark:bg-yellow-900/30'
+                            }`}>
+                              {getStatusIcon(task.status)}
                             </div>
-                          </div>
-                          <div>
-                            <div className="flex items-center space-x-2 mb-1">
-                              <h3 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-sm font-semibold text-gray-900 dark:text-white truncate">
                                 {task.taskName}
                               </h3>
-                              {(() => {
-                                const priority = getPriorityInfo(task);
-                                if (priority.level !== 'completed') {
-                                  return (
-                                    <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                      priority.color === 'red' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' :
-                                      priority.color === 'orange' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' :
-                                      priority.color === 'yellow' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300' :
-                                      priority.color === 'blue' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
-                                      'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                                    }`}>
-                                      {priority.label}
-                                    </div>
-                                  );
-                                }
-                                return null;
-                              })()}
-                            </div>
-                            <div className="flex items-center space-x-2 mt-1">
-                              <div className="px-3 py-1 bg-gradient-to-r from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 rounded-full">
-                                <p className="text-sm font-medium text-blue-700 dark:text-blue-300">
-                                  System: {task.system}
-                                </p>
-                              </div>
-                              <div className="px-3 py-1 bg-gradient-to-r from-gray-100 to-slate-100 dark:from-gray-900/30 dark:to-slate-900/30 rounded-full">
-                                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                  Due: {format(new Date(task.plannedTime), 'MMM dd, HH:mm')}
-                                </p>
-                              </div>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                                #{task.orderNumber} • {task.system}
+                              </p>
                             </div>
                           </div>
-                        </div>
-                        
-                        {/* Status Badge */}
-                        <div className={`px-4 py-2 rounded-full text-sm font-semibold uppercase tracking-wide shadow-lg ${
-                          task.status === 'completed' 
-                            ? 'bg-gradient-to-r from-green-100 to-emerald-100 dark:from-green-900/30 dark:to-emerald-900/30 text-green-800 dark:text-green-300' 
-                            : task.status === 'overdue'
-                            ? 'bg-gradient-to-r from-red-100 to-pink-100 dark:from-red-900/30 dark:to-pink-900/30 text-red-800 dark:text-red-300'
-                            : 'bg-gradient-to-r from-yellow-100 to-orange-100 dark:from-yellow-900/30 dark:to-orange-900/30 text-yellow-800 dark:text-yellow-300'
-                        }`}>
-                          {task.status}
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Flow Context Information - WHO, WHAT, WHEN */}
-                    <div className="p-6">
-                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-4">
-                        <div className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-3 flex items-center">
-                          <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                          📋 Flow Context
-                        </div>
-                        
-                        {/* WHEN, ORDER */}
-                        <div className="grid grid-cols-1 gap-2 text-sm mb-3">
-                          {task.flowInitiatedAt && (
-                            <div className="flex items-start">
-                              <span className="font-medium text-blue-700 dark:text-blue-300 min-w-[50px]">WHEN:</span>
-                              <span className="text-blue-600 dark:text-blue-400">{format(new Date(task.flowInitiatedAt), 'MMM dd, yyyy HH:mm')}</span>
-                            </div>
-                          )}
-                          
-                          <div className="flex items-start">
-                            <span className="font-medium text-blue-700 dark:text-blue-300 min-w-[50px]">ORDER:</span>
-                            <span className="text-blue-600 dark:text-blue-400 font-mono">#{task.orderNumber}</span>
+                          <div className={`px-2 py-1 rounded text-xs font-medium ${
+                            task.status === 'completed' 
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' 
+                              : task.status === 'overdue'
+                              ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                              : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300'
+                          }`}>
+                            {task.status.replace('_', ' ')}
                           </div>
                         </div>
-                        
-                        {/* Data View Button and Flow Data */}
-                        <div className="pt-3 border-t border-blue-200 dark:border-blue-700">
-                          {/* Data View Button */}
-                          <div className="flex justify-between items-center mb-3">
-                            <div className="font-medium text-blue-700 dark:text-blue-300 text-sm flex items-center">
-                              <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                              📄 Flow Data
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                const newExpanded = new Set(expandedDataTasks);
-                                if (newExpanded.has(task.id)) {
-                                  newExpanded.delete(task.id);
-                                } else {
-                                  newExpanded.add(task.id);
-                                }
-                                setExpandedDataTasks(newExpanded);
-                              }}
-                              className="h-8 px-3 text-xs bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 border-emerald-200 dark:border-emerald-700 hover:from-emerald-100 hover:to-teal-100 dark:hover:from-emerald-900/30 dark:hover:to-teal-900/30 text-emerald-700 dark:text-emerald-300 rounded-lg"
-                            >
-                              <Database className="h-3 w-3 mr-1" />
-                              {expandedDataTasks.has(task.id) ? 'Hide Data' : 'View Data'}
-                            </Button>
+
+                        {/* Task Info */}
+                        <div className="space-y-2 mb-3">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-gray-500 dark:text-gray-400">Assignee:</span>
+                            <span className="text-gray-900 dark:text-white truncate ml-2 font-medium">
+                              {task.doerEmail}
+                            </span>
                           </div>
-                          
-                          {/* Expandable Data Section */}
-                          {expandedDataTasks.has(task.id) && (
-                            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 text-xs border border-gray-200 dark:border-gray-600 shadow-sm max-h-64 overflow-y-auto">
-                              {(() => {
-                                // Get all tasks from the same flow, sorted by creation date
-                                const flowTasks = (tasks as any[])?.filter(t => t.flowId === task.flowId && t.status === 'completed')
-                                  .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) || [];
-                                
-                                // Get all form responses for this flow
-                                const flowResponses = (formResponses as any[])?.filter(fr => 
-                                  flowTasks.some(ft => ft.id === fr.taskId)
-                                ) || [];
-                                
-                                const allFormData: { formName: string, data: any, taskName: string, order: number }[] = [];
-                                
-                                // Add initial form data if available
-                                if (task.flowInitialFormData) {
-                                  allFormData.push({
-                                    formName: task.formId || 'Initial Form',
-                                    data: task.flowInitialFormData,
-                                    taskName: 'Initial Task',
-                                    order: 0
-                                  });
-                                }
-                                
-                                // Add completed task responses
-                                flowTasks.forEach((flowTask, index) => {
-                                  const taskResponse = flowResponses.find(fr => fr.taskId === flowTask.id);
-                                  if (taskResponse && taskResponse.formData) {
-                                    allFormData.push({
-                                      formName: flowTask.formId || `Task ${index + 1} Form`,
-                                      data: taskResponse.formData,
-                                      taskName: flowTask.taskName || `Task ${index + 1}`,
-                                      order: index + 1
-                                    });
-                                  }
-                                });
-                                
-                                return allFormData.map((formItem, formIndex) => (
-                                  <div key={formIndex} className="mb-4 border-b border-gray-200 dark:border-gray-600 last:border-b-0 pb-4 last:pb-0">
-                                    {/* Form Name Section */}
-                                    <div className="mb-2 p-2 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center space-x-2">
-                                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                                          <div className="font-semibold text-green-800 dark:text-green-200 text-xs">
-                                            Form: {formItem.formName}
-                                          </div>
-                                        </div>
-                                        <div className="text-xs text-green-700 dark:text-green-300">
-                                          {formItem.taskName}
-                                        </div>
-                                      </div>
-                                    </div>
-                                    
-                                    {/* Form Data Section */}
-                                    <div className="space-y-2">
-                                      {Object.entries(getReadableFormData(formItem.data, formItem.formName)).map(([key, value]) => {
-                                        // Get the original form template to determine if this is a table field
-                                        const template = (formTemplates as any[])?.find((t: any) => t.formId === formItem.formName);
-                                        const questions = template?.questions ? (typeof template.questions === 'string' ? JSON.parse(template.questions) : template.questions) : [];
-                                        const field = questions?.find((f: any) => f.id === key);
-                                        const label = key; // Already processed by getReadableFormData
-                                        
-                                        return (
-                                          <div key={key} className="mb-2 p-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                            <div className="font-semibold text-gray-800 dark:text-gray-200 mb-1 text-xs bg-blue-100 dark:bg-blue-900 px-2 py-1 rounded">
-                                              {label}
-                                            </div>
-                                            
-                                            {/* Check if this is HTML table data */}
-                                            {typeof value === 'string' && value.includes('<table') ? (
-                                              <div dangerouslySetInnerHTML={{ __html: value }} />
-                                            ) : (
-                                              <div className="text-gray-900 dark:text-gray-100 text-xs pl-1">
-                                                {Array.isArray(value) ? value.join(', ') : String(value)}
-                                              </div>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                ));
-                              })()}
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-gray-500 dark:text-gray-400">Due:</span>
+                            <span className="text-gray-900 dark:text-white ml-2 font-medium">
+                              {format(new Date(task.plannedTime), 'MMM dd, HH:mm')}
+                            </span>
+                          </div>
+                          {priority.level !== 'completed' && (
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-gray-500 dark:text-gray-400">Priority:</span>
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                priority.color === 'red' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' :
+                                priority.color === 'orange' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' :
+                                priority.color === 'yellow' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300' :
+                                priority.color === 'blue' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
+                                'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                              }`}>
+                                {priority.label}
+                              </span>
                             </div>
                           )}
                         </div>
-                      </div>
-                    </div>
-                    
-                    {/* Action Buttons Section */}
-                    <div className="p-6 bg-gray-50 dark:bg-gray-900/30 border-t border-gray-100 dark:border-gray-700">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className="text-sm text-gray-600 dark:text-gray-400">
-                            Order #{task.orderNumber} • Flow: {task.flowId?.slice(-8)}
-                          </div>
-                        </div>
-                        
-                          {task.formId && task.formId.trim() !== "" && (
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => handleFillForm(task)}
-                              className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border-2 border-purple-200 dark:border-purple-700 hover:from-purple-100 hover:to-pink-100 dark:hover:from-purple-900/30 dark:hover:to-pink-900/30 text-purple-700 dark:text-purple-300 rounded-xl shadow-sm hover:shadow-md transition-all"
-                            >
-                              <Edit className="w-4 h-4 mr-2" />
-                              Fill Form
-                            </Button>
-                          )}
-                          <Dialog>
-                            <DialogTrigger asChild>
+
+                        {/* Action Buttons */}
+                        <div className="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-700">
+                          <div className="flex items-center space-x-2">
+                            {task.formId && task.formId.trim() !== "" && (
                               <Button 
-                                variant="ghost" 
+                                variant="outline" 
                                 size="sm"
-                                onClick={() => setSelectedTask(task)}
-                                className="bg-gradient-to-r from-gray-50 to-slate-50 dark:from-gray-800 dark:to-slate-800 border-2 border-gray-200 dark:border-gray-600 hover:from-gray-100 hover:to-slate-100 dark:hover:from-gray-700 dark:hover:to-slate-700 text-gray-700 dark:text-gray-300 rounded-xl shadow-sm hover:shadow-md transition-all"
+                                onClick={() => handleFillForm(task)}
+                                className="h-7 px-2 text-xs"
                               >
-                                <Eye className="w-4 h-4" />
+                                <Edit className="w-3 h-3 mr-1" />
+                                Form
                               </Button>
-                            </DialogTrigger>
-                            <DialogContent className="max-w-2xl">
-                            <DialogHeader>
-                              <DialogTitle>Task Details</DialogTitle>
-                            </DialogHeader>
-                            {selectedTask && (
-                              <div className="space-y-4">
-                                <div>
-                                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                                    {selectedTask.taskName}
-                                  </h3>
-                                  <p className="text-gray-600">
-                                    Task in {selectedTask.system} workflow
-                                  </p>
-                                </div>
-                                
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div>
-                                    <Label className="text-sm text-gray-600">Flow ID</Label>
-                                    <p className="font-medium">{selectedTask.flowId}</p>
-                                  </div>
-                                  <div>
-                                    <Label className="text-sm text-gray-600">Assigned To</Label>
-                                    <p className="font-medium">{selectedTask.doerEmail}</p>
-                                  </div>
-                                  <div>
-                                    <Label className="text-sm text-gray-600">Due Date</Label>
-                                    <p className="font-medium">
-                                      {new Date(selectedTask.plannedTime).toLocaleDateString()}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <Label className="text-sm text-gray-600">Status</Label>
-                                    <Badge variant={
-                                      selectedTask.status === 'completed' ? 'default' :
-                                      selectedTask.status === 'in_progress' ? 'secondary' :
-                                      selectedTask.status === 'overdue' ? 'destructive' : 'outline'
-                                    }>
-                                      {selectedTask.status.replace('_', ' ')}
-                                    </Badge>
-                                  </div>
-                                </div>
-                                
-                                {selectedTask.formId && selectedTask.formId.trim() !== "" && (
-                                  <div>
-                                    <Label className="text-sm text-gray-600 mb-2 block">Associated Form</Label>
-                                    <div className="border border-gray-200 rounded-lg p-4">
-                                      <h4 className="font-medium mb-2">Form ID: {selectedTask.formId}</h4>
-                                      <p className="text-sm text-gray-600 mb-3">
-                                        Complete the required form for this task
-                                      </p>
-                                      <Button size="sm" onClick={() => handleFillForm(selectedTask)}>
-                                        <Edit className="w-4 h-4 mr-2" />
-                                        Fill Form
-                                      </Button>
-                                    </div>
-                                  </div>
-                                )}
-                                
-                                <div className="flex justify-end space-x-3 pt-4">
-                                  <Button variant="outline">Close</Button>
-                                  {isTaskTransferable(selectedTask) && selectedTask.status !== 'completed' && (
-                                    <Button 
-                                      variant="outline"
-                                      onClick={() => handleTransferClick(selectedTask)}
-                                    >
-                                      <UserCheck className="w-4 h-4 mr-2" />
-                                      Transfer
-                                    </Button>
-                                  )}
-                                  {selectedTask.status !== "completed" && (
-                                    <Button 
-                                      onClick={() => handleCompleteClick(selectedTask)}
-                                      disabled={completeTaskMutation.isPending}
-                                    >
-                                      <CheckCircle className="w-4 h-4 mr-2" />
-                                      Mark Complete
-                                    </Button>
-                                  )}
-                                </div>
-                              </div>
                             )}
-                            </DialogContent>
-                          </Dialog>
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleViewFlowData(task)}
+                              className="h-7 px-2 text-xs"
+                            >
+                              <Database className="w-3 h-3 mr-1" />
+                              Data
+                            </Button>
+                          </div>
+                          
+                          <div className="flex items-center space-x-1">
+                            {isTaskTransferable(task) && task.status !== 'completed' && (
+                              <Button 
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleTransferClick(task)}
+                                className="h-7 px-2 text-xs"
+                              >
+                                <UserCheck className="w-3 h-3" />
+                              </Button>
+                            )}
+                            {task.status !== "completed" && (
+                              <Button 
+                                size="sm"
+                                onClick={() => handleCompleteClick(task)}
+                                disabled={completeTaskMutation.isPending}
+                                className="h-7 px-2 text-xs bg-green-600 hover:bg-green-700"
+                              >
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                                Complete
+                              </Button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                  </CardContent>
-                </Card>
-              ))
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>

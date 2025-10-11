@@ -1,12 +1,32 @@
 {
-  "name": "rest-express",
-  "version": "1.0.0",
+  "name": "process-sutra-2026",
+  "version": "3.2.0",
+  "description": "Modern workflow automation platform for business process management",
   "type": "module",
   "license": "MIT",
+  "author": "ProcessSutra Team",
+  "homepage": "https://github.com/jating0000la/Process-Sutra-2026",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jating0000la/Process-Sutra-2026.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jating0000la/Process-Sutra-2026/issues"
+  },
+  "keywords": [
+    "workflow",
+    "automation",
+    "forms",
+    "business-process",
+    "react",
+    "nodejs",
+    "typescript"
+  ],
   "scripts": {
     "dev": "cross-env NODE_ENV=development tsx server/index.ts",
-    "build": "vite build && esbuild server/index.prod.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "build": "vite build && esbuild server/index.prod.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/index.js",
     "start": "NODE_ENV=production node dist/index.js",
+    "start:prod": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",

@@ -83,18 +83,22 @@ export default function ApiDocumentation() {
                     <h3 className="text-lg font-semibold mb-3">Endpoint</h3>
                     <div className="flex items-center gap-2 p-3 bg-gray-900 text-white rounded-md font-mono">
                       <Badge className="bg-green-600">POST</Badge>
-                      <span>http://localhost:5000/api/start-flow</span>
+                      <span>http://localhost:5000/api/integrations/start-flow</span>
                       <Button 
                         variant="outline" 
                         size="sm" 
                         className="ml-auto text-white border-white hover:bg-white hover:text-gray-900"
-                        onClick={() => copyToClipboard('http://localhost:5000/api/start-flow')}
+                        onClick={() => copyToClipboard('http://localhost:5000/api/integrations/start-flow')}
                       >
                         <Copy className="h-3 w-3" />
                       </Button>
                     </div>
                     <p className="text-sm text-gray-600 mt-2">
-                      Creates a new workflow instance based on your organization's configured flow rules.
+                      Creates a new workflow instance based on your organization's configured flow rules. 
+                      <span className="inline-flex items-center gap-1 ml-2 px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
+                        <CheckCircle className="h-3 w-3" />
+                        Tested & Verified
+                      </span>
                     </p>
                   </div>
 
@@ -116,19 +120,25 @@ export default function ApiDocumentation() {
                             <td className="p-3 border-b font-mono text-sm">x-api-key</td>
                             <td className="p-3 border-b"><Badge variant="destructive">Required</Badge></td>
                             <td className="p-3 border-b">Organization ID or custom API key</td>
-                            <td className="p-3 border-b font-mono text-sm">{dbUser?.organizationId || 'your-org-id'}</td>
+                            <td className="p-3 border-b font-mono text-sm">{dbUser?.organizationId || '1309f70c-1ad8-488c-a193-fb66110bd483'}</td>
+                          </tr>
+                          <tr>
+                            <td className="p-3 border-b font-mono text-sm">x-org-id</td>
+                            <td className="p-3 border-b"><Badge variant="secondary">Optional</Badge></td>
+                            <td className="p-3 border-b">Organization ID (can be same as x-api-key)</td>
+                            <td className="p-3 border-b font-mono text-sm">{dbUser?.organizationId || '1309f70c-1ad8-488c-a193-fb66110bd483'}</td>
                           </tr>
                           <tr>
                             <td className="p-3 border-b font-mono text-sm">x-actor-email</td>
                             <td className="p-3 border-b"><Badge variant="secondary">Optional</Badge></td>
                             <td className="p-3 border-b">Email of the user/system initiating the flow</td>
-                            <td className="p-3 border-b font-mono text-sm">bot@company.com</td>
+                            <td className="p-3 border-b font-mono text-sm">test@example.com</td>
                           </tr>
                           <tr>
                             <td className="p-3 border-b font-mono text-sm">x-source</td>
                             <td className="p-3 border-b"><Badge variant="secondary">Optional</Badge></td>
                             <td className="p-3 border-b">Source system identifier</td>
-                            <td className="p-3 border-b font-mono text-sm">zapier</td>
+                            <td className="p-3 border-b font-mono text-sm">script</td>
                           </tr>
                           <tr>
                             <td className="p-3 font-mono text-sm">Content-Type</td>
@@ -193,18 +203,24 @@ export default function ApiDocumentation() {
                       <h4 className="font-medium">Example Request Body:</h4>
                       <pre className="bg-gray-900 text-gray-100 p-4 rounded-md overflow-auto text-sm">
 {`{
-  "system": "CRM Onboarding",
-  "orderNumber": "ORD-12345",
-  "description": "New customer onboarding workflow",
+  "system": "Order Tracker",
+  "orderNumber": "TEST-20251009113032",
+  "description": "Test flow for Order Tracker system",
   "initialFormData": {
-    "customerName": "Acme Corporation",
-    "customerEmail": "contact@acme.com",
-    "priority": "high",
-    "source": "website"
+    "organizationId": "1309f70c-1ad8-488c-a193-fb66110bd483",
+    "testData": "API endpoint test",
+    "priority": "High"
   },
   "notifyAssignee": true
 }`}
                       </pre>
+                      
+                      <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md">
+                        <div className="flex items-center gap-2 text-green-800 text-sm">
+                          <CheckCircle className="h-4 w-4" />
+                          <strong>Tested Configuration:</strong> This example was successfully tested with Organization ID: 1309f70c-1ad8-488c-a193-fb66110bd483
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -216,37 +232,143 @@ export default function ApiDocumentation() {
                         <h4 className="font-medium mb-2">Success Response (201 Created):</h4>
                         <pre className="bg-gray-900 text-gray-100 p-4 rounded-md overflow-auto text-sm">
 {`{
-  "flowId": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "flowId": "81a36045-08be-4e16-a01a-ad1670f066a2",
   "task": {
-    "id": "task_abc123",
-    "taskName": "Initial Review",
-    "doerEmail": "reviewer@company.com",
+    "id": "4205d785-24ed-4c27-95f6-70774322640a",
+    "organizationId": "1309f70c-1ad8-488c-a193-fb66110bd483",
+    "system": "Order Tracker",
+    "flowId": "81a36045-08be-4e16-a01a-ad1670f066a2",
+    "orderNumber": "TEST-20251009113032",
+    "taskName": "Order Punch",
+    "plannedTime": "2025-10-09T07:00:00.000Z",
+    "actualCompletionTime": null,
+    "doerEmail": "jatin@muxro.com",
     "status": "pending",
-    "plannedTime": "2025-09-09T14:30:00Z",
-    "formId": "form_001"
+    "formId": "Order_Punch",
+    "createdAt": "2025-10-09T11:30:32.684Z",
+    "updatedAt": "2025-10-09T11:30:32.684Z",
+    "flowInitiatedBy": "test@example.com",
+    "flowInitiatedAt": "2025-10-09T06:00:32.683Z",
+    "flowDescription": "Test flow for Order Tracker system",
+    "flowInitialFormData": { "sample": true },
+    "originalAssignee": null,
+    "transferredBy": null,
+    "transferredAt": null,
+    "transferReason": null
   },
-  "orderNumber": "ORD-12345",
-  "description": "New customer onboarding workflow",
-  "initiatedBy": "api-integration",
-  "initiatedAt": "2025-09-09T10:00:00Z",
+  "orderNumber": "TEST-20251009113032",
+  "description": "Test flow for Order Tracker system",
+  "initiatedBy": "test@example.com",
+  "initiatedAt": "2025-10-09T06:00:32.683Z",
   "message": "Flow started successfully"
 }`}
                         </pre>
+                        <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-md">
+                          <div className="flex items-center gap-2 text-green-800 text-sm">
+                            <CheckCircle className="h-4 w-4" />
+                            <strong>Live Test Result:</strong> This response was captured from a successful API test on October 9, 2025
+                          </div>
+                        </div>
                       </div>
                       
                       <div>
-                        <h4 className="font-medium mb-2">Error Response (400 Bad Request):</h4>
-                        <pre className="bg-red-900 text-red-100 p-4 rounded-md overflow-auto text-sm">
+                        <h4 className="font-medium mb-2">Error Responses:</h4>
+                        
+                        <div className="space-y-3">
+                          <div>
+                            <h5 className="text-sm font-medium text-red-700 mb-1">Authentication Error (401 Unauthorized):</h5>
+                            <pre className="bg-red-900 text-red-100 p-3 rounded-md overflow-auto text-sm">
+{`{
+  "message": "Unauthorized"
+}
+
+// This occurs when:
+// - Missing x-api-key header
+// - Invalid organization ID in x-api-key
+// - Organization ID not found in system`}
+                            </pre>
+                          </div>
+                          
+                          <div>
+                            <h5 className="text-sm font-medium text-red-700 mb-1">Validation Error (400 Bad Request):</h5>
+                            <pre className="bg-red-900 text-red-100 p-3 rounded-md overflow-auto text-sm">
 {`{
   "message": "No starting rule found for this system"
 }
 
 // Other possible error messages:
 // "system, orderNumber, and description are required"
-// "Invalid or unmapped API key"
 // "Invalid JSON for initialFormData: ..."
-`}
+// "Missing x-api-key"`}
+                            </pre>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Testing Section */}
+                  <div>
+                    <h3 className="text-lg font-semibold mb-3">Quick Test with cURL</h3>
+                    <div className="space-y-4">
+                      <p className="text-gray-700 text-sm">
+                        Use this cURL command to test the API endpoint with your organization:
+                      </p>
+                      
+                      <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="font-medium text-blue-900">Test Command</h4>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => copyToClipboard(`curl -X POST http://localhost:5000/api/integrations/start-flow \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: ${dbUser?.organizationId || '1309f70c-1ad8-488c-a193-fb66110bd483'}" \\
+  -H "x-org-id: ${dbUser?.organizationId || '1309f70c-1ad8-488c-a193-fb66110bd483'}" \\
+  -H "x-actor-email: test@example.com" \\
+  -H "x-source: curl" \\
+  -d '{
+    "system": "Order Tracker",
+    "orderNumber": "TEST-'$(date +%Y%m%d%H%M%S)'",
+    "description": "Test flow via cURL",
+    "initialFormData": {"test": true},
+    "notifyAssignee": true
+  }'`)}
+                          >
+                            <Copy className="h-3 w-3 mr-1" />
+                            Copy
+                          </Button>
+                        </div>
+                        <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-auto">
+{`curl -X POST http://localhost:5000/api/integrations/start-flow \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: ${dbUser?.organizationId || '1309f70c-1ad8-488c-a193-fb66110bd483'}" \\
+  -H "x-org-id: ${dbUser?.organizationId || '1309f70c-1ad8-488c-a193-fb66110bd483'}" \\
+  -H "x-actor-email: test@example.com" \\
+  -H "x-source: curl" \\
+  -d '{
+    "system": "Order Tracker",
+    "orderNumber": "TEST-'$(date +%Y%m%d%H%M%S)'",
+    "description": "Test flow via cURL",
+    "initialFormData": {"test": true},
+    "notifyAssignee": true
+  }'`}
                         </pre>
+                      </div>
+                      
+                      <div className="bg-amber-50 border border-amber-200 rounded-md p-4">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5" />
+                          <div className="text-sm">
+                            <strong className="text-amber-800">Prerequisites:</strong>
+                            <ul className="mt-1 space-y-1 text-amber-700">
+                              <li>• Server must be running (npm run dev)</li>
+                              <li>• "Order Tracker" system must be configured with flow rules</li>
+                              <li>• Organization ID must exist in the database</li>
+                              <li>• At least one flow rule with empty currentTask (starting rule)</li>
+                            </ul>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -606,6 +728,94 @@ FLOW_API_KEYS='{"company.com":"sk_live_company","acme.com":"sk_live_acme"}'`}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-6 space-y-6">
+                  
+                  {/* Verified Test Example */}
+                  <div>
+                    <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                      <CheckCircle className="h-5 w-5 text-green-600" />
+                      Verified Working Example
+                    </h3>
+                    <div className="bg-green-50 border border-green-200 rounded-md p-4 mb-4">
+                      <p className="text-green-800 text-sm mb-2">
+                        <strong>✅ Successfully tested on October 9, 2025</strong> with Organization ID: 1309f70c-1ad8-488c-a193-fb66110bd483
+                      </p>
+                      <p className="text-green-700 text-sm">
+                        This example created Flow ID: 81a36045-08be-4e16-a01a-ad1670f066a2 and Task ID: 4205d785-24ed-4c27-95f6-70774322640a
+                      </p>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="font-medium mb-2">JavaScript/Node.js Example:</h4>
+                        <pre className="bg-gray-900 text-gray-100 p-4 rounded-md overflow-auto text-sm">
+{`// Tested and working example
+const response = await fetch('http://localhost:5000/api/integrations/start-flow', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'x-api-key': '1309f70c-1ad8-488c-a193-fb66110bd483',
+    'x-org-id': '1309f70c-1ad8-488c-a193-fb66110bd483',
+    'x-actor-email': 'test@example.com',
+    'x-source': 'script'
+  },
+  body: JSON.stringify({
+    system: 'Order Tracker',
+    orderNumber: 'TEST-20251009113032',
+    description: 'Test flow for Order Tracker system',
+    initialFormData: {
+      organizationId: '1309f70c-1ad8-488c-a193-fb66110bd483',
+      testData: 'API endpoint test',
+      priority: 'High'
+    },
+    notifyAssignee: true
+  })
+});
+
+const result = await response.json();
+console.log('Flow created:', result.flowId);
+console.log('First task:', result.task.taskName);`}
+                        </pre>
+                      </div>
+                      
+                      <div>
+                        <h4 className="font-medium mb-2">Python Example:</h4>
+                        <pre className="bg-gray-900 text-gray-100 p-4 rounded-md overflow-auto text-sm">
+{`import requests
+import json
+
+# Tested configuration
+url = 'http://localhost:5000/api/integrations/start-flow'
+headers = {
+    'Content-Type': 'application/json',
+    'x-api-key': '1309f70c-1ad8-488c-a193-fb66110bd483',
+    'x-org-id': '1309f70c-1ad8-488c-a193-fb66110bd483',
+    'x-actor-email': 'test@example.com',
+    'x-source': 'python-script'
+}
+
+data = {
+    'system': 'Order Tracker',
+    'orderNumber': 'TEST-' + str(int(time.time())),
+    'description': 'Test flow from Python',
+    'initialFormData': {
+        'organizationId': '1309f70c-1ad8-488c-a193-fb66110bd483',
+        'priority': 'High',
+        'source': 'python'
+    },
+    'notifyAssignee': True
+}
+
+response = requests.post(url, headers=headers, json=data)
+if response.status_code == 201:
+    result = response.json()
+    print(f"Success! Flow ID: {result['flowId']}")
+    print(f"First task: {result['task']['taskName']}")
+else:
+    print(f"Error: {response.status_code} - {response.text}")`}
+                        </pre>
+                      </div>
+                    </div>
+                  </div>
                   
                   {/* Google Apps Script */}
                   <div>

@@ -1,0 +1,75 @@
+# Docker Compose for local development and testing
+# Use this to test your container setup before deploying to GCP
+
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: processsutra-postgres
+    environment:
+      POSTGRES_DB: processsutra
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    networks:
+      - processsutra-network
+
+  # MongoDB Database
+  mongodb:
+    image: mongo:7
+    container_name: processsutra-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+      MONGO_INITDB_DATABASE: processsutra
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - processsutra-network
+
+  # Redis for sessions (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: processsutra-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - processsutra-network
+
+  # ProcessSutra Application
+  app:
+    build: .
+    container_name: processsutra-app
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:admin@postgres:5432/processsutra
+      MONGODB_URI: mongodb://admin:admin123@mongodb:27017/processsutra?authSource=admin
+      REDIS_URL: redis://redis:6379
+      SESSION_SECRET: your_secure_session_secret_here
+      PORT: 3000
+    depends_on:
+      - postgres
+      - mongodb
+    networks:
+      - processsutra-network
+    volumes:
+      - ./uploads:/app/uploads
+
+networks:
+  processsutra-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  mongodb_data:
