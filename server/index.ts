@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import { createServer } from "http";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 // @ts-ignore - JS helper with runtime side-effects
@@ -65,24 +66,46 @@ app.use((req, res, next) => {
     // Serve on PORT if provided, otherwise prefer 5000 for local dev to avoid common 3000 conflicts
     const preferred = process.env.PORT ? parseInt(process.env.PORT, 10) : 5000;
 
-    const listen = (p: number) => {
-      const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1';
-      server.listen(p, host, () => {
-        log(`serving on ${host}:${p}`);
-        log(`Health check available at: http://${host}:${p}/api/health`);
-      }).on('error', (err: any) => {
-        if (err?.code === 'EADDRINUSE') {
-          const next = p + 1;
-          log(`port ${p} in use, trying ${next}…`);
-          listen(next);
-        } else {
-          console.error('Server failed to start:', err);
-          process.exit(1);
-        }
+    const findAvailablePort = async (startPort: number): Promise<number> => {
+      return new Promise((resolve, reject) => {
+        const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1';
+        
+        const tryPort = (port: number) => {
+          // Create a temporary server to test port availability
+          const testServer = createServer();
+          
+          testServer.listen(port, host, () => {
+            testServer.close(() => {
+              resolve(port);
+            });
+          });
+
+          testServer.on('error', (err: any) => {
+            if (err?.code === 'EADDRINUSE') {
+              log(`port ${port} in use, trying ${port + 1}…`);
+              tryPort(port + 1);
+            } else {
+              reject(err);
+            }
+          });
+        };
+
+        tryPort(startPort);
       });
     };
 
-    listen(preferred);
+    try {
+      const availablePort = await findAvailablePort(preferred);
+      const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1';
+      
+      server.listen(availablePort, host, () => {
+        log(`serving on ${host}:${availablePort}`);
+        log(`Health check available at: http://${host}:${availablePort}/api/health`);
+      });
+    } catch (error) {
+      console.error('Failed to find available port:', error);
+      process.exit(1);
+    }
   } catch (error) {
     console.error('Failed to initialize server:', error);
     // Don't exit immediately, let Railway retry

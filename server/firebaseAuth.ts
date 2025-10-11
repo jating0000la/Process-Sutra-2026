@@ -33,13 +33,17 @@ if (!getApps().length) {
         console.log('Firebase Admin initialized with project ID only');
       } else {
         console.warn('Firebase credentials are missing. Some authentication features may not work.');
-        // Initialize with the project ID from the frontend config for development
+        // Initialize with the project ID from the environment variables
         if (process.env.NODE_ENV === 'development') {
-          const fallbackProjectId = 'taskflowpro-c62c1'; // Hardcoded fallback from .env
-          initializeApp({
-            projectId: fallbackProjectId,
-          });
-          console.log(`Firebase Admin initialized with fallback project ID: ${fallbackProjectId}`);
+          const fallbackProjectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
+          if (fallbackProjectId) {
+            initializeApp({
+              projectId: fallbackProjectId,
+            });
+            console.log(`Firebase Admin initialized with fallback project ID: ${fallbackProjectId}`);
+          } else {
+            console.error('No Firebase project ID found in environment variables');
+          }
         }
       }
     }
