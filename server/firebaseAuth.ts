@@ -6,15 +6,13 @@ import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
 
 // Initialize Firebase Admin (only once)
+let firebaseInitialized = false;
 if (!getApps().length) {
   try {
-    // For production, you would use a service account key
-    // For local development, we'll use the service account credentials from .env
     const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
     const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
     const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
     
-    // Check if we have all required Firebase credentials
     if (projectId && clientEmail && privateKey) {
       initializeApp({
         credential: cert({
@@ -23,40 +21,33 @@ if (!getApps().length) {
           privateKey
         }),
       });
-      console.log('Firebase Admin initialized with service account credentials');
+      firebaseInitialized = true;
+      console.log('✅ Firebase Admin initialized successfully');
+    } else if (projectId) {
+      initializeApp({ projectId });
+      firebaseInitialized = true;
+      console.log('✅ Firebase Admin initialized with project ID only');
     } else {
-      // If we're missing any credentials, initialize with just the project ID
-      if (projectId) {
-        initializeApp({
-          projectId,
-        });
-        console.log('Firebase Admin initialized with project ID only');
-      } else {
-        console.warn('Firebase credentials are missing. Some authentication features may not work.');
-        // Initialize with the project ID from the environment variables
-        if (process.env.NODE_ENV === 'development') {
-          const fallbackProjectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
-          if (fallbackProjectId) {
-            initializeApp({
-              projectId: fallbackProjectId,
-            });
-            console.log(`Firebase Admin initialized with fallback project ID: ${fallbackProjectId}`);
-          } else {
-            console.error('No Firebase project ID found in environment variables');
-          }
-        }
-      }
+      console.warn('⚠️ Firebase credentials missing - authentication disabled');
     }
   } catch (error) {
-    console.error('Error initializing Firebase Admin:', error);
-    // In development mode, continue without Firebase
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('Continuing without Firebase Admin in development mode');
-    }
+    console.error('❌ Firebase initialization failed:', error);
+    firebaseInitialized = false;
   }
 }
 
-const adminAuth = getAuth();
+let adminAuth: any = null;
+
+// Initialize adminAuth after Firebase app is initialized
+if (firebaseInitialized && getApps().length > 0) {
+  try {
+    adminAuth = getAuth();
+    console.log('✅ Firebase Auth ready');
+  } catch (error) {
+    console.warn('⚠️ Firebase Auth failed:', error);
+    adminAuth = null;
+  }
+}
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
@@ -199,11 +190,55 @@ export async function setupAuth(app: Express) {
     try {
       const { idToken, uid, email, displayName, photoURL } = req.body;
 
+      // Development bypass when Firebase is not available
+      if (process.env.NODE_ENV === 'development' && !adminAuth) {
+        const userEmail = email || 'dev@test.com';
+        const userName = displayName || 'Dev User';
+        
+        const organization = await getOrCreateOrganization(userEmail);
+        let dbUser = await storage.getUserByEmail(userEmail);
+        
+        if (!dbUser) {
+          const orgUserCount = await storage.getOrganizationUserCount(organization.id);
+          dbUser = await storage.createUser({
+            email: userEmail,
+            firstName: userName.split(' ')[0] || 'Dev',
+            lastName: userName.split(' ')[1] || 'User',
+            organizationId: organization.id,
+            role: orgUserCount === 0 ? 'admin' : 'user',
+            status: 'active',
+            lastLoginAt: new Date(),
+          });
+        }
+
+        (req.session as any).user = {
+          id: dbUser.id,
+          email: dbUser.email,
+          claims: { sub: dbUser.id, email: dbUser.email },
+        };
+
+        return res.json({ 
+          success: true, 
+          user: {
+            id: dbUser.id,
+            email: dbUser.email,
+            firstName: dbUser.firstName,
+            lastName: dbUser.lastName,
+            role: dbUser.role,
+            organizationId: (dbUser as any).organizationId,
+          }
+        });
+      }
+
       if (!idToken) {
         return res.status(400).json({ message: 'ID token required' });
       }
 
       // Verify the Firebase ID token
+      if (!adminAuth) {
+        return res.status(503).json({ message: 'Firebase authentication not available' });
+      }
+      
       let decodedToken;
       try {
         decodedToken = await adminAuth.verifyIdToken(idToken);
@@ -292,6 +327,75 @@ export async function setupAuth(app: Express) {
       res.status(500).json({ message: 'Failed to fetch user' });
     }
   });
+
+  // Login route - return auth status
+  app.get('/api/login', (req, res) => {
+    res.json({ message: 'Authentication required', status: 'auth_required' });
+  });
+
+  // Serve dev login page
+  if (process.env.NODE_ENV === 'development') {
+    app.get('/dev-login', (req, res) => {
+      res.sendFile('/Users/divyansh/Desktop/PRS/Process-Sutra-2026/dev-login.html');
+    });
+  }
+
+  // Development login bypass (only in development)
+  if (process.env.NODE_ENV === 'development') {
+    app.post('/api/auth/dev-login', async (req, res) => {
+      try {
+        const { email } = req.body;
+        
+        if (!email) {
+          return res.status(400).json({ message: 'Email required for dev login' });
+        }
+
+        // Get or create organization and user for development
+        const organization = await getOrCreateOrganization(email);
+        
+        let dbUser = await storage.getUserByEmail(email);
+        
+        if (!dbUser) {
+          // Create new user for development
+          const orgUserCount = await storage.getOrganizationUserCount(organization.id);
+          const role = orgUserCount === 0 ? 'admin' : 'user';
+          
+          dbUser = await storage.createUser({
+            email: email,
+            firstName: email.split('@')[0],
+            lastName: 'Dev',
+            organizationId: organization.id,
+            role: role,
+            status: 'active',
+            lastLoginAt: new Date(),
+          });
+        }
+
+        // Create session
+        (req.session as any).user = {
+          id: dbUser.id,
+          email: dbUser.email,
+          claims: { sub: dbUser.id, email: dbUser.email },
+        };
+
+        res.json({ 
+          success: true, 
+          user: {
+            id: dbUser.id,
+            email: dbUser.email,
+            firstName: dbUser.firstName,
+            lastName: dbUser.lastName,
+            role: dbUser.role,
+            organizationId: (dbUser as any).organizationId,
+          }
+        });
+
+      } catch (error) {
+        console.error('Dev auth error:', error);
+        res.status(500).json({ message: 'Development authentication failed' });
+      }
+    });
+  }
 
   // Logout
   app.post('/api/auth/logout', (req, res) => {
