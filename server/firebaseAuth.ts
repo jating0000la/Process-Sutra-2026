@@ -71,7 +71,10 @@ export function getSession() {
     tableName: "sessions",
   });
   return session({
-    secret: process.env.SESSION_SECRET || 'your-secret-key',
+    secret: process.env.SESSION_SECRET || (() => {
+      console.error('CRITICAL: SESSION_SECRET environment variable is not set!');
+      throw new Error('SESSION_SECRET must be set for security');
+    })(),
     store: sessionStore,
     resave: false,
     saveUninitialized: false,

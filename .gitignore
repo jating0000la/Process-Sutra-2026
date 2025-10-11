@@ -11,6 +11,7 @@ pnpm-debug.log*
 .env.development.local
 .env.test.local
 .env.production.local
+.env.production
 
 # Build outputs
 dist
@@ -76,3 +77,50 @@ vite.config.ts.*
 
 # Keep template files but ignore actual env files
 !.env.production.template
+!.env.*.template
+
+# Shell scripts (security - exclude all shell scripts)
+*.sh
+
+# Deployment files
+deployment/
+*.deployment.yml
+*.deploy.sh
+
+# GCP specific files
+gcp-*.sh
+gcp-*.json
+*.gcp.*
+
+# Hostinger specific files
+hostinger-*.sh
+*.hostinger.*
+
+# Database dumps
+*.sql.gz
+*.dump
+
+# Secrets
+secrets/
+.secrets/
+*.secret
+
+# Firebase private keys
+*firebase-adminsdk*.json
+
+# PM2 files
+ecosystem.config.js
+.pm2/
+
+# Certificates
+*.pem
+*.key
+*.crt
+*.cert
+
+# Uploads
+uploads/
+public/uploads/
+
+# Session files
+sessions/
