@@ -3,13 +3,44 @@ import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, Google
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: `${import.meta.env.VITE_FIREBASE_PROJECT_ID}.firebaseapp.com`,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: `${import.meta.env.VITE_FIREBASE_PROJECT_ID}.firebasestorage.app`,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
-const app = initializeApp(firebaseConfig);
+// Debug: Log config (remove in production)
+console.log('🔥 Firebase Config:', {
+  apiKey: firebaseConfig.apiKey ? `✅ Present (${firebaseConfig.apiKey.substring(0, 10)}...)` : '❌ Missing',
+  authDomain: firebaseConfig.authDomain || '❌ Missing',
+  projectId: firebaseConfig.projectId || '❌ Missing',
+  storageBucket: firebaseConfig.storageBucket || '❌ Missing',
+  messagingSenderId: firebaseConfig.messagingSenderId || '❌ Missing',
+  appId: firebaseConfig.appId ? '✅ Present' : '❌ Missing',
+  measurementId: firebaseConfig.measurementId || '❌ Missing'
+});
+
+// Validate all required fields are present
+if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.projectId || !firebaseConfig.appId) {
+  console.error('❌ Firebase configuration is incomplete! Missing required fields.');
+  console.error('Environment variables check:', {
+    VITE_FIREBASE_API_KEY: import.meta.env.VITE_FIREBASE_API_KEY ? 'Found' : 'NOT FOUND',
+    VITE_FIREBASE_AUTH_DOMAIN: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ? 'Found' : 'NOT FOUND',
+    VITE_FIREBASE_PROJECT_ID: import.meta.env.VITE_FIREBASE_PROJECT_ID ? 'Found' : 'NOT FOUND',
+    VITE_FIREBASE_APP_ID: import.meta.env.VITE_FIREBASE_APP_ID ? 'Found' : 'NOT FOUND',
+  });
+}
+
+let app;
+try {
+  app = initializeApp(firebaseConfig);
+  console.log('✅ Firebase app initialized successfully');
+} catch (error) {
+  console.error('❌ Firebase initialization error:', error);
+  throw error;
+}
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
