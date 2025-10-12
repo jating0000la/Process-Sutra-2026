@@ -12,6 +12,25 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Middleware to redirect IP address requests to domain name
+app.use((req, res, next) => {
+  const host = req.get('host') || '';
+  const protocol = req.protocol;
+  
+  // Check if the request is made to an IP address (IPv4 or IPv6)
+  const isIpAddress = /^(\d{1,3}\.){3}\d{1,3}(:\d+)?$/.test(host) || // IPv4
+                       /^\[?[0-9a-fA-F:]+\]?(:\d+)?$/.test(host);    // IPv6
+  
+  // If accessed via IP, redirect to the domain
+  if (isIpAddress && process.env.DOMAIN_NAME) {
+    const targetUrl = `https://${process.env.DOMAIN_NAME}${req.originalUrl}`;
+    log(`Redirecting IP request to domain: ${targetUrl}`);
+    return res.redirect(301, targetUrl);
+  }
+  
+  next();
+});
+
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
