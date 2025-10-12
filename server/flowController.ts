@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { db } from "./db"; // Your existing PostgreSQL connection
+import { db, pool } from "./db"; // Your existing PostgreSQL connection
 import { v4 as uuidv4 } from 'uuid';
 
 export const startFlowWebhook = async (req: Request, res: Response) => {
