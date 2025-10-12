@@ -15,8 +15,6 @@ if (!getApps().length) {
   try {
     const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
     const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
-    console.log("Project id:"+process.env.FIREBASE_PROJECT_ID)
-    console.log("VITE Project id:"+process.env.VITE_FIREBASE_PROJECT_ID)
     const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
     
     if (projectId && clientEmail && privateKey) {
