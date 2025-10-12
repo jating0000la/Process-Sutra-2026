@@ -10,7 +10,7 @@ module.exports = {
       NODE_ENV: 'production',
       PORT: 5000
     },
-    env_file: '.env.production',
+    env_file: '.env',
     error_file: './logs/err.log',
     out_file: './logs/out.log',
     log_file: './logs/combined.log',
