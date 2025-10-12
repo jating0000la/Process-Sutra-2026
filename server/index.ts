@@ -17,6 +17,11 @@ app.use((req, res, next) => {
   const host = req.get('host') || '';
   const protocol = req.protocol;
   
+  // Allow ACME challenge requests (for SSL certificate verification)
+  if (req.path.startsWith('/.well-known/acme-challenge/')) {
+    return next();
+  }
+  
   // Check if the request is made to an IP address (IPv4 or IPv6)
   const isIpAddress = /^(\d{1,3}\.){3}\d{1,3}(:\d+)?$/.test(host) || // IPv4
                        /^\[?[0-9a-fA-F:]+\]?(:\d+)?$/.test(host);    // IPv6
