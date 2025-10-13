@@ -25,6 +25,8 @@ const tatConfigSchema = z.object({
   skipWeekends: z.boolean(),
 });
 
+type TATConfig = z.infer<typeof tatConfigSchema>;
+
 export default function TATConfig() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading } = useAuth();
@@ -44,7 +46,7 @@ export default function TATConfig() {
     }
   }, [isAuthenticated, isLoading, toast]);
 
-  const { data: config, isLoading: isConfigLoading } = useQuery({
+  const { data: config, isLoading: isConfigLoading } = useQuery<TATConfig>({
     queryKey: ["/api/tat-config"],
     retry: false,
   });

@@ -98,7 +98,7 @@ export default function FormBuilder() {
     }
   }, [isAuthenticated, isLoading, toast]);
 
-  const { data: formTemplates, isLoading: templatesLoading } = useQuery({
+  const { data: formTemplates, isLoading: templatesLoading } = useQuery<any[]>({
     queryKey: ["/api/form-templates"],
     enabled: isAuthenticated,
   });
@@ -412,7 +412,6 @@ export default function FormBuilder() {
                             <Input 
                               placeholder={`Enter ${col.label.toLowerCase()}`} 
                               disabled 
-                              size="sm"
                             />
                           </td>
                         ))}
@@ -761,7 +760,6 @@ export default function FormBuilder() {
                                   value={column.label}
                                   onChange={(e) => updateTableColumn(column.id, 'label', e.target.value)}
                                   placeholder="Column label"
-                                  size="sm"
                                 />
                               </div>
                               <div>
@@ -770,7 +768,7 @@ export default function FormBuilder() {
                                   value={column.type}
                                   onValueChange={(value) => updateTableColumn(column.id, 'type', value)}
                                 >
-                                  <SelectTrigger size="sm">
+                                  <SelectTrigger>
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
