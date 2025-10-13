@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { db, pool } from "./db"; // Your existing PostgreSQL connection
 import { v4 as uuidv4 } from 'uuid';
+import { calculateTAT, TATConfig } from './tatCalculator';
 
 export const startFlowWebhook = async (req: Request, res: Response) => {
   const { flowName, uniqueId, data } = req.body;
@@ -11,7 +12,7 @@ export const startFlowWebhook = async (req: Request, res: Response) => {
 
   try {
     const flowId = uuidv4();
-    const currentTime = new Date().toISOString();
+    const currentTime = new Date();
 
     // 1. Get first rule for this system/flowName with no currentTask/status (start point)
     const ruleRes = await pool.query(`
@@ -26,9 +27,18 @@ export const startFlowWebhook = async (req: Request, res: Response) => {
 
     const rule = ruleRes.rows[0];
 
+    // Get TAT configuration (try to get from organization if available, otherwise use defaults)
+    // Note: This webhook doesn't have organization context, using default config
+    const config: TATConfig = {
+      officeStartHour: 9,
+      officeEndHour: 18,
+      timezone: 'Asia/Kolkata',
+      skipWeekends: true
+    };
+
     // 2. Insert initial task
     const taskId = uuidv4();
-    const plannedTime = calculateTat(currentTime, rule.tat, rule.tatType);
+    const plannedTime = calculateTAT(currentTime, rule.tat, rule.tatType, config);
 
     await pool.query(`
       INSERT INTO "Task" 
@@ -39,13 +49,13 @@ export const startFlowWebhook = async (req: Request, res: Response) => {
       flowId,
       rule.nextTask,
       'pending',
-      plannedTime,
+      plannedTime.toISOString(),
       rule.email,
       rule.formId,
       flowName,
       uniqueId,
       `Flow started via webhook`,
-      currentTime,
+      currentTime.toISOString(),
       'Webhook'
     ]);
 
@@ -62,7 +72,7 @@ export const startFlowWebhook = async (req: Request, res: Response) => {
       rule.formId,
       JSON.stringify(data),
       'Webhook',
-      currentTime
+      currentTime.toISOString()
     ]);
 
     return res.status(200).json({
@@ -71,7 +81,7 @@ export const startFlowWebhook = async (req: Request, res: Response) => {
       firstTask: {
         taskId,
         taskName: rule.nextTask,
-        plannedTime,
+        plannedTime: plannedTime.toISOString(),
         doerEmail: rule.email,
         formId: rule.formId
       }
@@ -82,23 +92,3 @@ export const startFlowWebhook = async (req: Request, res: Response) => {
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
-
-function calculateTat(start: string, tatValue: number, tatType: string) {
-  const base = new Date(start);
-  switch (tatType) {
-    case 'hourtat':
-      base.setHours(base.getHours() + tatValue);
-      break;
-    case 'daytat':
-      base.setDate(base.getDate() + tatValue);
-      break;
-    case 'beforetat':
-      base.setDate(base.getDate() - tatValue);
-      break;
-    case 'specifytat':
-      return new Date(tatValue).toISOString();
-    default:
-      return base.toISOString();
-  }
-  return base.toISOString();
-}

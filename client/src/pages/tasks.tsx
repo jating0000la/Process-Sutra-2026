@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CheckCircle, Clock, AlertTriangle, Eye, Edit, Plus, Database, Download, UserCheck, Grid, List, MoreHorizontal, Play, XCircle } from "lucide-react";
+import { CheckCircle, Clock, AlertTriangle, Eye, Edit, Plus, Database, Download, UserCheck, Grid, List, MoreHorizontal, Play, XCircle, RefreshCw } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import FormRenderer from "@/components/form-renderer";
 import { format } from "date-fns";
@@ -57,6 +57,7 @@ export default function Tasks() {
   const [expandedDataTasks, setExpandedDataTasks] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<"cards" | "table">("table");
   const [isStartFlowDialogOpen, setIsStartFlowDialogOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Start flow form
   const startFlowForm = useForm({
@@ -969,6 +970,31 @@ export default function Tasks() {
     startFlowMutation.mutate(data);
   };
 
+  // Handle refresh button click
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/tasks"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/flow-rules"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/form-templates"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/form-responses"] }),
+      ]);
+      toast({
+        title: "Refreshed",
+        description: "Tasks data has been refreshed successfully",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to refresh data",
+        variant: "destructive",
+      });
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 500); // Minimum 500ms for visual feedback
+    }
+  };
+
   // Get available systems from flow rules
   const availableSystems = Array.from(new Set((flowRules as any[])?.map(rule => rule.system) || []));
 
@@ -1143,6 +1169,17 @@ export default function Tasks() {
                   Cards
                 </Button>
               </div>
+              
+              {/* Refresh Button */}
+              <Button 
+                onClick={handleRefresh} 
+                disabled={isRefreshing}
+                variant="outline"
+                className="h-9"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+                {isRefreshing ? "Refreshing..." : "Refresh"}
+              </Button>
               
               <Button 
                 onClick={handleExportData} 

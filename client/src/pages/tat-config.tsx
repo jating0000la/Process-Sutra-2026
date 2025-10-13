@@ -23,6 +23,12 @@ const tatConfigSchema = z.object({
   officeEndHour: z.coerce.number().min(0).max(23),
   timezone: z.string().min(1),
   skipWeekends: z.boolean(),
+}).refine((data) => data.officeEndHour > data.officeStartHour, {
+  message: "Office end hour must be after start hour",
+  path: ["officeEndHour"],
+}).refine((data) => (data.officeEndHour - data.officeStartHour) >= 1, {
+  message: "Office must be open for at least 1 hour",
+  path: ["officeEndHour"],
 });
 
 type TATConfig = z.infer<typeof tatConfigSchema>;

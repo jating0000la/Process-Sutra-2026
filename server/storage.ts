@@ -583,16 +583,36 @@ export class DatabaseStorage implements IStorage {
 
   // Form Response operations
   async getFormResponsesByOrganization(organizationId: string, flowId?: string, taskId?: string): Promise<FormResponse[]> {
-    const conditions = [eq(formResponses.organizationId, organizationId)];
-    
-    if (flowId) {
-      conditions.push(eq(formResponses.flowId, flowId));
+    // ✅ Use MongoDB instead of PostgreSQL
+    try {
+      const { getFormResponsesCollection } = await import('./mongo/client.js');
+      const col = await getFormResponsesCollection();
+      
+      const filter: any = { orgId: organizationId };
+      if (flowId) filter.flowId = flowId;
+      if (taskId) filter.taskId = taskId;
+      
+      const data = await col
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .toArray();
+      
+      return data.map(doc => ({
+        id: doc._id.toString(),
+        organizationId: doc.orgId,
+        responseId: doc._id.toString(),
+        flowId: doc.flowId,
+        taskId: doc.taskId,
+        taskName: doc.taskName,
+        formId: doc.formId,
+        submittedBy: doc.submittedBy,
+        formData: doc.formData as any,
+        timestamp: doc.createdAt,
+      })) as FormResponse[];
+    } catch (error) {
+      console.error('Error fetching form responses from MongoDB:', error);
+      return [];
     }
-    if (taskId) {
-      conditions.push(eq(formResponses.taskId, taskId));
-    }
-    
-    return await db.select().from(formResponses).where(and(...conditions)).orderBy(desc(formResponses.timestamp));
   }
 
   async getFormResponses(flowId?: string, taskId?: string): Promise<FormResponse[]> {
@@ -649,11 +669,32 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getFormResponsesByFlowId(flowId: string): Promise<FormResponse[]> {
-    return await db
-      .select()
-      .from(formResponses)
-      .where(eq(formResponses.flowId, flowId))
-      .orderBy(asc(formResponses.timestamp));
+ // ✅ Use MongoDB instead of PostgreSQL
+    try {
+      const { getFormResponsesCollection } = await import('./mongo/client.js');
+      const col = await getFormResponsesCollection();
+      
+      const data = await col
+        .find({ flowId })
+        .sort({ createdAt: 1 })
+        .toArray();
+      
+      return data.map(doc => ({
+        id: doc._id.toString(),
+        organizationId: doc.orgId,
+        responseId: doc._id.toString(),
+        flowId: doc.flowId,
+        taskId: doc.taskId,
+        taskName: doc.taskName,
+        formId: doc.formId,
+        submittedBy: doc.submittedBy,
+        formData: doc.formData as any,
+        timestamp: doc.createdAt,
+      })) as FormResponse[];
+    } catch (error) {
+      console.error('Error fetching form responses by flowId from MongoDB:', error);
+      return [];
+    }
   }
 
   // Get form responses with task details including order number (organization-specific)

@@ -5,12 +5,14 @@ export interface TATConfig {
   officeStartHour: number;
   officeEndHour: number;
   timezone: string;
+  skipWeekends: boolean;
 }
 
 const defaultConfig: TATConfig = {
   officeStartHour: 9,  // 9 AM
   officeEndHour: 18,   // 6 PM
-  timezone: "Asia/Kolkata" // IST
+  timezone: "Asia/Kolkata", // IST
+  skipWeekends: true
 };
 
 export function hourTAT(
@@ -18,78 +20,123 @@ export function hourTAT(
   tat: number, 
   config: TATConfig = defaultConfig
 ): Date {
-  const { officeStartHour, officeEndHour } = config;
-  const minutes = timestamp.getMinutes();
-  const currentHour = timestamp.getHours();
-  const combinedHour = currentHour + tat;
-
-  let newDate = new Date(timestamp);
-
-  if (combinedHour >= officeEndHour) {
-    // If goes beyond office hours, move to next day start + tat
-    newDate.setDate(newDate.getDate() + 1);
-    newDate.setHours(officeStartHour + tat, minutes, 0, 0);
-  } else if (combinedHour <= officeStartHour) {
-    // If before office hours, set to office start + tat
-    newDate.setHours(officeStartHour + tat, minutes, 0, 0);
-  } else {
-    // Within office hours, just add the hours
-    newDate.setHours(combinedHour, minutes, 0, 0);
+  const { officeStartHour, officeEndHour, skipWeekends } = config;
+  let currentTime = new Date(timestamp);
+  let remainingHours = tat;
+  
+  while (remainingHours > 0) {
+    const currentHour = currentTime.getHours();
+    const currentDay = currentTime.getDay();
+    
+    // Skip weekends if configured
+    if (skipWeekends && (currentDay === 0 || currentDay === 6)) {
+      // Jump to next Monday at office start
+      const daysToAdd = currentDay === 0 ? 1 : 2;
+      currentTime.setDate(currentTime.getDate() + daysToAdd);
+      currentTime.setHours(officeStartHour, 0, 0, 0);
+      continue;
+    }
+    
+    // Before office hours - jump to office start
+    if (currentHour < officeStartHour) {
+      currentTime.setHours(officeStartHour, 0, 0, 0);
+      continue;
+    }
+    
+    // After office hours - jump to next day
+    if (currentHour >= officeEndHour) {
+      currentTime.setDate(currentTime.getDate() + 1);
+      currentTime.setHours(officeStartHour, 0, 0, 0);
+      continue;
+    }
+    
+    // Within office hours - calculate remaining hours today
+    const hoursLeftToday = officeEndHour - currentHour;
+    
+    if (remainingHours <= hoursLeftToday) {
+      // Can finish today
+      currentTime.setHours(currentHour + remainingHours, currentTime.getMinutes(), 0, 0);
+      remainingHours = 0;
+    } else {
+      // Need to continue tomorrow
+      remainingHours -= hoursLeftToday;
+      currentTime.setDate(currentTime.getDate() + 1);
+      currentTime.setHours(officeStartHour, 0, 0, 0);
+    }
   }
-
-  // Skip Sunday (0 = Sunday)
-  if (newDate.getDay() === 0) {
-    newDate.setDate(newDate.getDate() + 1);
-  }
-
-  return newDate;
+  
+  return currentTime;
 }
 
 export function dayTAT(timestamp: Date, tat: number, config: TATConfig = defaultConfig): Date {
+  const { officeStartHour, skipWeekends } = config;
   const resultDate = new Date(timestamp);
   let daysAdded = 0;
   
   while (daysAdded < tat) {
     resultDate.setDate(resultDate.getDate() + 1);
     
-    // Skip weekends (Saturday = 6, Sunday = 0)
-    if (resultDate.getDay() !== 0 && resultDate.getDay() !== 6) {
+    // Skip weekends if configured (Saturday = 6, Sunday = 0)
+    const isWeekend = resultDate.getDay() === 0 || resultDate.getDay() === 6;
+    if (!skipWeekends || !isWeekend) {
       daysAdded++;
     }
   }
   
-  // Set time to office start hour
-  resultDate.setHours(config.officeStartHour, 0, 0, 0);
+  // OPTION: Preserve original time (e.g., 2:30 PM -> 2:30 PM next day)
+  // No time modification - keeps the exact time from timestamp
+  
+  // ORIGINAL BEHAVIOR: Set time to office start hour (e.g., 2:30 PM -> 9:00 AM next day)
+  // resultDate.setHours(officeStartHour, 0, 0, 0);
   
   return resultDate;
 }
 
-export function beforeTAT(timestamp: Date, tat: number, beforeTat: number, config: TATConfig = defaultConfig): Date {
+export function beforeTAT(
+  timestamp: Date, 
+  daysToSubtract: number,
+  config: TATConfig = defaultConfig
+): Date {
+  const { officeStartHour, skipWeekends } = config;
   const resultDate = new Date(timestamp);
   let daysSubtracted = 0;
   
-  while (daysSubtracted < (tat - beforeTat)) {
+  while (daysSubtracted < daysToSubtract) {
     resultDate.setDate(resultDate.getDate() - 1);
     
-    // Skip weekends (Saturday = 6, Sunday = 0)
-    if (resultDate.getDay() !== 0 && resultDate.getDay() !== 6) {
+    // Skip weekends if configured (Saturday = 6, Sunday = 0)
+    const isWeekend = resultDate.getDay() === 0 || resultDate.getDay() === 6;
+    if (!skipWeekends || !isWeekend) {
       daysSubtracted++;
     }
   }
   
   // Set time to office start hour
-  resultDate.setHours(config.officeStartHour, 0, 0, 0);
+  resultDate.setHours(officeStartHour, 0, 0, 0);
   
   return resultDate;
 }
 
-export function specifyTAT(timestamp: Date, hours: number, config: TATConfig = defaultConfig): Date {
-  const resultDate = new Date(timestamp);
-  resultDate.setHours(resultDate.getHours() + hours);
+export function specifyTAT(timestamp: Date, hour: number, config: TATConfig = defaultConfig): Date {
+  const { skipWeekends } = config;
   
-  // Skip Sunday (0 = Sunday)
-  if (resultDate.getDay() === 0) {
-    resultDate.setDate(resultDate.getDate() + 1);
+  // Validate hour is between 0-23
+  if (hour < 0 || hour > 23) {
+    throw new Error('Specify TAT hour must be between 0 and 23');
+  }
+  
+  // Start with next day
+  const resultDate = new Date(timestamp);
+  resultDate.setDate(resultDate.getDate() + 1);
+  
+  // Set to the specific hour (e.g., TAT = 10 means 10:00 AM)
+  resultDate.setHours(hour, 0, 0, 0);
+  
+  // Skip weekends if configured (Saturday = 6, Sunday = 0)
+  if (skipWeekends) {
+    while (resultDate.getDay() === 0 || resultDate.getDay() === 6) {
+      resultDate.setDate(resultDate.getDate() + 1);
+    }
   }
   
   return resultDate;
@@ -101,22 +148,69 @@ export function calculateTAT(
   tatType: string,
   config: TATConfig = defaultConfig
 ): Date {
+  // Validate inputs
+  if (!timestamp || isNaN(timestamp.getTime())) {
+    throw new Error('Invalid timestamp provided to calculateTAT');
+  }
+  
+  if (typeof tat !== 'number' || isNaN(tat)) {
+    throw new Error('TAT must be a valid number');
+  }
+  
+  if (tat < 0) {
+    throw new Error('TAT cannot be negative');
+  }
+  
+  if (tat > 365) {
+    throw new Error('TAT cannot exceed 365 days');
+  }
+  
+  if (!config || typeof config.officeStartHour !== 'number' || typeof config.officeEndHour !== 'number') {
+    throw new Error('Invalid TAT configuration');
+  }
+  
+  if (config.officeEndHour <= config.officeStartHour) {
+    throw new Error('Office end hour must be after start hour');
+  }
+  
+  // Log calculation for debugging
+  console.log('[TAT] Calculation started:', {
+    timestamp: timestamp.toISOString(),
+    tat,
+    tatType,
+    config
+  });
+  
+  let result: Date;
+  
   switch (tatType.toLowerCase()) {
     case "hour":
     case "hourtat":
-      return hourTAT(timestamp, tat, config);
+      result = hourTAT(timestamp, tat, config);
+      break;
     case "day":
     case "daytat":
-      return dayTAT(timestamp, tat, config);
+      result = dayTAT(timestamp, tat, config);
+      break;
     case "specify":
     case "specifytat":
-      return specifyTAT(timestamp, tat, config);
+      result = specifyTAT(timestamp, tat, config);
+      break;
     case "before":
     case "beforetat":
-      return beforeTAT(timestamp, tat, 2, config);
+      result = beforeTAT(timestamp, tat, config);
+      break;
     default:
-      return hourTAT(timestamp, tat, config);
+      result = hourTAT(timestamp, tat, config);
   }
+  
+  console.log('[TAT] Calculation completed:', {
+    input: timestamp.toISOString(),
+    output: result.toISOString(),
+    duration: `${Math.round((result.getTime() - timestamp.getTime()) / (1000 * 60 * 60))} hours`
+  });
+  
+  return result;
 }
 
 export function formatDateIST(date: Date): string {

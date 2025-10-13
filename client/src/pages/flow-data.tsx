@@ -99,18 +99,25 @@ export default function FlowData() {
 
       return response.json();
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       toast({
         title: "Flow Stopped",
         description: data.message || "Flow has been stopped successfully",
       });
-      // Refresh tasks and close dialogs
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/flows"] });
-      setIsStopDialogOpen(false);
-      setFlowToStop(null);
-      setStopReason("");
-      setSelectedFlowId(null);
+      
+      // Wait for queries to refetch to ensure UI updates with correct data
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/tasks"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/flows"] }),
+      ]);
+      
+      // Small delay to ensure UI updates before closing dialogs
+      setTimeout(() => {
+        setIsStopDialogOpen(false);
+        setFlowToStop(null);
+        setStopReason("");
+        setSelectedFlowId(null);
+      }, 300);
     },
     onError: (error: Error) => {
       toast({
@@ -138,18 +145,25 @@ export default function FlowData() {
 
       return response.json();
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       toast({
         title: "Flow Resumed",
         description: data.message || "Flow has been resumed successfully",
       });
-      // Refresh tasks and close dialogs
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/flows"] });
-      setIsResumeDialogOpen(false);
-      setFlowToResume(null);
-      setResumeReason("");
-      setSelectedFlowId(null);
+      
+      // Wait for queries to refetch to ensure UI updates with correct data
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/tasks"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/flows"] }),
+      ]);
+      
+      // Small delay to ensure UI updates before closing dialogs
+      setTimeout(() => {
+        setIsResumeDialogOpen(false);
+        setFlowToResume(null);
+        setResumeReason("");
+        setSelectedFlowId(null);
+      }, 300);
     },
     onError: (error: Error) => {
       toast({
@@ -206,11 +220,9 @@ export default function FlowData() {
   const flowSummaries: FlowSummary[] = [];
   const flowMap = new Map<string, FlowSummary>();
 
+  // First pass: collect all tasks for each flow
   (tasks || []).forEach((task: any) => {
     if (!flowMap.has(task.flowId)) {
-      const status = task.status === 'completed' ? 'completed' : 
-                   task.status === 'pending' ? 'in-progress' : 'pending';
-      
       flowMap.set(task.flowId, {
         flowId: task.flowId,
         system: task.system,
@@ -218,28 +230,42 @@ export default function FlowData() {
         description: task.flowDescription,
         initiatedAt: task.flowInitiatedAt,
         initiatedBy: task.flowInitiatedBy,
-        taskCount: 1,
-        completedTasks: task.status === 'completed' ? 1 : 0,
-        cancelledTasks: task.status === 'cancelled' ? 1 : 0,
-        status
+        taskCount: 0,
+        completedTasks: 0,
+        cancelledTasks: 0,
+        status: 'pending' // Temporary, will be recalculated
       });
+    }
+    
+    const flow = flowMap.get(task.flowId)!;
+    flow.taskCount++;
+    if (task.status === 'completed') {
+      flow.completedTasks++;
+    }
+    if (task.status === 'cancelled') {
+      flow.cancelledTasks++;
+    }
+  });
+
+  // Second pass: calculate correct status for each flow
+  flowMap.forEach((flow) => {
+    const activeTasks = flow.taskCount - flow.completedTasks - flow.cancelledTasks;
+    const allTasksCompleted = flow.completedTasks === flow.taskCount;
+    const hasCancelledTasks = flow.cancelledTasks > 0;
+    const hasCompletedTasks = flow.completedTasks > 0;
+    
+    if (allTasksCompleted) {
+      // All tasks are completed
+      flow.status = 'completed';
+    } else if (hasCancelledTasks && activeTasks === 0) {
+      // Has cancelled tasks and no active tasks remaining = flow was stopped
+      flow.status = 'stopped';
+    } else if (hasCancelledTasks || hasCompletedTasks) {
+      // Some tasks done/cancelled, some still active = in progress
+      flow.status = 'in-progress';
     } else {
-      const flow = flowMap.get(task.flowId)!;
-      flow.taskCount++;
-      if (task.status === 'completed') {
-        flow.completedTasks++;
-      }
-      if (task.status === 'cancelled') {
-        flow.cancelledTasks++;
-      }
-      // Update status based on completion and cancellation
-      if (flow.cancelledTasks > 0 && flow.completedTasks < flow.taskCount) {
-        flow.status = 'stopped';
-      } else if (flow.completedTasks === flow.taskCount) {
-        flow.status = 'completed';
-      } else if (flow.completedTasks > 0) {
-        flow.status = 'in-progress';
-      }
+      // No tasks started yet
+      flow.status = 'pending';
     }
   });
 
@@ -439,11 +465,9 @@ export default function FlowData() {
                 {isAdmin && selectedFlowData && (
                   (() => {
                     const flowSummary = flowSummaries.find(f => f.flowId === selectedFlowId);
-                    const hasActiveTasks = selectedFlowData.tasks?.some((t: any) => t.status !== 'completed' && t.status !== 'cancelled');
-                    const hasCancelledTasks = selectedFlowData.tasks?.some((t: any) => t.status === 'cancelled');
                     
-                    if (flowSummary) {
-                      if (flowSummary.status === 'stopped' && hasCancelledTasks) {
+                    if (flowSummary && flowSummary.status !== 'completed') {
+                      if (flowSummary.status === 'stopped') {
                         return (
                           <Button
                             className="bg-green-600 hover:bg-green-700 text-white"
@@ -453,7 +477,7 @@ export default function FlowData() {
                             Resume This Flow
                           </Button>
                         );
-                      } else if (hasActiveTasks) {
+                      } else {
                         return (
                           <Button
                             variant="destructive"

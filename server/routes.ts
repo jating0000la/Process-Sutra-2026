@@ -329,7 +329,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (nextRules.length > 0) {
         // Get TAT configuration for enhanced calculations
         const tatConfiguration = await storage.getTATConfig(user.organizationId);
-        const config = tatConfiguration || { officeStartHour: 9, officeEndHour: 18 };
+        const config: TATConfig = tatConfiguration || { 
+          officeStartHour: 9, 
+          officeEndHour: 18,
+          timezone: "Asia/Kolkata",
+          skipWeekends: true
+        };
         
         // Create ALL next tasks using enhanced TAT calculation
         for (const nextRule of nextRules) {
@@ -410,7 +415,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Get TAT configuration for enhanced calculations
         const currentUser = req.currentUser;
         const tatConfiguration = await storage.getTATConfig(currentUser.organizationId);
-        const config = tatConfiguration || { officeStartHour: 9, officeEndHour: 18 };
+        const config: TATConfig = tatConfiguration || { 
+          officeStartHour: 9, 
+          officeEndHour: 18,
+          timezone: "Asia/Kolkata",
+          skipWeekends: true
+        };
         
         // Create ALL next tasks based on current task status using enhanced TAT calculation
         for (const nextRule of nextRules) {
@@ -524,7 +534,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get TAT configuration for enhanced calculations
       const tatConfiguration = await storage.getTATConfig(user.organizationId);
-      const config = tatConfiguration || { officeStartHour: 9, officeEndHour: 18 };
+      const config: TATConfig = tatConfiguration || { 
+        officeStartHour: 9, 
+        officeEndHour: 18,
+        timezone: "Asia/Kolkata",
+        skipWeekends: true
+      };
       
       const plannedTime = calculateTAT(new Date(), startRule.tat, startRule.tatType, config);
       const flowStartTime = new Date();
@@ -881,7 +896,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get TAT configuration for enhanced calculations
       const tatConfiguration = await storage.getTATConfig(organizationId);
-      const config = tatConfiguration || { officeStartHour: 9, officeEndHour: 18 };
+      const config: TATConfig = tatConfiguration || { 
+        officeStartHour: 9, 
+        officeEndHour: 18,
+        timezone: "Asia/Kolkata",
+        skipWeekends: true
+      };
       const plannedTime = calculateTAT(new Date(), startRule.tat, startRule.tatType, config);
       const flowStartTime = new Date();
 
@@ -999,7 +1019,12 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
 
       const flowId = randomUUID();
       const tatConfiguration = await storage.getTATConfig(organizationId);
-      const config = tatConfiguration || { officeStartHour: 9, officeEndHour: 18 };
+      const config: TATConfig = tatConfiguration || { 
+        officeStartHour: 9, 
+        officeEndHour: 18,
+        timezone: "Asia/Kolkata",
+        skipWeekends: true
+      };
       const plannedTime = calculateTAT(new Date(), startRule.tat, startRule.tatType, config);
 
       const task = await storage.createTask({
@@ -1717,12 +1742,41 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     try {
       const currentUser = await storage.getUser(req.user.id);
       const { officeStartHour, officeEndHour, timezone, skipWeekends } = req.body;
+      
+      // Validate inputs
+      if (typeof officeStartHour !== 'number' || officeStartHour < 0 || officeStartHour > 23) {
+        return res.status(400).json({ message: "Office start hour must be between 0 and 23" });
+      }
+      
+      if (typeof officeEndHour !== 'number' || officeEndHour < 0 || officeEndHour > 23) {
+        return res.status(400).json({ message: "Office end hour must be between 0 and 23" });
+      }
+      
+      if (officeEndHour <= officeStartHour) {
+        return res.status(400).json({ message: "Office end hour must be after start hour" });
+      }
+      
+      if ((officeEndHour - officeStartHour) < 1) {
+        return res.status(400).json({ message: "Office must be open for at least 1 hour" });
+      }
+      
+      if (!timezone || typeof timezone !== 'string') {
+        return res.status(400).json({ message: "Valid timezone is required" });
+      }
+      
+      if (typeof skipWeekends !== 'boolean') {
+        return res.status(400).json({ message: "skipWeekends must be a boolean" });
+      }
+      
       const config = await storage.upsertTATConfig(currentUser?.organizationId || "", {
         officeStartHour,
         officeEndHour,
         timezone,
         skipWeekends
       });
+      
+      console.log(`[TAT Config] Updated for organization ${currentUser?.organizationId}:`, config);
+      
       res.json(config);
     } catch (error) {
       console.error("Error updating TAT config:", error);
