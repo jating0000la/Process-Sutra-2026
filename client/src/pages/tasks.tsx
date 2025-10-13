@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CheckCircle, Clock, AlertTriangle, Eye, Edit, Plus, Database, Download, UserCheck, Grid, List, MoreHorizontal, Play } from "lucide-react";
+import { CheckCircle, Clock, AlertTriangle, Eye, Edit, Plus, Database, Download, UserCheck, Grid, List, MoreHorizontal, Play, XCircle } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import FormRenderer from "@/components/form-renderer";
 import { format } from "date-fns";
@@ -425,6 +425,19 @@ export default function Tasks() {
     return readableData;
   };
 
+  // Helper function to check if a task has a submitted form
+  const hasSubmittedForm = (task: any): boolean => {
+    if (!task.formId || !formResponses || !Array.isArray(formResponses)) {
+      return true; // If no form is required, consider it complete
+    }
+    
+    // Check if there's a form response for this task
+    return (formResponses as any[]).some((response: any) => 
+      response.taskId === task.id && 
+      response.flowId === task.flowId
+    );
+  };
+
   // Function to filter tasks based on all criteria
   const filteredTasks = useMemo(() => {
     if (!tasks || !Array.isArray(tasks)) return [];
@@ -479,19 +492,19 @@ export default function Tasks() {
         
         switch (priorityFilter) {
           case "urgent":
-            if (hoursUntilDue > 24 || task.status === 'completed') return false;
+            if (hoursUntilDue > 24 || task.status === 'completed' || task.status === 'cancelled') return false;
             break;
           case "high":
-            if (hoursUntilDue > 72 || hoursUntilDue <= 24 || task.status === 'completed') return false;
+            if (hoursUntilDue > 72 || hoursUntilDue <= 24 || task.status === 'completed' || task.status === 'cancelled') return false;
             break;
           case "medium":
-            if (hoursUntilDue > 168 || hoursUntilDue <= 72 || task.status === 'completed') return false; // 1 week
+            if (hoursUntilDue > 168 || hoursUntilDue <= 72 || task.status === 'completed' || task.status === 'cancelled') return false; // 1 week
             break;
           case "low":
-            if (hoursUntilDue <= 168 || task.status === 'completed') return false;
+            if (hoursUntilDue <= 168 || task.status === 'completed' || task.status === 'cancelled') return false;
             break;
           case "overdue":
-            if (hoursUntilDue >= 0 || task.status === 'completed') return false;
+            if (hoursUntilDue >= 0 || task.status === 'completed' || task.status === 'cancelled') return false;
             break;
         }
       }
@@ -804,7 +817,7 @@ export default function Tasks() {
       setTaskToComplete(null);
       setCompletionStatus("");
     },
-    onError: (error) => {
+    onError: (error: any) => {
       if (isUnauthorizedError(error)) {
         toast({
           title: "Unauthorized",
@@ -816,9 +829,22 @@ export default function Tasks() {
         }, 500);
         return;
       }
+      
+      // Check if error is due to missing form submission
+      const errorData = error?.response?.data;
+      if (errorData?.requiresForm) {
+        toast({
+          title: "Form Submission Required",
+          description: errorData.message || "Please submit the associated form before completing this task",
+          variant: "destructive",
+        });
+        setIsCompleteDialogOpen(false);
+        return;
+      }
+      
       toast({
         title: "Error",
-        description: "Failed to complete task",
+        description: error?.response?.data?.message || "Failed to complete task",
         variant: "destructive",
       });
     },
@@ -896,6 +922,16 @@ export default function Tasks() {
   });
 
   const handleCompleteClick = (task: any) => {
+    // Check if task has a form that needs to be submitted
+    if (task.formId && !hasSubmittedForm(task)) {
+      toast({
+        title: "Form Required",
+        description: "Please submit the form before completing this task. Click 'Fill Form' to submit the required form.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setTaskToComplete(task);
     setCompletionStatus(""); // Reset completion status
     setIsCompleteDialogOpen(true);
@@ -1006,6 +1042,8 @@ export default function Tasks() {
         return <CheckCircle className="w-4 h-4 text-green-600" />;
       case "overdue":
         return <AlertTriangle className="w-4 h-4 text-red-600" />;
+      case "cancelled":
+        return <XCircle className="w-4 h-4 text-gray-600" />;
       default:
         return <Clock className="w-4 h-4 text-yellow-600" />;
     }
@@ -1270,6 +1308,7 @@ export default function Tasks() {
                       <SelectItem value="in_progress">🔵 In Progress</SelectItem>
                       <SelectItem value="completed">🟢 Completed</SelectItem>
                       <SelectItem value="overdue">🔴 Overdue</SelectItem>
+                      <SelectItem value="cancelled">⚫ Cancelled</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1413,13 +1452,16 @@ export default function Tasks() {
                   {filteredTasks.length > 0 && (
                     <div className="flex space-x-2 text-xs">
                       <span className="text-red-500" title="Overdue tasks">
-                        🔴 {filteredTasks.filter(t => new Date(t.plannedTime) < new Date() && t.status !== 'completed').length}
+                        🔴 {filteredTasks.filter(t => new Date(t.plannedTime) < new Date() && t.status !== 'completed' && t.status !== 'cancelled').length}
                       </span>
                       <span className="text-yellow-500" title="Pending tasks">
                         🟡 {filteredTasks.filter(t => t.status === 'pending').length}
                       </span>
                       <span className="text-green-500" title="Completed tasks">
                         🟢 {filteredTasks.filter(t => t.status === 'completed').length}
+                      </span>
+                      <span className="text-gray-500" title="Cancelled tasks">
+                        ⚫ {filteredTasks.filter(t => t.status === 'cancelled').length}
                       </span>
                     </div>
                   )}
@@ -1612,13 +1654,16 @@ export default function Tasks() {
                                   ? 'bg-gradient-to-br from-green-100 to-emerald-100 dark:from-green-900/30 dark:to-emerald-900/30' 
                                   : task.status === 'overdue'
                                   ? 'bg-gradient-to-br from-red-100 to-pink-100 dark:from-red-900/30 dark:to-pink-900/30'
+                                  : task.status === 'cancelled'
+                                  ? 'bg-gradient-to-br from-gray-100 to-slate-100 dark:from-gray-900/30 dark:to-slate-900/30'
                                   : 'bg-gradient-to-br from-yellow-100 to-orange-100 dark:from-yellow-900/30 dark:to-orange-900/30'
                               }`}>
                                 {getStatusIcon(task.status)}
                                 <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-white dark:bg-gray-800 rounded-full flex items-center justify-center">
                                   <div className={`w-1.5 h-1.5 rounded-full ${
                                     task.status === 'completed' ? 'bg-green-500' 
-                                    : task.status === 'overdue' ? 'bg-red-500' 
+                                    : task.status === 'overdue' ? 'bg-red-500'
+                                    : task.status === 'cancelled' ? 'bg-gray-500'
                                     : 'bg-yellow-500'
                                   } animate-pulse`}></div>
                                 </div>
@@ -1694,6 +1739,8 @@ export default function Tasks() {
                                   ? 'bg-gradient-to-r from-green-100 to-emerald-100 dark:from-green-900/30 dark:to-emerald-900/30 text-green-800 dark:text-green-300' 
                                   : task.status === 'overdue'
                                   ? 'bg-gradient-to-r from-red-100 to-pink-100 dark:from-red-900/30 dark:to-pink-900/30 text-red-800 dark:text-red-300'
+                                  : task.status === 'cancelled'
+                                  ? 'bg-gradient-to-r from-gray-100 to-slate-100 dark:from-gray-900/30 dark:to-slate-900/30 text-gray-800 dark:text-gray-300'
                                   : 'bg-gradient-to-r from-yellow-100 to-orange-100 dark:from-yellow-900/30 dark:to-orange-900/30 text-yellow-800 dark:text-yellow-300'
                               }`}>
                                 {task.status}
@@ -1727,11 +1774,11 @@ export default function Tasks() {
                                   {format(new Date(task.plannedTime), 'HH:mm')}
                                 </div>
                                 <div className={`text-xs mt-1 ${
-                                  new Date(task.plannedTime) < new Date() && task.status !== 'completed'
+                                  new Date(task.plannedTime) < new Date() && task.status !== 'completed' && task.status !== 'cancelled'
                                     ? 'text-red-600 dark:text-red-400 font-semibold'
                                     : 'text-gray-500 dark:text-gray-400'
                                 }`}>
-                                  {new Date(task.plannedTime) < new Date() && task.status !== 'completed' ? 'Overdue' : ''}
+                                  {new Date(task.plannedTime) < new Date() && task.status !== 'completed' && task.status !== 'cancelled' ? 'Overdue' : ''}
                                 </div>
                               </div>
                             </TableCell>
@@ -1741,15 +1788,24 @@ export default function Tasks() {
                               <div className="flex items-center justify-center space-x-1">
                                 {/* Fill Form Button */}
                                 {task.formId && task.formId.trim() !== "" && (
-                                  <Button 
-                                    variant="outline" 
-                                    size="sm"
-                                    onClick={() => handleFillForm(task)}
-                                    className="h-8 w-8 p-0 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border border-purple-200 dark:border-purple-700 hover:from-purple-100 hover:to-pink-100 dark:hover:from-purple-900/30 dark:hover:to-pink-900/30 text-purple-700 dark:text-purple-300 rounded-lg"
-                                    title="Fill Form"
-                                  >
-                                    <Edit className="w-3 h-3" />
-                                  </Button>
+                                  <div className="relative">
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm"
+                                      onClick={() => handleFillForm(task)}
+                                      className={`h-8 w-8 p-0 ${
+                                        hasSubmittedForm(task)
+                                          ? 'bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-300 dark:border-green-700 hover:from-green-100 hover:to-emerald-100 dark:hover:from-green-900/30 dark:hover:to-emerald-900/30 text-green-700 dark:text-green-300'
+                                          : 'bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 border border-orange-300 dark:border-orange-700 hover:from-orange-100 hover:to-red-100 dark:hover:from-orange-900/30 dark:hover:to-red-900/30 text-orange-700 dark:text-orange-300'
+                                      } rounded-lg`}
+                                      title={hasSubmittedForm(task) ? 'Form Submitted - Click to view/edit' : 'Form Required - Click to fill'}
+                                    >
+                                      <Edit className="w-3 h-3" />
+                                    </Button>
+                                    {!hasSubmittedForm(task) && (
+                                      <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full animate-pulse" title="Action required"></span>
+                                    )}
+                                  </div>
                                 )}
                                 
                                 {/* View Flow Data Button */}
@@ -1785,10 +1841,14 @@ export default function Tasks() {
                                         Transfer Task
                                       </DropdownMenuItem>
                                     )}
-                                    {task.status !== "completed" && (
-                                      <DropdownMenuItem onClick={() => handleCompleteClick(task)}>
+                                    {task.status !== "completed" && task.status !== "cancelled" && (
+                                      <DropdownMenuItem 
+                                        onClick={() => handleCompleteClick(task)}
+                                        disabled={task.formId && !hasSubmittedForm(task)}
+                                        className={task.formId && !hasSubmittedForm(task) ? 'opacity-50 cursor-not-allowed' : ''}
+                                      >
                                         <CheckCircle className="w-4 h-4 mr-2" />
-                                        Mark Complete
+                                        {task.formId && !hasSubmittedForm(task) ? 'Complete (Form Required)' : 'Mark Complete'}
                                       </DropdownMenuItem>
                                     )}
                                   </DropdownMenuContent>
@@ -1899,15 +1959,25 @@ export default function Tasks() {
                         <div className="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-700">
                           <div className="flex items-center space-x-2">
                             {task.formId && task.formId.trim() !== "" && (
-                              <Button 
-                                variant="outline" 
-                                size="sm"
-                                onClick={() => handleFillForm(task)}
-                                className="h-7 px-2 text-xs"
-                              >
-                                <Edit className="w-3 h-3 mr-1" />
-                                Form
-                              </Button>
+                              <div className="relative">
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={() => handleFillForm(task)}
+                                  className={`h-7 px-2 text-xs ${
+                                    hasSubmittedForm(task)
+                                      ? 'border-green-300 text-green-700 dark:border-green-700 dark:text-green-300'
+                                      : 'border-orange-300 text-orange-700 dark:border-orange-700 dark:text-orange-300 font-semibold'
+                                  }`}
+                                  title={hasSubmittedForm(task) ? 'Form submitted' : 'Form required'}
+                                >
+                                  <Edit className="w-3 h-3 mr-1" />
+                                  {hasSubmittedForm(task) ? 'Form ✓' : 'Form Required'}
+                                </Button>
+                                {!hasSubmittedForm(task) && (
+                                  <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full animate-pulse"></span>
+                                )}
+                              </div>
                             )}
                             <Button 
                               variant="ghost" 
@@ -1931,12 +2001,17 @@ export default function Tasks() {
                                 <UserCheck className="w-3 h-3" />
                               </Button>
                             )}
-                            {task.status !== "completed" && (
+                            {task.status !== "completed" && task.status !== "cancelled" && (
                               <Button 
                                 size="sm"
                                 onClick={() => handleCompleteClick(task)}
-                                disabled={completeTaskMutation.isPending}
-                                className="h-7 px-2 text-xs bg-green-600 hover:bg-green-700"
+                                disabled={completeTaskMutation.isPending || (task.formId && !hasSubmittedForm(task))}
+                                className={`h-7 px-2 text-xs ${
+                                  task.formId && !hasSubmittedForm(task)
+                                    ? 'bg-gray-400 hover:bg-gray-500 cursor-not-allowed'
+                                    : 'bg-green-600 hover:bg-green-700'
+                                }`}
+                                title={task.formId && !hasSubmittedForm(task) ? 'Submit form first' : 'Mark as complete'}
                               >
                                 <CheckCircle className="w-3 h-3 mr-1" />
                                 Complete

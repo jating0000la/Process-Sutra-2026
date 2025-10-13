@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -9,8 +9,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Eye, Filter } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Search, Eye, Filter, StopCircle } from "lucide-react";
 import FlowDataViewer from "@/components/flow-data-viewer";
+import { queryClient } from "@/lib/queryClient";
 
 interface FlowSummary {
   flowId: string;
@@ -26,11 +30,17 @@ interface FlowSummary {
 
 export default function FlowData() {
   const { toast } = useToast();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [systemFilter, setSystemFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedFlowId, setSelectedFlowId] = useState<string | null>(null);
+  const [isStopDialogOpen, setIsStopDialogOpen] = useState(false);
+  const [flowToStop, setFlowToStop] = useState<FlowSummary | null>(null);
+  const [stopReason, setStopReason] = useState("");
+
+  // Check if user is admin or manager
+  const isAdmin = (user as any)?.role === 'admin' || (user as any)?.role === 'manager';
 
   // Check for system parameter in URL and set filter
   useEffect(() => {
@@ -67,6 +77,59 @@ export default function FlowData() {
     queryKey: ["/api/flows", selectedFlowId, "data"],
     enabled: isAuthenticated && !!selectedFlowId,
   });
+
+  // Stop flow mutation
+  const stopFlowMutation = useMutation({
+    mutationFn: async ({ flowId, reason }: { flowId: string; reason: string }) => {
+      const response = await fetch(`/api/flows/${flowId}/stop`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ reason }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to stop flow");
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Flow Stopped",
+        description: data.message || "Flow has been stopped successfully",
+      });
+      // Refresh tasks and close dialogs
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/flows"] });
+      setIsStopDialogOpen(false);
+      setFlowToStop(null);
+      setStopReason("");
+      setSelectedFlowId(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleStopFlow = (flow: FlowSummary) => {
+    setFlowToStop(flow);
+    setIsStopDialogOpen(true);
+  };
+
+  const confirmStopFlow = () => {
+    if (flowToStop) {
+      stopFlowMutation.mutate({
+        flowId: flowToStop.flowId,
+        reason: stopReason,
+      });
+    }
+  };
 
   if (isLoading || tasksLoading) {
     return (
@@ -218,11 +281,13 @@ export default function FlowData() {
                   {filteredFlows.map((flow) => (
                     <div 
                       key={flow.flowId}
-                      className="border rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-colors"
-                      onClick={() => setSelectedFlowId(flow.flowId)}
+                      className="border rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                     >
                       <div className="flex justify-between items-start">
-                        <div className="space-y-2">
+                        <div 
+                          className="space-y-2 flex-1 cursor-pointer"
+                          onClick={() => setSelectedFlowId(flow.flowId)}
+                        >
                           <div className="flex items-center gap-3">
                             <h3 className="font-semibold">{flow.system}</h3>
                             {getStatusBadge(flow.status)}
@@ -235,17 +300,36 @@ export default function FlowData() {
                             )}
                           </div>
                         </div>
-                        <div className="text-right">
+                        <div className="text-right flex flex-col items-end gap-2">
                           <div className="text-sm font-medium">
                             {flow.completedTasks}/{flow.taskCount} tasks completed
                           </div>
                           <div className="text-xs text-gray-500">
                             {Math.round((flow.completedTasks/flow.taskCount) * 100)}% complete
                           </div>
-                          <Button variant="outline" size="sm" className="mt-2">
-                            <Eye className="h-4 w-4 mr-1" />
-                            View Details
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              onClick={() => setSelectedFlowId(flow.flowId)}
+                            >
+                              <Eye className="h-4 w-4 mr-1" />
+                              View Details
+                            </Button>
+                            {isAdmin && flow.status !== 'completed' && (
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStopFlow(flow);
+                                }}
+                              >
+                                <StopCircle className="h-4 w-4 mr-1" />
+                                Stop Flow
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -264,13 +348,30 @@ export default function FlowData() {
           {/* Detailed Flow View */}
           {selectedFlowId && (
             <div className="space-y-4">
-              <Button 
-                variant="outline" 
-                onClick={() => setSelectedFlowId(null)}
-                className="mb-4"
-              >
-                ← Back to Flow List
-              </Button>
+              <div className="flex items-center justify-between mb-4">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setSelectedFlowId(null)}
+                >
+                  ← Back to Flow List
+                </Button>
+                
+                {/* Stop Flow button in detailed view */}
+                {isAdmin && selectedFlowData && selectedFlowData.tasks?.some((t: any) => t.status !== 'completed' && t.status !== 'cancelled') && (
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      const flowSummary = flowSummaries.find(f => f.flowId === selectedFlowId);
+                      if (flowSummary) {
+                        handleStopFlow(flowSummary);
+                      }
+                    }}
+                  >
+                    <StopCircle className="h-4 w-4 mr-2" />
+                    Stop This Flow
+                  </Button>
+                )}
+              </div>
               
               {flowDataLoading ? (
                 <div className="text-center py-8">Loading detailed flow data...</div>
@@ -291,6 +392,70 @@ export default function FlowData() {
               )}
             </div>
           )}
+
+          {/* Stop Flow Confirmation Dialog */}
+          <Dialog open={isStopDialogOpen} onOpenChange={setIsStopDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Stop Flow?</DialogTitle>
+                <DialogDescription>
+                  This will cancel all pending and in-progress tasks for this flow. This action cannot be undone.
+                </DialogDescription>
+              </DialogHeader>
+              
+              {flowToStop && (
+                <div className="space-y-4">
+                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg space-y-2">
+                    <div className="text-sm">
+                      <span className="font-semibold">System:</span> {flowToStop.system}
+                    </div>
+                    <div className="text-sm">
+                      <span className="font-semibold">Order Number:</span> {flowToStop.orderNumber}
+                    </div>
+                    {flowToStop.description && (
+                      <div className="text-sm">
+                        <span className="font-semibold">Description:</span> {flowToStop.description}
+                      </div>
+                    )}
+                    <div className="text-sm">
+                      <span className="font-semibold">Progress:</span> {flowToStop.completedTasks}/{flowToStop.taskCount} tasks completed
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="stopReason">Reason for stopping (optional)</Label>
+                    <Textarea
+                      id="stopReason"
+                      placeholder="Enter reason for stopping this flow..."
+                      value={stopReason}
+                      onChange={(e) => setStopReason(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsStopDialogOpen(false);
+                    setFlowToStop(null);
+                    setStopReason("");
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={confirmStopFlow}
+                  disabled={stopFlowMutation.isPending}
+                >
+                  {stopFlowMutation.isPending ? "Stopping..." : "Stop Flow"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </main>
       </div>
     </div>

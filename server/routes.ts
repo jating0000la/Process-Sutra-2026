@@ -280,6 +280,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Access denied to this task" });
       }
 
+      // Check if task has a form that requires submission before completion
+      if (task.formId) {
+        const formResponses = await storage.getFormResponsesWithTaskDetails(
+          user.organizationId, 
+          task.flowId, 
+          task.id
+        );
+        
+        if (!formResponses || formResponses.length === 0) {
+          return res.status(400).json({ 
+            message: "Cannot complete task: Form must be submitted before marking task as complete",
+            requiresForm: true,
+            formId: task.formId
+          });
+        }
+      }
+
       // Mark current task as completed
       const completedTask = await storage.updateTask(id, {
         status: "completed",
@@ -563,6 +580,109 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error starting flow:", error);
       res.status(500).json({ message: "Failed to start flow" });
+    }
+  });
+
+  // Stop/Cancel Flow - Admin only
+  app.post("/api/flows/:flowId/stop", isAuthenticated, addUserToRequest, requireAdmin, async (req: any, res) => {
+    try {
+      const { flowId } = req.params;
+      const { reason } = req.body;
+      const user = req.currentUser;
+
+      // Get all tasks for this flow
+      const allTasks = await storage.getTasksByOrganization(user.organizationId);
+      const flowTasks = allTasks.filter(task => task.flowId === flowId);
+
+      if (flowTasks.length === 0) {
+        return res.status(404).json({ message: "Flow not found or no access" });
+      }
+
+      // Verify the flow belongs to the user's organization
+      const firstTask = flowTasks[0];
+      if (firstTask.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Update all pending and in-progress tasks to "cancelled" status
+      let cancelledCount = 0;
+      const cancelTime = new Date();
+
+      for (const task of flowTasks) {
+        if (task.status === "pending" || task.status === "in_progress") {
+          await storage.updateTask(task.id, {
+            status: "cancelled",
+            cancelledBy: user.id,
+            cancelledAt: cancelTime,
+            cancelReason: reason || "Flow stopped by admin",
+          });
+          cancelledCount++;
+
+          // Send notification to assigned user
+          try {
+            if (task.doerEmail) {
+              sendToEmail(task.doerEmail, 'task-cancelled', {
+                flowId,
+                taskId: task.id,
+                taskName: task.taskName,
+                orderNumber: task.orderNumber,
+                system: task.system,
+                reason: reason || "Flow stopped by admin",
+                cancelledBy: user.email,
+              });
+            }
+          } catch (e) {
+            console.error('SSE notify error:', e);
+          }
+        }
+      }
+
+      // Fire webhooks (non-blocking)
+      (async () => {
+        try {
+          const hooks = await storage.getActiveWebhooksForEvent(user.organizationId, 'flow.stopped');
+          for (const hook of hooks) {
+            const payload = {
+              id: randomUUID(),
+              type: 'flow.stopped',
+              createdAt: new Date().toISOString(),
+              data: { 
+                flowId, 
+                orderNumber: firstTask.orderNumber,
+                system: firstTask.system, 
+                description: firstTask.flowDescription,
+                stoppedBy: user.id,
+                stoppedAt: cancelTime.toISOString(),
+                reason: reason || "Flow stopped by admin",
+                cancelledTasksCount: cancelledCount,
+              }
+            };
+            const body = JSON.stringify(payload);
+            const sig = crypto.createHmac('sha256', hook.secret).update(body).digest('hex');
+            fetch(hook.targetUrl, { 
+              method: 'POST', 
+              headers: { 
+                'Content-Type': 'application/json', 
+                'X-Webhook-Signature': sig, 
+                'X-Webhook-Id': payload.id, 
+                'X-Webhook-Type': payload.type 
+              }, 
+              body 
+            }).catch(()=>{});
+          }
+        } catch {}
+      })();
+
+      res.json({
+        success: true,
+        flowId,
+        cancelledTasksCount: cancelledCount,
+        totalTasksInFlow: flowTasks.length,
+        message: `Flow stopped successfully. ${cancelledCount} task(s) cancelled.`
+      });
+    } catch (error) {
+      console.error("Error stopping flow:", error);
+      res.status(500).json({ message: "Failed to stop flow" });
     }
   });
 

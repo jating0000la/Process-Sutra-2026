@@ -72,118 +72,13 @@ sudo nano /etc/caddy/Caddyfile
 
 ### Basic Configuration (Copy this into Caddyfile)
 
-```Caddyfile
-# Redirect IP to domain
-http://62.72.57.53 {
-    redir https://processsutra.com{uri} permanent
-}
-
-# Main domain configuration
-processsutra.com, www.processsutra.com {
-    # Automatic HTTPS
-    encode gzip
-    
-    # Reverse proxy to your Node.js app
+http://processsutra.com, http://www.processsutra.com {
     reverse_proxy localhost:5000
-    
-    # Or if your app runs on port 3000:
-    # reverse_proxy localhost:3000
-    
-    # Custom error pages (optional)
-    handle_errors {
-        @502 expression {http.error.status_code} == 502
-        rewrite @502 /502.html
-        
-        @404 expression {http.error.status_code} == 404
-        rewrite @404 /404.html
-    }
-    
-    # Security headers
-    header {
-        # Enable HSTS
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        # Prevent clickjacking
-        X-Frame-Options "SAMEORIGIN"
-        # XSS protection
-        X-Content-Type-Options "nosniff"
-        # Referrer policy
-        Referrer-Policy "strict-origin-when-cross-origin"
-        # Remove server header
-        -Server
-    }
-    
-    # Logging
-    log {
-        output file /var/log/caddy/access.log
-        format json
-    }
 }
-```
 
-### Advanced Configuration with WebSocket Support
-
-```Caddyfile
-# Redirect IP to domain
 http://62.72.57.53 {
-    redir https://processsutra.com{uri} permanent
+    redir http://processsutra.com{uri} permanent
 }
-
-# Main configuration
-processsutra.com, www.processsutra.com {
-    # Automatic HTTPS with Let's Encrypt
-    encode gzip zstd
-    
-    # Reverse proxy with WebSocket support
-    reverse_proxy localhost:5000 {
-        # WebSocket support
-        transport http {
-            keepalive 30s
-            keepalive_idle_conns 10
-        }
-        
-        # Health check
-        health_uri /api/health
-        health_interval 30s
-        health_timeout 10s
-        
-        # Forward headers
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
-    }
-    
-    # Security headers
-    header {
-        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
-        X-Frame-Options "SAMEORIGIN"
-        X-Content-Type-Options "nosniff"
-        X-XSS-Protection "1; mode=block"
-        Referrer-Policy "strict-origin-when-cross-origin"
-        Permissions-Policy "geolocation=(), microphone=(), camera=()"
-        -Server
-    }
-    
-    # Rate limiting (optional - requires caddy-ratelimit plugin)
-    # rate_limit {
-    #     zone dynamic {
-    #         key {remote_host}
-    #         events 100
-    #         window 1m
-    #     }
-    # }
-    
-    # Logging
-    log {
-        output file /var/log/caddy/processsutra.log {
-            roll_size 100mb
-            roll_keep 5
-            roll_keep_for 720h
-        }
-        format json
-        level INFO
-    }
-}
-```
 
 ---
 

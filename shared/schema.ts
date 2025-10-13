@@ -143,7 +143,7 @@ export const tasks = pgTable("tasks", {
   plannedTime: timestamp("planned_time").notNull(), // When task should be completed (TAT-based)
   actualCompletionTime: timestamp("actual_completion_time"), // When task was actually completed
   doerEmail: varchar("doer_email").notNull(),
-  status: varchar("status").default("pending"), // pending, in_progress, completed, overdue
+  status: varchar("status").default("pending"), // pending, in_progress, completed, overdue, cancelled
   formId: varchar("form_id"), // Associated form template
   createdAt: timestamp("created_at").defaultNow(), // When task was created
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -157,6 +157,10 @@ export const tasks = pgTable("tasks", {
   transferredBy: varchar("transferred_by"), // Who transferred the task
   transferredAt: timestamp("transferred_at"), // When task was transferred
   transferReason: text("transfer_reason"), // Reason for transfer
+  // Cancellation tracking
+  cancelledBy: varchar("cancelled_by"), // Who cancelled the task
+  cancelledAt: timestamp("cancelled_at"), // When task was cancelled
+  cancelReason: text("cancel_reason"), // Reason for cancellation
 });
 
 // Form Templates - Define form structure (organization-specific)

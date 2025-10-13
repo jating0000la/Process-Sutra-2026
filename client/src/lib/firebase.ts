@@ -12,15 +12,6 @@ const firebaseConfig = {
 };
 
 // Debug: Log config (remove in production)
-console.log('🔥 Firebase Config:', {
-  apiKey: firebaseConfig.apiKey ? `✅ Present (${firebaseConfig.apiKey.substring(0, 10)}...)` : '❌ Missing',
-  authDomain: firebaseConfig.authDomain || '❌ Missing',
-  projectId: firebaseConfig.projectId || '❌ Missing',
-  storageBucket: firebaseConfig.storageBucket || '❌ Missing',
-  messagingSenderId: firebaseConfig.messagingSenderId || '❌ Missing',
-  appId: firebaseConfig.appId ? '✅ Present' : '❌ Missing',
-  measurementId: firebaseConfig.measurementId || '❌ Missing'
-});
 
 // Validate all required fields are present
 if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.projectId || !firebaseConfig.appId) {
