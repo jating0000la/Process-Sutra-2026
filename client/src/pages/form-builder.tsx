@@ -41,7 +41,7 @@ interface FormQuestion {
   required: boolean;
   options?: string[];
   placeholder?: string;
-  tableColumns?: { id: string; label: string; type: string }[];
+  tableColumns?: { id: string; label: string; type: string; options?: string[] }[];
 }
 
 const formTemplateSchema = z.object({
@@ -59,6 +59,7 @@ const formTemplateSchema = z.object({
       id: z.string(),
       label: z.string(),
       type: z.string(),
+      options: z.array(z.string()).optional(),
     })).optional(),
   })),
 });
@@ -81,7 +82,7 @@ export default function FormBuilder() {
   const [currentForm, setCurrentForm] = useState<any>(null);
   const [questions, setQuestions] = useState<FormQuestion[]>([]);
   const [selectedQuestion, setSelectedQuestion] = useState<FormQuestion | null>(null);
-  const [tableColumns, setTableColumns] = useState<{ id: string; label: string; type: string }[]>([]);
+  const [tableColumns, setTableColumns] = useState<{ id: string; label: string; type: string; options?: string[] }[]>([]);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -222,7 +223,8 @@ export default function FormBuilder() {
     const newColumn = {
       id: `col_${Date.now()}`,
       label: `Column ${tableColumns.length + 1}`,
-      type: "text"
+      type: 'text',
+      options: [],
     };
     setTableColumns([...tableColumns, newColumn]);
   };
@@ -230,6 +232,12 @@ export default function FormBuilder() {
   const updateTableColumn = (id: string, field: string, value: string) => {
     setTableColumns(tableColumns.map(col => 
       col.id === id ? { ...col, [field]: value } : col
+    ));
+  };
+
+  const updateTableColumnOptions = (columnId: string, options: string[]) => {
+    setTableColumns(tableColumns.map(col => 
+      col.id === columnId ? { ...col, options } : col
     ));
   };
 
@@ -779,6 +787,49 @@ export default function FormBuilder() {
                                   </SelectContent>
                                 </Select>
                               </div>
+                              {column.type === "select" && (
+                                <div>
+                                  <Label className="text-xs">Dropdown Options</Label>
+                                  <div className="space-y-1">
+                                    {(column.options || []).map((option, index) => (
+                                      <div key={index} className="flex space-x-1">
+                                        <Input
+                                          value={option}
+                                          onChange={(e) => {
+                                            const newOptions = [...(column.options || [])];
+                                            newOptions[index] = e.target.value;
+                                            updateTableColumnOptions(column.id, newOptions);
+                                          }}
+                                          placeholder={`Option ${index + 1}`}
+                                          className="h-8 text-sm"
+                                        />
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => {
+                                            const newOptions = (column.options || []).filter((_, i) => i !== index);
+                                            updateTableColumnOptions(column.id, newOptions);
+                                          }}
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                        </Button>
+                                      </div>
+                                    ))}
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        const newOptions = [...(column.options || []), `Option ${((column.options || []).length) + 1}`];
+                                        updateTableColumnOptions(column.id, newOptions);
+                                      }}
+                                      className="h-8 text-xs"
+                                    >
+                                      <Plus className="w-3 h-3 mr-1" />
+                                      Add Option
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ))}
                           <Button

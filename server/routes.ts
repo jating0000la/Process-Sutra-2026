@@ -5,6 +5,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./firebaseAuth";
 import { db } from "./db";
+import rateLimit from 'express-rate-limit';
 import {
   insertFlowRuleSchema,
   insertTaskSchema,
@@ -18,6 +19,18 @@ import { randomBytes } from "crypto";
 import { calculateTAT, TATConfig } from "./tatCalculator";
 import uploadsRouter from './uploads.js';
 import * as crypto from 'crypto';
+
+// Rate limiter for form submissions
+const formSubmissionLimiter = rateLimit({
+  windowMs: 60 * 1000,        // 1 minute window
+  max: 10,                    // 10 submissions per minute
+  message: "Too many form submissions. Please wait before submitting again.",
+  standardHeaders: true,      // Return rate limit info in headers
+  legacyHeaders: false,
+  keyGenerator: (req: any) => {
+    return req.user?.claims?.sub || req.ip;  // Rate limit by user ID or IP
+  }
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
   console.log('[routes] registerRoutes invoked - NODE_ENV=', process.env.NODE_ENV);
@@ -957,13 +970,21 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     }
   });
 
-  app.get("/api/form-templates/:formId", isAuthenticated, async (req, res) => {
+  app.get("/api/form-templates/:formId", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const { formId } = req.params;
+      const user = req.currentUser;
+      
       const template = await storage.getFormTemplateByFormId(formId);
       if (!template) {
         return res.status(404).json({ message: "Form template not found" });
       }
+
+      // Enforce organization isolation
+      if (template.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied to this form template" });
+      }
+      
       res.json(template);
     } catch (error) {
       console.error("Error fetching form template:", error);
@@ -1022,9 +1043,62 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     }
   });
 
-  app.delete("/api/form-templates/:id", isAuthenticated, requireAdmin, async (req, res) => {
+  app.delete("/api/form-templates/:id", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
       const { id } = req.params;
+      const user = req.currentUser;
+
+      // 1. Get template and verify organization ownership
+      const template = await storage.getFormTemplateById(id);
+      if (!template) {
+        return res.status(404).json({ message: "Form template not found" });
+      }
+      
+      if (template.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied to this form template" });
+      }
+      
+      // 2. Check if form is used in flow rules
+      const flowRules = await storage.getFlowRulesByOrganization(user.organizationId);
+      const rulesUsingForm = flowRules.filter(rule => rule.formId === template.formId);
+      
+      if (rulesUsingForm.length > 0) {
+        return res.status(400).json({
+          message: `Cannot delete form template. It is currently used in ${rulesUsingForm.length} flow rule(s).`,
+          usage: rulesUsingForm.map(rule => ({
+            system: rule.system,
+            task: rule.nextTask
+          }))
+        });
+      }
+      
+      // 3. Check if form has responses in MongoDB (if MongoDB is available)
+      try {
+        const { MongoClient } = await import('mongodb');
+        const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/processSutra';
+        const client = new MongoClient(mongoUri);
+        await client.connect();
+        const database = client.db();
+        const col = database.collection('formResponses');
+        
+        const responseCount = await col.countDocuments({ 
+          organizationId: user.organizationId,
+          formId: template.formId 
+        });
+        
+        await client.close();
+        
+        if (responseCount > 0) {
+          return res.status(400).json({
+            message: `Cannot delete form template. It has ${responseCount} submitted response(s). Consider archiving instead.`
+          });
+        }
+      } catch (mongoError) {
+        console.warn("Could not check MongoDB for form responses:", mongoError);
+        // Continue with deletion if MongoDB check fails
+      }
+      
+      // 4. Safe to delete
       await storage.deleteFormTemplate(id);
       res.status(204).send();
     } catch (error) {
@@ -1046,7 +1120,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     }
   });
 
-  app.post("/api/form-responses", isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.post("/api/form-responses", isAuthenticated, addUserToRequest, formSubmissionLimiter, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const user = req.currentUser;

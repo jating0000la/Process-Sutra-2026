@@ -66,7 +66,8 @@ export default function FlowBuilder({ flowRules, system, onNodeClick }: FlowBuil
     });
 
     let yPosition = 200;
-    tasks.forEach((taskName, index) => {
+    const tasksArray = Array.from(tasks);
+    tasksArray.forEach((taskName, index) => {
       const rule = systemRules.find(r => r.currentTask === taskName);
       nodes.push({
         id: taskName,

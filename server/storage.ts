@@ -70,6 +70,7 @@ export interface IStorage {
   getFormTemplatesByOrganization(organizationId: string): Promise<FormTemplate[]>;
   getAllFormTemplates(): Promise<FormTemplate[]>;
   getFormTemplateByFormId(formId: string): Promise<FormTemplate | undefined>;
+  getFormTemplateById(id: string): Promise<FormTemplate | undefined>;
   createFormTemplate(template: InsertFormTemplate): Promise<FormTemplate>;
   updateFormTemplate(id: string, template: Partial<InsertFormTemplate>): Promise<FormTemplate>;
   deleteFormTemplate(id: string): Promise<void>;
@@ -551,6 +552,14 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(formTemplates)
       .where(eq(formTemplates.formId, formId));
+    return template;
+  }
+
+  async getFormTemplateById(id: string): Promise<FormTemplate | undefined> {
+    const [template] = await db
+      .select()
+      .from(formTemplates)
+      .where(eq(formTemplates.id, id));
     return template;
   }
 

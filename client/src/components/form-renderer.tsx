@@ -23,7 +23,7 @@ interface FormQuestion {
   required: boolean;
   options?: string[];
   placeholder?: string;
-  tableColumns?: { id: string; label: string; type: string }[];
+  tableColumns?: { id: string; label: string; type: string; options?: string[] }[];
 }
 
 interface FormTemplate {
@@ -54,9 +54,10 @@ export default function FormRenderer({
   const { user } = useAuth();
   
   // Fetch previous form responses from the same flow for auto-prefill
-  const { data: flowResponses } = useQuery({
+  const { data: flowResponses, error: prefillError, isLoading: prefillLoading } = useQuery({
     queryKey: ["/api/flows", flowId, "responses"],
     enabled: !!flowId,
+    retry: 2,  // Retry twice before failing
   });
 
   // Create auto-prefill data by matching field labels from previous responses
@@ -118,6 +119,17 @@ export default function FormRenderer({
     console.log('FormRenderer: Final auto-prefill data', prefillData);
     return prefillData;
   }, [flowResponses, template.questions]);
+
+  // Show user feedback if auto-prefill fails
+  useEffect(() => {
+    if (prefillError && flowId) {
+      toast({
+        title: "Auto-fill unavailable",
+        description: "Could not load previous form data. You can still fill the form manually.",
+        variant: "default"
+      });
+    }
+  }, [prefillError, flowId]);
   
   // Merge initialData with auto-prefill data (initialData takes precedence)
   const combinedInitialData = {
@@ -220,8 +232,17 @@ export default function FormRenderer({
                               <SelectValue placeholder="Select..." />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="option1">Option 1</SelectItem>
-                              <SelectItem value="option2">Option 2</SelectItem>
+                              {col.options && col.options.length > 0 ? (
+                                col.options.map((option) => (
+                                  <SelectItem key={option} value={option}>
+                                    {option}
+                                  </SelectItem>
+                                ))
+                              ) : (
+                                <SelectItem value="no-options" disabled>
+                                  No options configured
+                                </SelectItem>
+                              )}
                             </SelectContent>
                           </Select>
                         ) : (
@@ -526,6 +547,44 @@ export default function FormRenderer({
                               field.onChange(null);
                               return;
                             }
+
+                            // File validation
+                            const maxSizeBytes = 10 * 1024 * 1024; // 10MB
+                            const allowedTypes = [
+                              'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+                              'application/pdf',
+                              'application/msword',
+                              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                              'application/vnd.ms-excel',
+                              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                              'text/plain', 'text/csv'
+                            ];
+
+                            // Check file size
+                            if (file.size > maxSizeBytes) {
+                              const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                              toast({ 
+                                title: "File too large", 
+                                description: `Maximum file size is 10MB. Your file is ${fileSizeMB} MB.`,
+                                variant: "destructive" 
+                              });
+                              inputEl.value = ""; // Reset input
+                              field.onChange(null);
+                              return;
+                            }
+
+                            // Check file type
+                            if (!allowedTypes.includes(file.type)) {
+                              toast({ 
+                                title: "Invalid file type", 
+                                description: "Only images, PDFs, Office documents, and text files are allowed.",
+                                variant: "destructive" 
+                              });
+                              inputEl.value = ""; // Reset input
+                              field.onChange(null);
+                              return;
+                            }
+
                             try {
                               const fd = new FormData();
                               fd.append("formId", template.formId);
@@ -593,6 +652,12 @@ export default function FormRenderer({
         <CardTitle>{template.title}</CardTitle>
         {template.description && (
           <p className="text-sm text-gray-600">{template.description}</p>
+        )}
+        {prefillLoading && flowId && (
+          <div className="flex items-center text-sm text-blue-600 mt-2">
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            Loading previous responses for auto-fill...
+          </div>
         )}
       </CardHeader>
       <CardContent>
