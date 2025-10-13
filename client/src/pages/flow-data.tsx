@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Search, Eye, Filter, StopCircle } from "lucide-react";
+import { Search, Eye, Filter, StopCircle, Play } from "lucide-react";
 import FlowDataViewer from "@/components/flow-data-viewer";
 import { queryClient } from "@/lib/queryClient";
 
@@ -25,7 +25,8 @@ interface FlowSummary {
   initiatedBy?: string;
   taskCount: number;
   completedTasks: number;
-  status: 'completed' | 'in-progress' | 'pending';
+  cancelledTasks: number;
+  status: 'completed' | 'in-progress' | 'pending' | 'stopped';
 }
 
 export default function FlowData() {
@@ -38,6 +39,9 @@ export default function FlowData() {
   const [isStopDialogOpen, setIsStopDialogOpen] = useState(false);
   const [flowToStop, setFlowToStop] = useState<FlowSummary | null>(null);
   const [stopReason, setStopReason] = useState("");
+  const [isResumeDialogOpen, setIsResumeDialogOpen] = useState(false);
+  const [flowToResume, setFlowToResume] = useState<FlowSummary | null>(null);
+  const [resumeReason, setResumeReason] = useState("");
 
   // Check if user is admin or manager
   const isAdmin = (user as any)?.role === 'admin' || (user as any)?.role === 'manager';
@@ -117,6 +121,45 @@ export default function FlowData() {
     },
   });
 
+  // Resume flow mutation
+  const resumeFlowMutation = useMutation({
+    mutationFn: async ({ flowId, reason }: { flowId: string; reason: string }) => {
+      const response = await fetch(`/api/flows/${flowId}/resume`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ reason }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to resume flow");
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Flow Resumed",
+        description: data.message || "Flow has been resumed successfully",
+      });
+      // Refresh tasks and close dialogs
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/flows"] });
+      setIsResumeDialogOpen(false);
+      setFlowToResume(null);
+      setResumeReason("");
+      setSelectedFlowId(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleStopFlow = (flow: FlowSummary) => {
     setFlowToStop(flow);
     setIsStopDialogOpen(true);
@@ -127,6 +170,20 @@ export default function FlowData() {
       stopFlowMutation.mutate({
         flowId: flowToStop.flowId,
         reason: stopReason,
+      });
+    }
+  };
+
+  const handleResumeFlow = (flow: FlowSummary) => {
+    setFlowToResume(flow);
+    setIsResumeDialogOpen(true);
+  };
+
+  const confirmResumeFlow = () => {
+    if (flowToResume) {
+      resumeFlowMutation.mutate({
+        flowId: flowToResume.flowId,
+        reason: resumeReason,
       });
     }
   };
@@ -163,6 +220,7 @@ export default function FlowData() {
         initiatedBy: task.flowInitiatedBy,
         taskCount: 1,
         completedTasks: task.status === 'completed' ? 1 : 0,
+        cancelledTasks: task.status === 'cancelled' ? 1 : 0,
         status
       });
     } else {
@@ -171,8 +229,13 @@ export default function FlowData() {
       if (task.status === 'completed') {
         flow.completedTasks++;
       }
-      // Update status based on completion
-      if (flow.completedTasks === flow.taskCount) {
+      if (task.status === 'cancelled') {
+        flow.cancelledTasks++;
+      }
+      // Update status based on completion and cancellation
+      if (flow.cancelledTasks > 0 && flow.completedTasks < flow.taskCount) {
+        flow.status = 'stopped';
+      } else if (flow.completedTasks === flow.taskCount) {
         flow.status = 'completed';
       } else if (flow.completedTasks > 0) {
         flow.status = 'in-progress';
@@ -202,7 +265,8 @@ export default function FlowData() {
     const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
       completed: "default",
       "in-progress": "secondary", 
-      pending: "outline"
+      pending: "outline",
+      stopped: "destructive"
     };
     return (
       <Badge variant={variants[status] || "outline"} className="capitalize">
@@ -261,6 +325,7 @@ export default function FlowData() {
                     <SelectItem value="completed">Completed</SelectItem>
                     <SelectItem value="in-progress">In Progress</SelectItem>
                     <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="stopped">Stopped</SelectItem>
                   </SelectContent>
                 </Select>
                 <div className="text-sm text-gray-600 dark:text-gray-400 flex items-center">
@@ -317,17 +382,31 @@ export default function FlowData() {
                               View Details
                             </Button>
                             {isAdmin && flow.status !== 'completed' && (
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleStopFlow(flow);
-                                }}
-                              >
-                                <StopCircle className="h-4 w-4 mr-1" />
-                                Stop Flow
-                              </Button>
+                              flow.status === 'stopped' ? (
+                                <Button
+                                  className="bg-green-600 hover:bg-green-700 text-white"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleResumeFlow(flow);
+                                  }}
+                                >
+                                  <Play className="h-4 w-4 mr-1" />
+                                  Resume Flow
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStopFlow(flow);
+                                  }}
+                                >
+                                  <StopCircle className="h-4 w-4 mr-1" />
+                                  Stop Flow
+                                </Button>
+                              )
                             )}
                           </div>
                         </div>
@@ -356,20 +435,38 @@ export default function FlowData() {
                   ← Back to Flow List
                 </Button>
                 
-                {/* Stop Flow button in detailed view */}
-                {isAdmin && selectedFlowData && selectedFlowData.tasks?.some((t: any) => t.status !== 'completed' && t.status !== 'cancelled') && (
-                  <Button
-                    variant="destructive"
-                    onClick={() => {
-                      const flowSummary = flowSummaries.find(f => f.flowId === selectedFlowId);
-                      if (flowSummary) {
-                        handleStopFlow(flowSummary);
+                {/* Stop/Resume Flow button in detailed view */}
+                {isAdmin && selectedFlowData && (
+                  (() => {
+                    const flowSummary = flowSummaries.find(f => f.flowId === selectedFlowId);
+                    const hasActiveTasks = selectedFlowData.tasks?.some((t: any) => t.status !== 'completed' && t.status !== 'cancelled');
+                    const hasCancelledTasks = selectedFlowData.tasks?.some((t: any) => t.status === 'cancelled');
+                    
+                    if (flowSummary) {
+                      if (flowSummary.status === 'stopped' && hasCancelledTasks) {
+                        return (
+                          <Button
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                            onClick={() => handleResumeFlow(flowSummary)}
+                          >
+                            <Play className="h-4 w-4 mr-2" />
+                            Resume This Flow
+                          </Button>
+                        );
+                      } else if (hasActiveTasks) {
+                        return (
+                          <Button
+                            variant="destructive"
+                            onClick={() => handleStopFlow(flowSummary)}
+                          >
+                            <StopCircle className="h-4 w-4 mr-2" />
+                            Stop This Flow
+                          </Button>
+                        );
                       }
-                    }}
-                  >
-                    <StopCircle className="h-4 w-4 mr-2" />
-                    Stop This Flow
-                  </Button>
+                    }
+                    return null;
+                  })()
                 )}
               </div>
               
@@ -452,6 +549,73 @@ export default function FlowData() {
                   disabled={stopFlowMutation.isPending}
                 >
                   {stopFlowMutation.isPending ? "Stopping..." : "Stop Flow"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Resume Flow Confirmation Dialog */}
+          <Dialog open={isResumeDialogOpen} onOpenChange={setIsResumeDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Resume Flow?</DialogTitle>
+                <DialogDescription>
+                  This will restore all cancelled tasks back to pending status and allow the flow to continue.
+                </DialogDescription>
+              </DialogHeader>
+              
+              {flowToResume && (
+                <div className="space-y-4">
+                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg space-y-2">
+                    <div className="text-sm">
+                      <span className="font-semibold">System:</span> {flowToResume.system}
+                    </div>
+                    <div className="text-sm">
+                      <span className="font-semibold">Order Number:</span> {flowToResume.orderNumber}
+                    </div>
+                    {flowToResume.description && (
+                      <div className="text-sm">
+                        <span className="font-semibold">Description:</span> {flowToResume.description}
+                      </div>
+                    )}
+                    <div className="text-sm">
+                      <span className="font-semibold">Progress:</span> {flowToResume.completedTasks}/{flowToResume.taskCount} tasks completed
+                    </div>
+                    <div className="text-sm">
+                      <span className="font-semibold">Cancelled Tasks:</span> {flowToResume.cancelledTasks} task(s) will be resumed
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="resumeReason">Reason for resuming (optional)</Label>
+                    <Textarea
+                      id="resumeReason"
+                      placeholder="Enter reason for resuming this flow..."
+                      value={resumeReason}
+                      onChange={(e) => setResumeReason(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsResumeDialogOpen(false);
+                    setFlowToResume(null);
+                    setResumeReason("");
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  onClick={confirmResumeFlow}
+                  disabled={resumeFlowMutation.isPending}
+                >
+                  {resumeFlowMutation.isPending ? "Resuming..." : "Resume Flow"}
                 </Button>
               </DialogFooter>
             </DialogContent>

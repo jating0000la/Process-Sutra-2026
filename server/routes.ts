@@ -699,6 +699,108 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Resume Flow - Admin only
+  app.post("/api/flows/:flowId/resume", isAuthenticated, addUserToRequest, requireAdmin, async (req: any, res) => {
+    try {
+      const { flowId } = req.params;
+      const { reason } = req.body;
+      const user = req.currentUser;
+
+      // Get all tasks for this flow
+      const allTasks = await storage.getTasksByOrganization(user.organizationId);
+      const flowTasks = allTasks.filter(task => task.flowId === flowId);
+
+      if (flowTasks.length === 0) {
+        return res.status(404).json({ message: "Flow not found or no access" });
+      }
+
+      // Verify the flow belongs to the user's organization
+      const firstTask = flowTasks[0];
+      if (firstTask.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Update all cancelled tasks to "pending" status
+      let resumedCount = 0;
+
+      for (const task of flowTasks) {
+        if (task.status === "cancelled") {
+          await storage.updateTask(task.id, {
+            status: "pending",
+            cancelledBy: null,
+            cancelledAt: null,
+            cancelReason: null,
+          });
+          resumedCount++;
+
+          // Send notification to assigned user
+          try {
+            if (task.doerEmail) {
+              sendToEmail(task.doerEmail, 'task-resumed', {
+                flowId,
+                taskId: task.id,
+                taskName: task.taskName,
+                orderNumber: task.orderNumber,
+                system: task.system,
+                reason: reason || "Flow resumed by admin",
+                resumedBy: user.email,
+              });
+            }
+          } catch (e) {
+            console.error('SSE notify error:', e);
+          }
+        }
+      }
+
+      // Fire webhooks (non-blocking)
+      (async () => {
+        try {
+          const hooks = await storage.getActiveWebhooksForEvent(user.organizationId, 'flow.resumed');
+          for (const hook of hooks) {
+            const payload = {
+              id: randomUUID(),
+              type: 'flow.resumed',
+              createdAt: new Date().toISOString(),
+              data: { 
+                flowId, 
+                orderNumber: firstTask.orderNumber,
+                system: firstTask.system, 
+                description: firstTask.flowDescription,
+                resumedBy: user.id,
+                resumedAt: new Date().toISOString(),
+                reason: reason || "Flow resumed by admin",
+                resumedTasksCount: resumedCount,
+              }
+            };
+            const body = JSON.stringify(payload);
+            const sig = crypto.createHmac('sha256', hook.secret).update(body).digest('hex');
+            fetch(hook.targetUrl, { 
+              method: 'POST', 
+              headers: { 
+                'Content-Type': 'application/json', 
+                'X-Webhook-Signature': sig, 
+                'X-Webhook-Id': payload.id, 
+                'X-Webhook-Type': payload.type 
+              }, 
+              body 
+            }).catch(()=>{});
+          }
+        } catch {}
+      })();
+
+      res.json({
+        success: true,
+        flowId,
+        resumedTasksCount: resumedCount,
+        totalTasksInFlow: flowTasks.length,
+        message: `Flow resumed successfully. ${resumedCount} task(s) resumed.`
+      });
+    } catch (error) {
+      console.error("Error resuming flow:", error);
+      res.status(500).json({ message: "Failed to resume flow" });
+    }
+  });
+
   // --- Integrations: Start Flow via API key (public, authenticated by API key) ---
   function getApiKeyMap(): Record<string, string> {
     // Supports both a single key (FLOW_API_KEY) and a JSON map (FLOW_API_KEYS)
