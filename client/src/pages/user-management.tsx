@@ -734,7 +734,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Users, Settings, Activity, Shield, Smartphone, Clock, Eye, UserCheck, UserX, Edit2, Plus } from "lucide-react";
+import { Users, Settings, Activity, Shield, Smartphone, Clock, Eye, UserCheck, UserX, Edit2, Plus, Trash2 } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -860,6 +860,32 @@ export default function UserManagement() {
     },
   });
 
+  // Delete user mutation
+  const deleteUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const response = await apiRequest("DELETE", `/api/users/${userId}`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to delete user");
+      }
+      return await response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({
+        title: "Success",
+        description: "User deleted successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleEditUser = (user: User) => {
     setSelectedUser(user);
     setEditFormData({
@@ -877,6 +903,12 @@ export default function UserManagement() {
       role: user.role,
     });
     setEditDialogOpen(true);
+  };
+
+  const handleDeleteUser = (user: User) => {
+    if (window.confirm(`Are you sure you want to delete ${user.firstName} ${user.lastName}? This action cannot be undone.`)) {
+      deleteUserMutation.mutate(user.id);
+    }
   };
 
   const handleUpdateUser = () => {
@@ -1092,13 +1124,24 @@ export default function UserManagement() {
                           }
                         </TableCell>
                         <TableCell>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleEditUser(user)}
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleEditUser(user)}
+                              title="Edit user"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => handleDeleteUser(user)}
+                              title="Delete user"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1139,7 +1182,12 @@ export default function UserManagement() {
                   <TableBody>
                     {loginLogs.map((log) => (
                       <TableRow key={log.id}>
-                        <TableCell>{log.userId}</TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{(log as any).userName || 'Unknown User'}</div>
+                            <div className="text-sm text-muted-foreground">{(log as any).userEmail}</div>
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <div>
                             <div className="font-medium">{log.deviceName || 'Unknown Device'}</div>

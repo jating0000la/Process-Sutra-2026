@@ -148,6 +148,8 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   updateUserDetails(id: string, details: Partial<User>): Promise<User>;
   changeUserStatus(id: string, status: string): Promise<User>;
+  deleteUser(id: string): Promise<void>;
+  getOrganizationAdminCount(organizationId: string): Promise<number>;
   
   // Login Log operations
   createLoginLog(loginLog: InsertUserLoginLog): Promise<UserLoginLog>;
@@ -1430,6 +1432,24 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async deleteUser(id: string): Promise<void> {
+    await db.delete(users).where(eq(users.id, id));
+  }
+
+  async getOrganizationAdminCount(organizationId: string): Promise<number> {
+    const result = await db
+      .select({ count: count() })
+      .from(users)
+      .where(
+        and(
+          eq(users.organizationId, organizationId),
+          eq(users.role, 'admin'),
+          eq(users.status, 'active')
+        )
+      );
+    return result[0]?.count || 0;
+  }
+
   // Webhook operations
   async createWebhook(webhookData: InsertWebhook): Promise<Webhook> {
     try {
@@ -1515,12 +1535,34 @@ export class DatabaseStorage implements IStorage {
     return log;
   }
 
-  async getOrganizationLoginLogs(organizationId: string): Promise<UserLoginLog[]> {
-    return await db
-      .select()
+  async getOrganizationLoginLogs(organizationId: string): Promise<any[]> {
+    const logs = await db
+      .select({
+        id: userLoginLogs.id,
+        userId: userLoginLogs.userId,
+        userName: sql<string>`${users.firstName} || ' ' || ${users.lastName}`,
+        userEmail: users.email,
+        deviceId: userLoginLogs.deviceId,
+        deviceName: userLoginLogs.deviceName,
+        deviceType: userLoginLogs.deviceType,
+        browserName: userLoginLogs.browserName,
+        browserVersion: userLoginLogs.browserVersion,
+        operatingSystem: userLoginLogs.operatingSystem,
+        ipAddress: userLoginLogs.ipAddress,
+        location: userLoginLogs.location,
+        userAgent: userLoginLogs.userAgent,
+        loginTime: userLoginLogs.loginTime,
+        logoutTime: userLoginLogs.logoutTime,
+        sessionDuration: userLoginLogs.sessionDuration,
+        loginStatus: userLoginLogs.loginStatus,
+        failureReason: userLoginLogs.failureReason,
+      })
       .from(userLoginLogs)
+      .leftJoin(users, eq(userLoginLogs.userId, users.id))
       .where(eq(userLoginLogs.organizationId, organizationId))
       .orderBy(desc(userLoginLogs.loginTime));
+    
+    return logs;
   }
 
   async getOrganizationDevices(organizationId: string): Promise<UserDevice[]> {

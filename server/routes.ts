@@ -27,9 +27,8 @@ const formSubmissionLimiter = rateLimit({
   message: "Too many form submissions. Please wait before submitting again.",
   standardHeaders: true,      // Return rate limit info in headers
   legacyHeaders: false,
-  keyGenerator: (req: any) => {
-    return req.user?.claims?.sub || req.ip;  // Rate limit by user ID or IP
-  }
+  // Don't use custom keyGenerator - let express-rate-limit handle IP addresses properly
+  // This automatically handles IPv4 and IPv6 addresses correctly
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -1825,9 +1824,20 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     }
   });
 
-  app.put("/api/users/:id", isAuthenticated, requireAdmin, async (req, res) => {
+  app.put("/api/users/:id", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
-      const user = await storage.updateUserDetails(req.params.id, req.body);
+      const currentUser = req.currentUser;
+      const targetUser = await storage.getUser(req.params.id);
+      
+      // SECURITY: Verify same organization
+      if (!targetUser || targetUser.organizationId !== currentUser.organizationId) {
+        return res.status(403).json({ message: "Access denied. Cannot update users from other organizations." });
+      }
+      
+      // Prevent changing sensitive fields via this endpoint
+      const { organizationId, id, createdAt, ...allowedUpdates } = req.body;
+      
+      const user = await storage.updateUserDetails(req.params.id, allowedUpdates);
       res.json(user);
     } catch (error) {
       console.error("Error updating user:", error);
@@ -1846,6 +1856,11 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       
       if (!targetUser) {
         return res.status(404).json({ message: "User not found" });
+      }
+      
+      // SECURITY: Verify same organization
+      if (targetUser.organizationId !== currentUser.organizationId) {
+        return res.status(403).json({ message: "Access denied. Cannot modify users from other organizations." });
       }
       
       // Prevent suspending admin users
@@ -1867,6 +1882,48 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     } catch (error) {
       console.error("Error updating user status:", error);
       res.status(500).json({ message: "Failed to update user status" });
+    }
+  });
+
+  app.delete("/api/users/:id", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+    try {
+      const currentUser = req.currentUser;
+      const targetUserId = req.params.id;
+      
+      // Get the target user
+      const targetUser = await storage.getUser(targetUserId);
+      
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // SECURITY: Verify same organization
+      if (targetUser.organizationId !== currentUser.organizationId) {
+        return res.status(403).json({ message: "Access denied. Cannot delete users from other organizations." });
+      }
+      
+      // Prevent self-deletion
+      if (targetUserId === currentUser.id) {
+        return res.status(400).json({ message: "You cannot delete your own account." });
+      }
+      
+      // Prevent deleting last admin
+      if (targetUser.role === 'admin' && targetUser.organizationId) {
+        const adminCount = await storage.getOrganizationAdminCount(targetUser.organizationId);
+        if (adminCount <= 1) {
+          return res.status(400).json({ 
+            message: "Cannot delete the last admin. Promote another user to admin first." 
+          });
+        }
+      }
+      
+      // Perform deletion
+      await storage.deleteUser(targetUserId);
+      
+      res.json({ success: true, message: "User deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      res.status(500).json({ message: "Failed to delete user" });
     }
   });
 
