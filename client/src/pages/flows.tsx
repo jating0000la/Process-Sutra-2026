@@ -24,13 +24,26 @@ const flowRuleSchema = z.object({
   currentTask: z.string(),
   status: z.string(),
   nextTask: z.string().min(1, "Next task is required"),
-  tat: z.coerce.number().min(1, "TAT must be at least 1"),
+  tat: z.coerce.number().min(0, "TAT must be at least 0"),
   tatType: z.enum(["daytat", "hourtat", "beforetat", "specifytat"]),
   doer: z.string().min(1, "Doer is required"),
   email: z.string().email("Valid email is required"),
   formId: z.string().optional(),
   transferable: z.boolean().default(false),
   transferToEmails: z.string().optional(),
+}).refine((data) => {
+  // For non-Specify TAT types, minimum is 1
+  if (data.tatType !== "specifytat" && data.tat < 1) {
+    return false;
+  }
+  // Validate Specify TAT hour range (0-23)
+  if (data.tatType === "specifytat") {
+    return data.tat >= 0 && data.tat <= 23;
+  }
+  return true;
+}, {
+  message: "For Specify TAT, enter hour in 24-hour format (0-23). For other TAT types, value must be at least 1",
+  path: ["tat"],
 });
 
 const startFlowSchema = z.object({
@@ -47,6 +60,7 @@ export default function Flows() {
   const [isRuleDialogOpen, setIsRuleDialogOpen] = useState(false);
   const [isStartFlowDialogOpen, setIsStartFlowDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<any>(null);
+  const [selectedTatType, setSelectedTatType] = useState<string>("daytat");
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -246,6 +260,7 @@ export default function Flows() {
 
   const handleEditRule = (rule: any) => {
     setEditingRule(rule);
+    setSelectedTatType(rule.tatType || "daytat");
     ruleForm.reset({
       system: rule.system,
       currentTask: rule.currentTask || "",
@@ -1368,6 +1383,7 @@ export default function Flows() {
                 setIsRuleDialogOpen(open);
                 if (!open) {
                   setEditingRule(null);
+                  setSelectedTatType("daytat");
                   ruleForm.reset();
                 }
               }}>
@@ -1524,8 +1540,13 @@ export default function Flows() {
                             <FormItem>
                               <FormLabel>TAT (Turn Around Time)</FormLabel>
                               <FormControl>
-                                <Input {...field} type="number" min="1" />
+                                <Input {...field} type="number" min={selectedTatType === "specifytat" ? "0" : "1"} />
                               </FormControl>
+                              {selectedTatType === "specifytat" && (
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  ℹ️ Enter hour in 24-hour format (0-23). Examples: 9 (9 AM), 14 (2 PM), 17 (5 PM)
+                                </p>
+                              )}
                               <FormMessage />
                             </FormItem>
                           )}
@@ -1536,7 +1557,10 @@ export default function Flows() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>TAT Type</FormLabel>
-                              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <Select onValueChange={(value) => {
+                                field.onChange(value);
+                                setSelectedTatType(value);
+                              }} defaultValue={field.value}>
                                 <FormControl>
                                   <SelectTrigger>
                                     <SelectValue />
@@ -1546,7 +1570,7 @@ export default function Flows() {
                                   <SelectItem value="daytat">Day TAT</SelectItem>
                                   <SelectItem value="hourtat">Hour TAT</SelectItem>
                                   <SelectItem value="beforetat">Before TAT (T-2)</SelectItem>
-                                  <SelectItem value="specifytat">Specify TAT</SelectItem>
+                                  <SelectItem value="specifytat">Specify TAT (Specific Hour Next Day)</SelectItem>
                                 </SelectContent>
                               </Select>
                               <FormMessage />
