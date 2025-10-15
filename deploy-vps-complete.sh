@@ -12,7 +12,7 @@ DB_USER="processsutra"
 DB_NAME="processsutra_db"
 DB_PASSWORD="ProcessSutra2026!Secure"
 
-SUPER_ADMIN_EMAIL=""  # ⚠️ REQUIRED: Set your email to promote to super admin
+SUPER_ADMIN_EMAIL="jkgkumar3@gmail.com"  # ⚠️ REQUIRED: Set your email to promote to super admin
 
 APP_NAME="process-sutra"
 APP_PORT="5000"
