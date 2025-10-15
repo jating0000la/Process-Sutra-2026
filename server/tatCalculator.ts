@@ -10,7 +10,7 @@ export interface TATConfig {
 
 const defaultConfig: TATConfig = {
   officeStartHour: 9,  // 9 AM
-  officeEndHour: 18,   // 6 PM
+  officeEndHour: 17,   // 5 PM (8 hours workday)
   timezone: "Asia/Kolkata", // IST
   skipWeekends: true
 };
@@ -26,6 +26,7 @@ export function hourTAT(
   
   while (remainingHours > 0) {
     const currentHour = currentTime.getHours();
+    const currentMinute = currentTime.getMinutes();
     const currentDay = currentTime.getDay();
     
     // Skip weekends if configured
@@ -51,12 +52,21 @@ export function hourTAT(
     }
     
     // Within office hours - calculate remaining hours today
-    const hoursLeftToday = officeEndHour - currentHour;
+    // Calculate exact hours left today (considering minutes)
+    const currentTimeInHours = currentHour + currentMinute / 60;
+    const hoursLeftToday = officeEndHour - currentTimeInHours;
     
-    if (remainingHours <= hoursLeftToday) {
-      // Can finish today
+    if (remainingHours < hoursLeftToday) {
+      // Can finish today (before office end)
       currentTime.setHours(currentHour + remainingHours, currentTime.getMinutes(), 0, 0);
       remainingHours = 0;
+    } else if (remainingHours === hoursLeftToday && currentMinute === 0) {
+      // Exactly finish at office end (only if starting at exact hour with no minutes)
+      // This would land exactly at officeEndHour, which is not allowed
+      // So we need to continue to next day
+      remainingHours -= hoursLeftToday;
+      currentTime.setDate(currentTime.getDate() + 1);
+      currentTime.setHours(officeStartHour, 0, 0, 0);
     } else {
       // Need to continue tomorrow
       remainingHours -= hoursLeftToday;

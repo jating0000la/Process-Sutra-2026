@@ -407,7 +407,7 @@ export const tatConfig = pgTable(
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
     organizationId: varchar("organization_id").notNull().references(() => organizations.id).unique(),
     officeStartHour: integer("office_start_hour").default(9),
-    officeEndHour: integer("office_end_hour").default(18),
+    officeEndHour: integer("office_end_hour").default(17), // 5 PM (8 hours workday)
     timezone: varchar("timezone").default("Asia/Kolkata"),
     skipWeekends: boolean("skip_weekends").default(true),
     createdAt: timestamp("created_at").defaultNow(),

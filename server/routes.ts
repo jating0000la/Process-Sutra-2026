@@ -367,7 +367,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const tatConfiguration = await storage.getTATConfig(user.organizationId);
         const config: TATConfig = tatConfiguration || { 
           officeStartHour: 9, 
-          officeEndHour: 18,
+          officeEndHour: 17, // 5 PM (8 hours workday)
           timezone: "Asia/Kolkata",
           skipWeekends: true
         };
@@ -453,7 +453,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const tatConfiguration = await storage.getTATConfig(currentUser.organizationId);
         const config: TATConfig = tatConfiguration || { 
           officeStartHour: 9, 
-          officeEndHour: 18,
+          officeEndHour: 17, // 5 PM (8 hours workday)
           timezone: "Asia/Kolkata",
           skipWeekends: true
         };
@@ -572,7 +572,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tatConfiguration = await storage.getTATConfig(user.organizationId);
       const config: TATConfig = tatConfiguration || { 
         officeStartHour: 9, 
-        officeEndHour: 18,
+        officeEndHour: 17, // 5 PM (8 hours workday)
         timezone: "Asia/Kolkata",
         skipWeekends: true
       };
@@ -934,7 +934,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tatConfiguration = await storage.getTATConfig(organizationId);
       const config: TATConfig = tatConfiguration || { 
         officeStartHour: 9, 
-        officeEndHour: 18,
+        officeEndHour: 17, // 5 PM (8 hours workday)
         timezone: "Asia/Kolkata",
         skipWeekends: true
       };
@@ -1057,7 +1057,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       const tatConfiguration = await storage.getTATConfig(organizationId);
       const config: TATConfig = tatConfiguration || { 
         officeStartHour: 9, 
-        officeEndHour: 18,
+        officeEndHour: 17, // 5 PM (8 hours workday)
         timezone: "Asia/Kolkata",
         skipWeekends: true
       };
@@ -1764,7 +1764,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       const config = await storage.getTATConfig(currentUser?.organizationId || "");
       res.json(config || {
         officeStartHour: 9,
-        officeEndHour: 18,
+        officeEndHour: 17, // 5 PM (8 hours workday)
         timezone: "Asia/Kolkata",
         skipWeekends: true
       });

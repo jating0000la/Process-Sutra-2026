@@ -31,7 +31,7 @@ export const startFlowWebhook = async (req: Request, res: Response) => {
     // Note: This webhook doesn't have organization context, using default config
     const config: TATConfig = {
       officeStartHour: 9,
-      officeEndHour: 18,
+      officeEndHour: 17, // 5 PM (8 hours workday)
       timezone: 'Asia/Kolkata',
       skipWeekends: true
     };
