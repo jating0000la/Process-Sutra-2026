@@ -8,6 +8,7 @@ interface DatabaseUser {
   firstName: string;
   lastName: string;
   role: string;
+  isSuperAdmin?: boolean;
   profileImageUrl?: string;
   organizationId?: string;
 }

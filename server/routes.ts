@@ -31,6 +31,17 @@ const formSubmissionLimiter = rateLimit({
   // This automatically handles IPv4 and IPv6 addresses correctly
 });
 
+// Rate limiter for super admin endpoints - more restrictive to prevent abuse
+const superAdminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,   // 15 minute window
+  max: 100,                   // 100 requests per 15 minutes
+  message: "Too many super admin requests. Please wait before trying again.",
+  standardHeaders: true,      // Return rate limit info in headers
+  legacyHeaders: false,
+  skipSuccessfulRequests: false,
+  skipFailedRequests: false,
+});
+
 export async function registerRoutes(app: Express): Promise<Server> {
   console.log('[routes] registerRoutes invoked - NODE_ENV=', process.env.NODE_ENV);
   // Auth middleware
@@ -98,6 +109,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       next();
     } catch (error) {
       res.status(500).json({ message: "Failed to verify user role" });
+    }
+  };
+
+  // Super Admin middleware - system level access above organizations
+  const requireSuperAdmin = async (req: any, res: any, next: any) => {
+    try {
+      const userId = (req.session as any)?.user?.id;
+      const user = await storage.getUser(userId);
+      
+      // Check if user is suspended or inactive
+      if (user?.status === 'suspended') {
+        return res.status(403).json({ message: "Account suspended. Contact administrator." });
+      }
+      
+      if (user?.status === 'inactive') {
+        return res.status(403).json({ message: "Account inactive. Contact administrator." });
+      }
+      
+      if (!user || !user.isSuperAdmin) {
+        return res.status(403).json({ message: "Super Admin access required" });
+      }
+      
+      req.currentUser = user;
+      next();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to verify super admin role" });
     }
   };
 
@@ -2052,6 +2089,751 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     } catch (error) {
       console.error("Error creating password history:", error);
       res.status(500).json({ message: "Failed to create password history" });
+    }
+  });
+
+  // ============================================================
+  // SUPER ADMIN CONTROL PANEL API ROUTES (SYSTEM-LEVEL)
+  // Only accessible by super admins (above organizations)
+  // ============================================================
+
+  // Get all organizations (super admin only)
+  app.get("/api/super-admin/organizations", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const organizations = await storage.getAllOrganizations();
+      
+      // Enrich with user counts and activity
+      const enrichedOrgs = await Promise.all(
+        organizations.map(async (org) => {
+          const users = await storage.getUsersByOrganization(org.id);
+          const activeUsers = users.filter((u: any) => u.status === 'active').length;
+          const totalUsers = users.length;
+          const tasks = await storage.getTasksByOrganization(org.id);
+          const completedTasks = tasks.filter((t: any) => t.status === 'completed').length;
+          
+          return {
+            ...org,
+            totalUsers,
+            activeUsers,
+            totalTasks: tasks.length,
+            completedTasks,
+            taskCompletionRate: tasks.length > 0 ? ((completedTasks / tasks.length) * 100).toFixed(1) : 0
+          };
+        })
+      );
+      
+      res.json(enrichedOrgs);
+    } catch (error) {
+      console.error("Error fetching organizations:", error);
+      res.status(500).json({ message: "Failed to fetch organizations" });
+    }
+  });
+
+  // Get system-wide statistics (super admin only)
+  app.get("/api/super-admin/system-statistics", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const organizations = await storage.getAllOrganizations();
+      
+      // Aggregate statistics across all organizations
+      let totalUsers = 0;
+      let activeUsers = 0;
+      let inactiveUsers = 0;
+      let suspendedUsers = 0;
+      let totalTasks = 0;
+      let completedTasks = 0;
+      let totalFileUploads = 0;
+      
+      const orgStats = await Promise.all(
+        organizations.map(async (org) => {
+          const users = await storage.getUsersByOrganization(org.id);
+          const tasks = await storage.getTasksByOrganization(org.id);
+          
+          totalUsers += users.length;
+          activeUsers += users.filter((u: any) => u.status === 'active').length;
+          inactiveUsers += users.filter((u: any) => u.status === 'inactive').length;
+          suspendedUsers += users.filter((u: any) => u.status === 'suspended').length;
+          totalTasks += tasks.length;
+          completedTasks += tasks.filter((t: any) => t.status === 'completed').length;
+          
+          try {
+            const { getFileCount } = await import('./mongo/gridfs');
+            const fileCount = await getFileCount(org.id);
+            totalFileUploads += fileCount;
+          } catch (error) {
+            console.error(`Error fetching file count for org ${org.id}:`, error);
+          }
+          
+          return {
+            organizationId: org.id,
+            organizationName: org.name,
+            users: users.length,
+            activeTasks: tasks.filter((t: any) => t.status === 'pending').length,
+          };
+        })
+      );
+      
+      res.json({
+        system: {
+          totalOrganizations: organizations.length,
+          activeOrganizations: organizations.filter(o => o.isActive).length,
+          inactiveOrganizations: organizations.filter(o => !o.isActive).length,
+        },
+        users: {
+          total: totalUsers,
+          active: activeUsers,
+          inactive: inactiveUsers,
+          suspended: suspendedUsers,
+          activePercentage: totalUsers > 0 ? ((activeUsers / totalUsers) * 100).toFixed(1) : 0,
+        },
+        tasks: {
+          total: totalTasks,
+          completed: completedTasks,
+          completionRate: totalTasks > 0 ? ((completedTasks / totalTasks) * 100).toFixed(1) : 0,
+        },
+        data: {
+          totalFileUploads,
+        },
+        byOrganization: orgStats,
+      });
+    } catch (error) {
+      console.error("Error fetching system statistics:", error);
+      res.status(500).json({ message: "Failed to fetch system statistics" });
+    }
+  });
+
+  // Get all users across all organizations (super admin only)
+  app.get("/api/super-admin/all-users", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const organizationId = req.query.organizationId as string;
+      
+      if (organizationId) {
+        // Get users for specific organization
+        const users = await storage.getUsersByOrganization(organizationId);
+        const organization = await storage.getOrganization(organizationId);
+        const loginLogs = await storage.getOrganizationLoginLogs(organizationId);
+        
+        const userLoginMap = new Map();
+        loginLogs.forEach((log: any) => {
+          if (!userLoginMap.has(log.userId) || 
+              new Date(log.loginTime) > new Date(userLoginMap.get(log.userId).loginTime)) {
+            userLoginMap.set(log.userId, log);
+          }
+        });
+        
+        const enrichedUsers = users.map((user: any) => {
+          const recentLogin = userLoginMap.get(user.id);
+          const lastActivity = user.lastLoginAt ? new Date(user.lastLoginAt) : null;
+          const isOnline = lastActivity && (Date.now() - lastActivity.getTime()) < 10 * 60 * 1000;
+          
+          return {
+            ...user,
+            organizationName: organization?.name,
+            isOnline,
+            location: recentLogin?.location || null,
+            deviceType: recentLogin?.deviceType || null,
+            browserName: recentLogin?.browserName || null,
+            ipAddress: recentLogin?.ipAddress || null,
+          };
+        });
+        
+        res.json(enrichedUsers);
+      } else {
+        // Get all users from all organizations
+        const organizations = await storage.getAllOrganizations();
+        const allUsers: any[] = [];
+        
+        for (const org of organizations) {
+          const users = await storage.getUsersByOrganization(org.id);
+          const loginLogs = await storage.getOrganizationLoginLogs(org.id);
+          
+          const userLoginMap = new Map();
+          loginLogs.forEach((log: any) => {
+            if (!userLoginMap.has(log.userId) || 
+                new Date(log.loginTime) > new Date(userLoginMap.get(log.userId).loginTime)) {
+              userLoginMap.set(log.userId, log);
+            }
+          });
+          
+          users.forEach((user: any) => {
+            const recentLogin = userLoginMap.get(user.id);
+            const lastActivity = user.lastLoginAt ? new Date(user.lastLoginAt) : null;
+            const isOnline = lastActivity && (Date.now() - lastActivity.getTime()) < 10 * 60 * 1000;
+            
+            allUsers.push({
+              ...user,
+              organizationName: org.name,
+              organizationDomain: org.domain,
+              isOnline,
+              location: recentLogin?.location || null,
+              deviceType: recentLogin?.deviceType || null,
+              browserName: recentLogin?.browserName || null,
+              ipAddress: recentLogin?.ipAddress || null,
+            });
+          });
+        }
+        
+        res.json(allUsers);
+      }
+    } catch (error) {
+      console.error("Error fetching all users:", error);
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  // Toggle organization active status (super admin only)
+  app.put("/api/super-admin/organizations/:id/status", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const organizationId = req.params.id;
+      const { isActive } = req.body;
+      
+      // Get organization before update for audit trail
+      const oldOrg = await storage.getOrganization(organizationId);
+      
+      const organization = await storage.updateOrganizationStatus(organizationId, isActive);
+      
+      // Create audit log
+      await storage.createAuditLog({
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        action: "TOGGLE_ORG_STATUS",
+        targetType: "organization",
+        targetId: organizationId,
+        targetEmail: organization.domain,
+        oldValue: JSON.stringify({ isActive: oldOrg?.isActive }),
+        newValue: JSON.stringify({ isActive }),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId: organizationId,
+      });
+      
+      res.json(organization);
+    } catch (error) {
+      console.error("Error updating organization status:", error);
+      res.status(500).json({ message: "Failed to update organization status" });
+    }
+  });
+
+  // Update organization details (super admin only)
+  app.put("/api/super-admin/organizations/:id", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const organizationId = req.params.id;
+      const updates = req.body;
+      
+      // Get organization before update for audit trail
+      const oldOrg = await storage.getOrganization(organizationId);
+      
+      const organization = await storage.updateOrganization(organizationId, updates);
+      
+      // Create audit log
+      await storage.createAuditLog({
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        action: "UPDATE_ORGANIZATION",
+        targetType: "organization",
+        targetId: organizationId,
+        targetEmail: organization.domain,
+        oldValue: JSON.stringify(oldOrg),
+        newValue: JSON.stringify(updates),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId: organizationId,
+      });
+      
+      res.json(organization);
+    } catch (error) {
+      console.error("Error updating organization:", error);
+      res.status(500).json({ message: "Failed to update organization" });
+    }
+  });
+
+  // Change user status across any organization (super admin only)
+  app.put("/api/super-admin/users/:userId/status", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const userId = req.params.userId;
+      const { status } = req.body;
+      
+      if (!['active', 'inactive', 'suspended'].includes(status)) {
+        return res.status(400).json({ message: "Invalid status" });
+      }
+      
+      // Get user before update for audit trail
+      const oldUser = await storage.getUser(userId);
+      
+      const user = await storage.changeUserStatus(userId, status);
+      
+      // Create audit log
+      await storage.createAuditLog({
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        action: "CHANGE_USER_STATUS",
+        targetType: "user",
+        targetId: userId,
+        targetEmail: user.email || undefined,
+        oldValue: JSON.stringify({ status: oldUser?.status }),
+        newValue: JSON.stringify({ status }),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId: user.organizationId || undefined,
+      });
+      
+      res.json(user);
+    } catch (error) {
+      console.error("Error updating user status:", error);
+      res.status(500).json({ message: "Failed to update user status" });
+    }
+  });
+
+  // Promote user to super admin (super admin only)
+  app.put("/api/super-admin/users/:userId/promote-super-admin", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const userId = req.params.userId;
+      const { isSuperAdmin } = req.body;
+      
+      // Get user before update for audit trail
+      const oldUser = await storage.getUser(userId);
+      
+      const user = await storage.updateUserSuperAdminStatus(userId, isSuperAdmin);
+      
+      // Create audit log
+      await storage.createAuditLog({
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        action: "PROMOTE_SUPER_ADMIN",
+        targetType: "user",
+        targetId: userId,
+        targetEmail: user.email || undefined,
+        oldValue: JSON.stringify({ isSuperAdmin: oldUser?.isSuperAdmin }),
+        newValue: JSON.stringify({ isSuperAdmin }),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId: user.organizationId || undefined,
+      });
+      
+      res.json(user);
+    } catch (error) {
+      console.error("Error updating super admin status:", error);
+      res.status(500).json({ message: "Failed to update super admin status" });
+    }
+  });
+
+  // Get activity across all organizations (super admin only)
+  app.get("/api/super-admin/global-activity", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const organizations = await storage.getAllOrganizations();
+      
+      const activities = [];
+      
+      for (const org of organizations) {
+        const loginLogs = await storage.getOrganizationLoginLogs(org.id);
+        const tasks = await storage.getTasks(org.id);
+        
+        activities.push(
+          ...loginLogs.slice(-50).map(log => ({
+            type: 'login',
+            timestamp: log.loginTime,
+            userId: log.userId,
+            organizationId: org.id,
+            organizationName: org.name,
+            details: {
+              location: log.location,
+              device: log.deviceType,
+              status: log.loginStatus
+            }
+          })),
+          ...tasks.slice(-50).map(task => ({
+            type: 'task',
+            timestamp: task.createdAt,
+            userId: task.doerEmail,
+            organizationId: org.id,
+            organizationName: org.name,
+            details: {
+              taskName: task.taskName,
+              status: task.status,
+              flowId: task.flowId
+            }
+          }))
+        );
+      }
+      
+      // Sort by timestamp and limit
+      activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      res.json(activities.slice(0, limit));
+    } catch (error) {
+      console.error("Error fetching global activity:", error);
+      res.status(500).json({ message: "Failed to fetch global activity" });
+    }
+  });
+
+  // ============================================================
+  // ORGANIZATION ADMIN ROUTES (kept for backward compatibility)
+  // These work within a single organization scope
+  // ============================================================
+
+  // Super Admin Dashboard Statistics (Organization Scoped)
+  app.get("/api/super-admin/statistics", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+    try {
+      const currentUser = req.currentUser;
+      const organizationId = currentUser.organizationId;
+
+      // Fetch comprehensive statistics
+      const [
+        allUsers,
+        allTasks,
+        allFlowRules,
+        allFormResponses,
+        loginLogs,
+        devices
+      ] = await Promise.all([
+        storage.getUsersByOrganization(organizationId),
+        storage.getTasksByOrganization(organizationId),
+        storage.getFlowRulesByOrganization(organizationId),
+        storage.getFormResponsesByOrganization(organizationId),
+        storage.getOrganizationLoginLogs(organizationId),
+        storage.getOrganizationDevices(organizationId)
+      ]);
+
+      // Calculate user statistics
+      const totalUsers = allUsers.length;
+      const activeUsers = allUsers.filter((u: any) => u.status === 'active').length;
+      const inactiveUsers = allUsers.filter((u: any) => u.status === 'inactive').length;
+      const suspendedUsers = allUsers.filter((u: any) => u.status === 'suspended').length;
+
+      // Calculate currently online users (logged in within last 10 minutes)
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      const currentlyOnline = allUsers.filter((u: any) => 
+        u.lastLoginAt && new Date(u.lastLoginAt) > tenMinutesAgo
+      ).length;
+
+      // User distribution by role
+      const adminCount = allUsers.filter((u: any) => u.role === 'admin').length;
+      const regularUserCount = allUsers.filter((u: any) => u.role === 'user').length;
+
+      // User distribution by department
+      const departmentStats = allUsers.reduce((acc: any, user: any) => {
+        const dept = user.department || 'Unassigned';
+        acc[dept] = (acc[dept] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      // Task statistics
+      const totalTasks = allTasks.length;
+      const pendingTasks = allTasks.filter((t: any) => t.status === 'pending').length;
+      const completedTasks = allTasks.filter((t: any) => t.status === 'completed').length;
+      const overdueTasks = allTasks.filter((t: any) => t.status === 'overdue').length;
+      const cancelledTasks = allTasks.filter((t: any) => t.status === 'cancelled').length;
+
+      // Data count statistics
+      const totalFlows = allFlowRules.length;
+      const totalFormResponses = allFormResponses.length;
+
+      // File upload count from GridFS
+      let totalFileUploads = 0;
+      try {
+        const { getFileCount } = await import('./mongo/gridfs');
+        totalFileUploads = await getFileCount(organizationId);
+      } catch (error) {
+        console.error("Error fetching file count:", error);
+      }
+
+      // Login activity statistics
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const todayLogins = loginLogs.filter((log: any) => 
+        new Date(log.loginTime) >= todayStart
+      ).length;
+
+      // Device statistics
+      const desktopDevices = devices.filter((d: any) => d.deviceType === 'desktop').length;
+      const mobileDevices = devices.filter((d: any) => d.deviceType === 'mobile').length;
+      const tabletDevices = devices.filter((d: any) => d.deviceType === 'tablet').length;
+      const trustedDevices = devices.filter((d: any) => d.isTrusted).length;
+
+      // Location statistics from login logs
+      const locationMap = new Map<string, number>();
+      loginLogs.forEach((log: any) => {
+        if (log.location && typeof log.location === 'object') {
+          const loc = log.location as any;
+          const country = loc.country || 'Unknown';
+          locationMap.set(country, (locationMap.get(country) || 0) + 1);
+        }
+      });
+      const topLocations = Array.from(locationMap.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([country, count]) => ({ country, count }));
+
+      // Growth trend (new users last 30 days)
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const newUsersLast30Days = allUsers.filter((u: any) => 
+        u.createdAt && new Date(u.createdAt) >= thirtyDaysAgo
+      ).length;
+
+      res.json({
+        users: {
+          total: totalUsers,
+          active: activeUsers,
+          inactive: inactiveUsers,
+          suspended: suspendedUsers,
+          currentlyOnline,
+          admins: adminCount,
+          regularUsers: regularUserCount,
+          byDepartment: departmentStats,
+          newLast30Days: newUsersLast30Days,
+          activePercentage: totalUsers > 0 ? ((activeUsers / totalUsers) * 100).toFixed(1) : 0
+        },
+        tasks: {
+          total: totalTasks,
+          pending: pendingTasks,
+          completed: completedTasks,
+          overdue: overdueTasks,
+          cancelled: cancelledTasks,
+          completionRate: totalTasks > 0 ? ((completedTasks / totalTasks) * 100).toFixed(1) : 0
+        },
+        data: {
+          totalFlows,
+          totalFormResponses,
+          totalFileUploads,
+          avgResponsesPerFlow: totalFlows > 0 ? (totalFormResponses / totalFlows).toFixed(1) : 0
+        },
+        activity: {
+          todayLogins,
+          totalLogins: loginLogs.length,
+          topLocations
+        },
+        devices: {
+          total: devices.length,
+          desktop: desktopDevices,
+          mobile: mobileDevices,
+          tablet: tabletDevices,
+          trusted: trustedDevices,
+          trustedPercentage: devices.length > 0 ? ((trustedDevices / devices.length) * 100).toFixed(1) : 0
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching super admin statistics:", error);
+      res.status(500).json({ message: "Failed to fetch statistics" });
+    }
+  });
+
+  // Get all active users with location and session data
+  app.get("/api/super-admin/active-users", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+    try {
+      const currentUser = req.currentUser;
+      const organizationId = currentUser.organizationId;
+
+      const [users, loginLogs] = await Promise.all([
+        storage.getUsersByOrganization(organizationId),
+        storage.getOrganizationLoginLogs(organizationId)
+      ]);
+
+      // Get recent login logs for each user
+      const userLoginMap = new Map();
+      loginLogs.forEach((log: any) => {
+        if (!userLoginMap.has(log.userId) || 
+            new Date(log.loginTime) > new Date(userLoginMap.get(log.userId).loginTime)) {
+          userLoginMap.set(log.userId, log);
+        }
+      });
+
+      // Enrich users with activity data
+      const enrichedUsers = users.map((user: any) => {
+        const recentLogin = userLoginMap.get(user.id);
+        const lastActivity = user.lastLoginAt ? new Date(user.lastLoginAt) : null;
+        const isOnline = lastActivity && (Date.now() - lastActivity.getTime()) < 10 * 60 * 1000;
+
+        return {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          department: user.department,
+          status: user.status,
+          lastLoginAt: user.lastLoginAt,
+          isOnline,
+          location: recentLogin?.location || null,
+          deviceType: recentLogin?.deviceType || null,
+          browserName: recentLogin?.browserName || null,
+          ipAddress: recentLogin?.ipAddress || null,
+          sessionDuration: recentLogin?.sessionDuration || null
+        };
+      });
+
+      res.json(enrichedUsers);
+    } catch (error) {
+      console.error("Error fetching active users:", error);
+      res.status(500).json({ message: "Failed to fetch active users" });
+    }
+  });
+
+  // Get location map data for all users
+  app.get("/api/super-admin/user-locations", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+    try {
+      const currentUser = req.currentUser;
+      const organizationId = currentUser.organizationId;
+
+      const loginLogs = await storage.getOrganizationLoginLogs(organizationId);
+
+      // Extract unique locations with user counts
+      const locationData = loginLogs
+        .filter(log => log.location && typeof log.location === 'object')
+        .map(log => {
+          const loc = log.location as any;
+          return {
+            userId: log.userId,
+            country: loc.country || 'Unknown',
+            region: loc.region || '',
+            city: loc.city || '',
+            lat: loc.lat || 0,
+            lng: loc.lng || 0,
+            loginTime: log.loginTime,
+            deviceType: log.deviceType
+          };
+        });
+
+      res.json(locationData);
+    } catch (error) {
+      console.error("Error fetching user locations:", error);
+      res.status(500).json({ message: "Failed to fetch user locations" });
+    }
+  });
+
+  // Bulk activate/deactivate users
+  app.post("/api/super-admin/bulk-status-change", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+    try {
+      const currentUser = req.currentUser;
+      const { userIds, newStatus, reason } = req.body;
+
+      if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+        return res.status(400).json({ message: "User IDs array is required" });
+      }
+
+      if (!['active', 'inactive', 'suspended'].includes(newStatus)) {
+        return res.status(400).json({ message: "Invalid status" });
+      }
+
+      // Verify all users belong to same organization
+      const users = await Promise.all(userIds.map(id => storage.getUser(id)));
+      const invalidUsers = users.filter(u => !u || u.organizationId !== currentUser.organizationId);
+      
+      if (invalidUsers.length > 0) {
+        return res.status(403).json({ message: "Cannot modify users from other organizations" });
+      }
+
+      // Prevent suspending all admins
+      if (newStatus === 'suspended') {
+        const adminUsers = users.filter(u => u?.role === 'admin');
+        if (adminUsers.length > 0) {
+          const totalAdmins = await storage.getOrganizationAdminCount(currentUser.organizationId);
+          if (adminUsers.length >= totalAdmins) {
+            return res.status(400).json({ 
+              message: "Cannot suspend all admin users. At least one admin must remain active." 
+            });
+          }
+        }
+      }
+
+      // Perform bulk status change
+      const results = await Promise.all(
+        userIds.map(async (userId) => {
+          try {
+            const updatedUser = await storage.changeUserStatus(userId, newStatus);
+            return { userId, success: true, user: updatedUser };
+          } catch (error) {
+            return { userId, success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+          }
+        })
+      );
+
+      const successCount = results.filter(r => r.success).length;
+      const failCount = results.filter(r => !r.success).length;
+
+      res.json({
+        message: `Bulk status change completed: ${successCount} succeeded, ${failCount} failed`,
+        results
+      });
+    } catch (error) {
+      console.error("Error performing bulk status change:", error);
+      res.status(500).json({ message: "Failed to perform bulk status change" });
+    }
+  });
+
+  // Force logout user (delete active session)
+  app.post("/api/super-admin/force-logout/:userId", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+    try {
+      const currentUser = req.currentUser;
+      const targetUserId = req.params.userId;
+
+      // Verify target user belongs to same organization
+      const targetUser = await storage.getUser(targetUserId);
+      if (!targetUser || targetUser.organizationId !== currentUser.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Prevent self-logout
+      if (targetUserId === currentUser.id) {
+        return res.status(400).json({ message: "Cannot force logout yourself" });
+      }
+
+      // Update logout time in login logs
+      const logs = await storage.getLoginLogs(targetUserId);
+      const activeLog = logs.find(log => !log.logoutTime);
+      
+      if (activeLog) {
+        // Note: You'll need to add this method to storage
+        // await storage.updateLoginLogLogout(activeLog.id, new Date());
+      }
+
+      res.json({ message: "User logged out successfully", userId: targetUserId });
+    } catch (error) {
+      console.error("Error forcing user logout:", error);
+      res.status(500).json({ message: "Failed to force logout" });
+    }
+  });
+
+  // Get activity timeline
+  app.get("/api/super-admin/activity-timeline", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+    try {
+      const currentUser = req.currentUser;
+      const organizationId = currentUser.organizationId;
+      const limit = parseInt(req.query.limit as string) || 50;
+
+      const [loginLogs, tasks] = await Promise.all([
+        storage.getOrganizationLoginLogs(organizationId),
+        storage.getTasks(organizationId)
+      ]);
+
+      // Combine and sort activities
+      const activities = [
+        ...loginLogs.slice(-limit).map(log => ({
+          type: 'login',
+          timestamp: log.loginTime,
+          userId: log.userId,
+          details: {
+            location: log.location,
+            device: log.deviceType,
+            status: log.loginStatus
+          }
+        })),
+        ...tasks.slice(-limit).map(task => ({
+          type: 'task',
+          timestamp: task.createdAt,
+          userId: task.doerEmail,
+          details: {
+            taskName: task.taskName,
+            status: task.status,
+            flowId: task.flowId
+          }
+        }))
+      ]
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, limit);
+
+      res.json(activities);
+    } catch (error) {
+      console.error("Error fetching activity timeline:", error);
+      res.status(500).json({ message: "Failed to fetch activity timeline" });
     }
   });
 

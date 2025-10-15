@@ -146,11 +146,13 @@ async function upsertUser(userData: any) {
     let existingUser = await storage.getUserByEmail(userData.email);
     
     if (existingUser) {
-      // Update existing user's last login
-      return await storage.updateUser(existingUser.id, {
+      // Update existing user's last login and get the full updated user object
+      const updatedUser = await storage.updateUser(existingUser.id, {
         lastLoginAt: new Date(),
         profileImageUrl: userData.photoURL // Update profile image if changed
       });
+      // Re-fetch the user to ensure we get all fields including isSuperAdmin
+      return await storage.getUser(updatedUser.id);
     }
     
     // For new users, check if there's an organization for their domain
@@ -229,6 +231,7 @@ export async function setupAuth(app: Express) {
             firstName: dbUser.firstName,
             lastName: dbUser.lastName,
             role: dbUser.role,
+            isSuperAdmin: dbUser.isSuperAdmin,
             organizationId: (dbUser as any).organizationId,
           }
         });
@@ -265,6 +268,10 @@ export async function setupAuth(app: Express) {
         photoURL: photoURL,
       });
 
+      if (!dbUser) {
+        return res.status(500).json({ message: 'Failed to create or fetch user' });
+      }
+
       // Check if user is suspended or inactive before creating session
       if (dbUser.status === 'suspended') {
         return res.status(403).json({ 
@@ -287,6 +294,12 @@ export async function setupAuth(app: Express) {
         claims: decodedToken,
       };
 
+      console.log('🔐 User logged in:', {
+        email: dbUser.email,
+        role: dbUser.role,
+        isSuperAdmin: dbUser.isSuperAdmin
+      });
+
       res.json({ 
         success: true, 
         user: {
@@ -296,6 +309,7 @@ export async function setupAuth(app: Express) {
           lastName: dbUser.lastName,
           profileImageUrl: dbUser.profileImageUrl,
           role: dbUser.role,
+          isSuperAdmin: dbUser.isSuperAdmin,
           organizationId: (dbUser as any).organizationId,
         }
       });

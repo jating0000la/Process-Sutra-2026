@@ -15,7 +15,8 @@ import {
   Settings,
   Activity,
   Database,
-  BookOpen
+  BookOpen,
+  Shield
 } from "lucide-react";
 
 // Navigation items for all users
@@ -129,6 +130,7 @@ export default function Sidebar() {
   };
 
   const isAdmin = dbUser?.role === 'admin';
+  const isSuperAdmin = dbUser?.isSuperAdmin === true;
   const navigationItems = isAdmin ? [...userNavigationItems, ...adminNavigationItems] : userNavigationItems;
 
   return (

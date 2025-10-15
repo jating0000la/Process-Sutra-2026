@@ -29,6 +29,9 @@ import {
   type InsertUserDevice,
   type PasswordChangeHistory,
   type InsertPasswordChangeHistory,
+  auditLogs,
+  type AuditLog,
+  type InsertAuditLog,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql } from "drizzle-orm";
@@ -40,6 +43,14 @@ export interface IStorage {
   getOrganizationByDomain(domain: string): Promise<Organization | undefined>;
   createOrganization(organization: InsertOrganization): Promise<Organization>;
   getOrganizationUserCount(organizationId: string): Promise<number>;
+  getAllOrganizations(): Promise<Organization[]>;
+  updateOrganizationStatus(id: string, isActive: boolean): Promise<Organization>;
+  updateOrganization(id: string, updates: Partial<InsertOrganization>): Promise<Organization>;
+  updateUserSuperAdminStatus(userId: string, isSuperAdmin: boolean): Promise<User>;
+
+  // Audit log operations
+  createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
+  getAuditLogs(filters?: { actorId?: string; action?: string; targetType?: string; limit?: number }): Promise<AuditLog[]>;
 
   // User operations (mandatory for Replit Auth)
   getUser(id: string): Promise<User | undefined>;
@@ -204,6 +215,46 @@ export class DatabaseStorage implements IStorage {
       .from(users)
       .where(eq(users.organizationId, organizationId));
     return result[0]?.count || 0;
+  }
+
+  async getAllOrganizations(): Promise<Organization[]> {
+    return await db.select().from(organizations).orderBy(desc(organizations.createdAt));
+  }
+
+  async updateOrganizationStatus(id: string, isActive: boolean): Promise<Organization> {
+    const [organization] = await db
+      .update(organizations)
+      .set({
+        isActive,
+        updatedAt: new Date(),
+      })
+      .where(eq(organizations.id, id))
+      .returning();
+    return organization;
+  }
+
+  async updateOrganization(id: string, updates: Partial<InsertOrganization>): Promise<Organization> {
+    const [organization] = await db
+      .update(organizations)
+      .set({
+        ...updates,
+        updatedAt: new Date(),
+      })
+      .where(eq(organizations.id, id))
+      .returning();
+    return organization;
+  }
+
+  async updateUserSuperAdminStatus(userId: string, isSuperAdmin: boolean): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({
+        isSuperAdmin,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
   }
 
   // User operations
@@ -1626,6 +1677,62 @@ export class DatabaseStorage implements IStorage {
       .from(passwordChangeHistory)
       .where(eq(passwordChangeHistory.userId, userId))
       .orderBy(desc(passwordChangeHistory.changedAt));
+  }
+
+  // Audit log operations
+  async createAuditLog(log: InsertAuditLog): Promise<AuditLog> {
+    const [record] = await db.insert(auditLogs).values(log).returning();
+    return record;
+  }
+
+  async getAuditLogs(filters?: {
+    actorId?: string;
+    action?: string;
+    targetType?: string;
+    targetId?: string;
+    organizationId?: string;
+    startDate?: Date;
+    endDate?: Date;
+    limit?: number;
+  }): Promise<AuditLog[]> {
+    let query = db.select().from(auditLogs);
+
+    const conditions = [];
+    if (filters?.actorId) {
+      conditions.push(eq(auditLogs.actorId, filters.actorId));
+    }
+    if (filters?.action) {
+      conditions.push(eq(auditLogs.action, filters.action));
+    }
+    if (filters?.targetType) {
+      conditions.push(eq(auditLogs.targetType, filters.targetType));
+    }
+    if (filters?.targetId) {
+      conditions.push(eq(auditLogs.targetId, filters.targetId));
+    }
+    if (filters?.organizationId) {
+      conditions.push(eq(auditLogs.organizationId, filters.organizationId));
+    }
+    if (filters?.startDate) {
+      conditions.push(sql`${auditLogs.createdAt} >= ${filters.startDate}`);
+    }
+    if (filters?.endDate) {
+      conditions.push(sql`${auditLogs.createdAt} <= ${filters.endDate}`);
+    }
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+
+    query = query.orderBy(desc(auditLogs.createdAt)) as any;
+
+    if (filters?.limit) {
+      query = query.limit(filters.limit) as any;
+    } else {
+      query = query.limit(100) as any; // Default limit
+    }
+
+    return await query;
   }
 }
 

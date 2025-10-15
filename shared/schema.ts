@@ -46,6 +46,7 @@ export const users = pgTable("users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   role: varchar("role").default("user"), // user, admin
+  isSuperAdmin: boolean("is_super_admin").default(false), // System-level super admin (above organizations)
   organizationId: varchar("organization_id").references(() => organizations.id),
   // Extended user details
   username: varchar("username").unique(),
@@ -385,3 +386,40 @@ export type InsertPasswordChangeHistory = z.infer<typeof insertPasswordChangeHis
 export type PasswordChangeHistory = typeof passwordChangeHistory.$inferSelect;
 export type Webhook = typeof webhooks.$inferSelect;
 export type InsertWebhook = z.infer<typeof insertWebhookSchema>;
+
+// Audit Logs Table - Track super admin actions
+export const auditLogs = pgTable("audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  actorId: varchar("actor_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  actorEmail: varchar("actor_email").notNull(),
+  action: varchar("action", { length: 100 }).notNull(),
+  targetType: varchar("target_type", { length: 50 }), // 'organization', 'user', 'system'
+  targetId: varchar("target_id"),
+  targetEmail: varchar("target_email"),
+  oldValue: text("old_value"),
+  newValue: text("new_value"),
+  ipAddress: varchar("ip_address", { length: 45 }),
+  userAgent: text("user_agent"),
+  metadata: jsonb("metadata").$type<Record<string, any>>(),
+  createdAt: timestamp("created_at").defaultNow(),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "set null" }),
+});
+
+// Audit log validation schema
+export const insertAuditLogSchema = z.object({
+  actorId: z.string(),
+  actorEmail: z.string().email(),
+  action: z.string(),
+  targetType: z.enum(["organization", "user", "system"]).optional(),
+  targetId: z.string().optional(),
+  targetEmail: z.string().optional(),
+  oldValue: z.string().optional(),
+  newValue: z.string().optional(),
+  ipAddress: z.string().optional(),
+  userAgent: z.string().optional(),
+  metadata: z.record(z.any()).optional(),
+  organizationId: z.string().optional(),
+});
+
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+export type AuditLog = typeof auditLogs.$inferSelect;
