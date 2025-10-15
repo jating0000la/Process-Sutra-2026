@@ -12,17 +12,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
-import { Clock, Settings, Save } from "lucide-react";
+import { Clock, Settings, Save, Info, Calendar } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const tatConfigSchema = z.object({
   officeStartHour: z.coerce.number().min(0).max(23),
   officeEndHour: z.coerce.number().min(0).max(23),
   timezone: z.string().min(1),
   skipWeekends: z.boolean(),
+  weekendDays: z.string().optional(), // Comma-separated weekend days
 }).refine((data) => data.officeEndHour > data.officeStartHour, {
   message: "Office end hour must be after start hour",
   path: ["officeEndHour"],
@@ -32,6 +35,16 @@ const tatConfigSchema = z.object({
 });
 
 type TATConfig = z.infer<typeof tatConfigSchema>;
+
+const WEEK_DAYS = [
+  { value: 0, label: "Sunday", short: "Sun" },
+  { value: 1, label: "Monday", short: "Mon" },
+  { value: 2, label: "Tuesday", short: "Tue" },
+  { value: 3, label: "Wednesday", short: "Wed" },
+  { value: 4, label: "Thursday", short: "Thu" },
+  { value: 5, label: "Friday", short: "Fri" },
+  { value: 6, label: "Saturday", short: "Sat" },
+];
 
 export default function TATConfig() {
   const { toast } = useToast();
@@ -64,6 +77,7 @@ export default function TATConfig() {
       officeEndHour: 18,
       timezone: "Asia/Kolkata",
       skipWeekends: true,
+      weekendDays: "0,6", // Sunday and Saturday by default
     },
   });
 
@@ -75,6 +89,7 @@ export default function TATConfig() {
         officeEndHour: config.officeEndHour || 18,
         timezone: config.timezone || "Asia/Kolkata",
         skipWeekends: config.skipWeekends !== undefined ? config.skipWeekends : true,
+        weekendDays: config.weekendDays || "0,6",
       });
     }
   }, [config, form]);
@@ -238,7 +253,7 @@ export default function TATConfig() {
                             <div className="space-y-0.5">
                               <FormLabel>Skip Weekends</FormLabel>
                               <FormDescription>
-                                Exclude weekends from TAT calculations
+                                Exclude weekend days from TAT calculations
                               </FormDescription>
                             </div>
                             <FormControl>
@@ -250,6 +265,67 @@ export default function TATConfig() {
                           </FormItem>
                         )}
                       />
+
+                      {form.watch("skipWeekends") && (
+                        <FormField
+                          control={form.control}
+                          name="weekendDays"
+                          render={({ field }) => {
+                            const selectedDays = field.value?.split(',').map(d => parseInt(d.trim())).filter(d => !isNaN(d)) || [];
+                            
+                            const toggleDay = (dayValue: number) => {
+                              let newDays = [...selectedDays];
+                              if (newDays.includes(dayValue)) {
+                                newDays = newDays.filter(d => d !== dayValue);
+                              } else {
+                                newDays.push(dayValue);
+                              }
+                              newDays.sort();
+                              field.onChange(newDays.join(','));
+                            };
+
+                            return (
+                              <FormItem>
+                                <FormLabel className="flex items-center gap-2">
+                                  <Calendar className="w-4 h-4" />
+                                  Weekend Days
+                                </FormLabel>
+                                <FormDescription>
+                                  Select which days are considered weekends for your organization
+                                </FormDescription>
+                                <div className="grid grid-cols-7 gap-2 mt-2">
+                                  {WEEK_DAYS.map((day) => {
+                                    const isSelected = selectedDays.includes(day.value);
+                                    return (
+                                      <Button
+                                        key={day.value}
+                                        type="button"
+                                        variant={isSelected ? "default" : "outline"}
+                                        className="h-16 flex flex-col items-center justify-center"
+                                        onClick={() => toggleDay(day.value)}
+                                      >
+                                        <span className="text-xs font-medium">{day.short}</span>
+                                        <span className="text-[10px] opacity-70">{day.label.slice(0, 3)}</span>
+                                      </Button>
+                                    );
+                                  })}
+                                </div>
+                                <Alert className="mt-3">
+                                  <Info className="h-4 w-4" />
+                                  <AlertDescription>
+                                    {selectedDays.length === 0 && "No weekend days selected - all days are working days"}
+                                    {selectedDays.length === 1 && `${WEEK_DAYS.find(d => d.value === selectedDays[0])?.label} is your weekend`}
+                                    {selectedDays.length === 2 && selectedDays.includes(0) && selectedDays.includes(6) && "Saturday & Sunday are weekends (Standard)"}
+                                    {selectedDays.length === 2 && (!selectedDays.includes(0) || !selectedDays.includes(6)) && `${WEEK_DAYS.filter(d => selectedDays.includes(d.value)).map(d => d.label).join(' & ')} are weekends`}
+                                    {selectedDays.length > 2 && `${selectedDays.length} days selected as weekends`}
+                                  </AlertDescription>
+                                </Alert>
+                                <FormMessage />
+                              </FormItem>
+                            );
+                          }}
+                        />
+                      )}
                     </form>
                   </Form>
                 )}
@@ -299,13 +375,50 @@ export default function TATConfig() {
                   </div>
                 </div>
 
-                <div className="mt-4 p-3 bg-muted rounded-lg">
-                  <p className="text-sm">
-                    <strong>Current Settings:</strong><br />
-                    Office Hours: {form.watch("officeStartHour")}:00 - {form.watch("officeEndHour")}:00<br />
-                    Timezone: {form.watch("timezone")}<br />
-                    Skip Weekends: {form.watch("skipWeekends") ? "Yes" : "No"}
-                  </p>
+                <div className="mt-4 p-4 bg-muted rounded-lg space-y-2">
+                  <p className="text-sm font-semibold">Current Configuration:</p>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Office Hours:</span>
+                      <p className="font-medium">{form.watch("officeStartHour")}:00 - {form.watch("officeEndHour")}:00</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Hours per Day:</span>
+                      <p className="font-medium">{form.watch("officeEndHour") - form.watch("officeStartHour")} hours</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Timezone:</span>
+                      <p className="font-medium">{form.watch("timezone")}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Skip Weekends:</span>
+                      <p className="font-medium">{form.watch("skipWeekends") ? "Yes" : "No"}</p>
+                    </div>
+                    {form.watch("skipWeekends") && form.watch("weekendDays") && (
+                      <div className="col-span-2">
+                        <span className="text-muted-foreground">Weekend Days:</span>
+                        <p className="font-medium">
+                          {form.watch("weekendDays")?.split(',').map(d => {
+                            const day = WEEK_DAYS.find(wd => wd.value === parseInt(d.trim()));
+                            return day?.label;
+                          }).filter(Boolean).join(', ') || 'None'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  <Alert className="mt-2">
+                    <Info className="h-4 w-4" />
+                    <AlertTitle>Usage Example</AlertTitle>
+                    <AlertDescription className="text-xs">
+                      {form.watch("skipWeekends") 
+                        ? `If a task starts on Friday at 2 PM with 2-day TAT, it will be due on ${
+                            form.watch("weekendDays")?.includes('0') && form.watch("weekendDays")?.includes('6') 
+                              ? 'Tuesday' 
+                              : 'the next available working day'
+                          } at 2 PM (weekends skipped).`
+                        : 'Tasks will be calculated including all days of the week (no weekends skipped).'}
+                    </AlertDescription>
+                  </Alert>
                 </div>
               </CardContent>
             </Card>

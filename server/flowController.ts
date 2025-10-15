@@ -31,9 +31,10 @@ export const startFlowWebhook = async (req: Request, res: Response) => {
     // Note: This webhook doesn't have organization context, using default config
     const config: TATConfig = {
       officeStartHour: 9,
-      officeEndHour: 17, // 5 PM (8 hours workday)
+      officeEndHour: 17, // Configurable per organization (5 PM default)
       timezone: 'Asia/Kolkata',
-      skipWeekends: true
+      skipWeekends: true,
+      weekendDays: '0,6' // Sunday and Saturday
     };
 
     // 2. Insert initial task

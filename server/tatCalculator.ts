@@ -6,21 +6,30 @@ export interface TATConfig {
   officeEndHour: number;
   timezone: string;
   skipWeekends: boolean;
+  weekendDays?: string; // Comma-separated weekend days: "0,6" for Sun+Sat, "0" for Sun only
 }
 
 const defaultConfig: TATConfig = {
-  officeStartHour: 9,  // 9 AM
-  officeEndHour: 17,   // 5 PM (8 hours workday)
-  timezone: "Asia/Kolkata", // IST
-  skipWeekends: true
+  officeStartHour: 9,  // 9 AM (customizable per organization)
+  officeEndHour: 17,   // 5 PM (customizable per organization)
+  timezone: "Asia/Kolkata", // IST (customizable per organization)
+  skipWeekends: true,
+  weekendDays: "0,6" // Sunday (0) and Saturday (6) - customizable per organization
 };
+
+// Helper function to check if a day is a weekend
+function isWeekendDay(day: number, weekendDays: string = "0,6"): boolean {
+  if (!weekendDays) return false;
+  const weekends = weekendDays.split(',').map(d => parseInt(d.trim()));
+  return weekends.includes(day);
+}
 
 export function hourTAT(
   timestamp: Date, 
   tat: number, 
   config: TATConfig = defaultConfig
 ): Date {
-  const { officeStartHour, officeEndHour, skipWeekends } = config;
+  const { officeStartHour, officeEndHour, skipWeekends, weekendDays } = config;
   let currentTime = new Date(timestamp);
   let remainingHours = tat;
   
@@ -30,9 +39,14 @@ export function hourTAT(
     const currentDay = currentTime.getDay();
     
     // Skip weekends if configured
-    if (skipWeekends && (currentDay === 0 || currentDay === 6)) {
-      // Jump to next Monday at office start
-      const daysToAdd = currentDay === 0 ? 1 : 2;
+    if (skipWeekends && isWeekendDay(currentDay, weekendDays)) {
+      // Jump to next working day at office start
+      let daysToAdd = 1;
+      let nextDay = (currentDay + daysToAdd) % 7;
+      while (isWeekendDay(nextDay, weekendDays)) {
+        daysToAdd++;
+        nextDay = (currentDay + daysToAdd) % 7;
+      }
       currentTime.setDate(currentTime.getDate() + daysToAdd);
       currentTime.setHours(officeStartHour, 0, 0, 0);
       continue;
@@ -79,16 +93,16 @@ export function hourTAT(
 }
 
 export function dayTAT(timestamp: Date, tat: number, config: TATConfig = defaultConfig): Date {
-  const { officeStartHour, skipWeekends } = config;
+  const { officeStartHour, skipWeekends, weekendDays } = config;
   const resultDate = new Date(timestamp);
   let daysAdded = 0;
   
   while (daysAdded < tat) {
     resultDate.setDate(resultDate.getDate() + 1);
     
-    // Skip weekends if configured (Saturday = 6, Sunday = 0)
-    const isWeekend = resultDate.getDay() === 0 || resultDate.getDay() === 6;
-    if (!skipWeekends || !isWeekend) {
+    // Skip weekends if configured using custom weekend days
+    const isWeekend = skipWeekends && isWeekendDay(resultDate.getDay(), weekendDays);
+    if (!isWeekend) {
       daysAdded++;
     }
   }
@@ -107,16 +121,16 @@ export function beforeTAT(
   daysToSubtract: number,
   config: TATConfig = defaultConfig
 ): Date {
-  const { officeStartHour, skipWeekends } = config;
+  const { officeStartHour, skipWeekends, weekendDays } = config;
   const resultDate = new Date(timestamp);
   let daysSubtracted = 0;
   
   while (daysSubtracted < daysToSubtract) {
     resultDate.setDate(resultDate.getDate() - 1);
     
-    // Skip weekends if configured (Saturday = 6, Sunday = 0)
-    const isWeekend = resultDate.getDay() === 0 || resultDate.getDay() === 6;
-    if (!skipWeekends || !isWeekend) {
+    // Skip weekends if configured using custom weekend days
+    const isWeekend = skipWeekends && isWeekendDay(resultDate.getDay(), weekendDays);
+    if (!isWeekend) {
       daysSubtracted++;
     }
   }
@@ -128,7 +142,7 @@ export function beforeTAT(
 }
 
 export function specifyTAT(timestamp: Date, hour: number, config: TATConfig = defaultConfig): Date {
-  const { skipWeekends } = config;
+  const { skipWeekends, weekendDays } = config;
   
   // Validate hour is between 0-23
   if (hour < 0 || hour > 23) {
@@ -142,9 +156,9 @@ export function specifyTAT(timestamp: Date, hour: number, config: TATConfig = de
   // Set to the specific hour (e.g., TAT = 10 means 10:00 AM)
   resultDate.setHours(hour, 0, 0, 0);
   
-  // Skip weekends if configured (Saturday = 6, Sunday = 0)
+  // Skip weekends if configured using custom weekend days
   if (skipWeekends) {
-    while (resultDate.getDay() === 0 || resultDate.getDay() === 6) {
+    while (isWeekendDay(resultDate.getDay(), weekendDays)) {
       resultDate.setDate(resultDate.getDate() + 1);
     }
   }

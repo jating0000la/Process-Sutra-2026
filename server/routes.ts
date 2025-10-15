@@ -367,9 +367,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const tatConfiguration = await storage.getTATConfig(user.organizationId);
         const config: TATConfig = tatConfiguration || { 
           officeStartHour: 9, 
-          officeEndHour: 17, // 5 PM (8 hours workday)
+          officeEndHour: 17, // Configurable per organization (5 PM default)
           timezone: "Asia/Kolkata",
-          skipWeekends: true
+          skipWeekends: true,
+          weekendDays: "0,6" // Sunday and Saturday
         };
         
         // Create ALL next tasks using enhanced TAT calculation
@@ -453,9 +454,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const tatConfiguration = await storage.getTATConfig(currentUser.organizationId);
         const config: TATConfig = tatConfiguration || { 
           officeStartHour: 9, 
-          officeEndHour: 17, // 5 PM (8 hours workday)
+          officeEndHour: 17, // Configurable per organization (5 PM default)
           timezone: "Asia/Kolkata",
-          skipWeekends: true
+          skipWeekends: true,
+          weekendDays: "0,6" // Sunday and Saturday
         };
         
         // Create ALL next tasks based on current task status using enhanced TAT calculation
@@ -572,9 +574,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tatConfiguration = await storage.getTATConfig(user.organizationId);
       const config: TATConfig = tatConfiguration || { 
         officeStartHour: 9, 
-        officeEndHour: 17, // 5 PM (8 hours workday)
+        officeEndHour: 17, // Configurable per organization (5 PM default)
         timezone: "Asia/Kolkata",
-        skipWeekends: true
+        skipWeekends: true,
+        weekendDays: "0,6" // Sunday and Saturday
       };
       
       const plannedTime = calculateTAT(new Date(), startRule.tat, startRule.tatType, config);
@@ -934,9 +937,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tatConfiguration = await storage.getTATConfig(organizationId);
       const config: TATConfig = tatConfiguration || { 
         officeStartHour: 9, 
-        officeEndHour: 17, // 5 PM (8 hours workday)
+        officeEndHour: 17, // Configurable per organization (5 PM default)
         timezone: "Asia/Kolkata",
-        skipWeekends: true
+        skipWeekends: true,
+        weekendDays: "0,6" // Sunday and Saturday
       };
       const plannedTime = calculateTAT(new Date(), startRule.tat, startRule.tatType, config);
       const flowStartTime = new Date();
@@ -1057,9 +1061,10 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       const tatConfiguration = await storage.getTATConfig(organizationId);
       const config: TATConfig = tatConfiguration || { 
         officeStartHour: 9, 
-        officeEndHour: 17, // 5 PM (8 hours workday)
+        officeEndHour: 17, // Configurable per organization (5 PM default)
         timezone: "Asia/Kolkata",
-        skipWeekends: true
+        skipWeekends: true,
+        weekendDays: "0,6" // Sunday and Saturday
       };
       const plannedTime = calculateTAT(new Date(), startRule.tat, startRule.tatType, config);
 
@@ -1764,9 +1769,10 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       const config = await storage.getTATConfig(currentUser?.organizationId || "");
       res.json(config || {
         officeStartHour: 9,
-        officeEndHour: 17, // 5 PM (8 hours workday)
+        officeEndHour: 17, // Configurable per organization (5 PM default)
         timezone: "Asia/Kolkata",
-        skipWeekends: true
+        skipWeekends: true,
+        weekendDays: "0,6" // Sunday and Saturday
       });
     } catch (error) {
       console.error("Error fetching TAT config:", error);

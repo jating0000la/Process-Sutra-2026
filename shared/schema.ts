@@ -406,10 +406,13 @@ export const tatConfig = pgTable(
   {
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
     organizationId: varchar("organization_id").notNull().references(() => organizations.id).unique(),
-    officeStartHour: integer("office_start_hour").default(9),
-    officeEndHour: integer("office_end_hour").default(17), // 5 PM (8 hours workday)
+    officeStartHour: integer("office_start_hour").default(9), // Customizable: organization-specific
+    officeEndHour: integer("office_end_hour").default(17), // Customizable: organization-specific (5 PM default)
     timezone: varchar("timezone").default("Asia/Kolkata"),
     skipWeekends: boolean("skip_weekends").default(true),
+    // Weekend configuration: comma-separated list of days (0=Sunday, 1=Monday, ..., 6=Saturday)
+    // Examples: "0,6" for Sunday+Saturday, "0" for Sunday only, "5" for Friday only, "" for no weekends
+    weekendDays: varchar("weekend_days").default("0,6"), // Default: Sunday and Saturday
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
   },
