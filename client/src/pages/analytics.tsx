@@ -5,7 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import Header from "@/components/header";
 import Sidebar from "@/components/sidebar";
 import MetricCard from "@/components/metric-card";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +24,10 @@ import {
   Bar,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  Legend,
+  Area,
+  AreaChart
 } from "recharts";
 import { 
   TrendingUp, 
@@ -34,7 +37,11 @@ import {
   Award,
   Users,
   Calendar,
-  Download
+  Download,
+  Activity,
+  BarChart3,
+  Filter,
+  Zap
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -165,11 +172,15 @@ export default function Analytics() {
 
   if (isLoading || !isAuthenticated) {
     return (
-      <div className="flex h-screen bg-neutral">
+      <div className="flex h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading analytics...</p>
+            <div className="relative">
+              <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-200 border-t-blue-600 mx-auto"></div>
+              <Activity className="h-8 w-8 text-blue-600 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" />
+            </div>
+            <p className="mt-6 text-lg font-medium text-gray-700">Loading analytics...</p>
+            <p className="text-sm text-gray-500 mt-2">Preparing your insights</p>
           </div>
         </div>
       </div>
@@ -177,82 +188,112 @@ export default function Analytics() {
   }
 
   return (
-    <div className="flex h-screen bg-neutral">
+    <div className="flex h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       <Sidebar />
       <main className="flex-1 overflow-y-auto">
         <Header 
-          title="Analytics" 
-          description="Performance insights and metrics"
+          title="Analytics Dashboard" 
+          description="Comprehensive performance insights and metrics"
         />
 
-        <div className="p-6 space-y-6">
+        <div className="p-8 space-y-8">
           {/* Key Performance Metrics */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <MetricCard
-              title="Total Tasks"
-              value={metrics?.totalTasks || 0}
-              icon={<Target className="text-blue-500" />}
-              trend={{ value: 15, isPositive: true }}
-              description="from last month"
-            />
-            <MetricCard
-              title="Completion Rate"
-              value={`${Math.round(((metrics?.completedTasks || 0) / (metrics?.totalTasks || 1)) * 100)}%`}
-              icon={<CheckCircle className="text-green-500" />}
-              trend={{ value: 8, isPositive: true }}
-              description="from last month"
-            />
-            <MetricCard
-              title="On-Time Rate"
-              value={`${metrics?.onTimeRate || 0}%`}
-              icon={<Clock className="text-orange-500" />}
-              trend={{ value: 3, isPositive: true }}
-              description="from last month"
-            />
-            <MetricCard
-              title="Avg Resolution Time"
-              value={`${metrics?.avgResolutionTime || 0} days`}
-              icon={<Award className="text-purple-500" />}
-              trend={{ value: 12, isPositive: false }}
-              description="from last month"
-            />
+            <div className="transform transition-all duration-300 hover:scale-105">
+              <MetricCard
+                title="Total Tasks"
+                value={metrics?.totalTasks || 0}
+                icon={<Target className="text-blue-600" />}
+                trend={{ value: 15, isPositive: true }}
+                description="from last month"
+              />
+            </div>
+            <div className="transform transition-all duration-300 hover:scale-105">
+              <MetricCard
+                title="Completion Rate"
+                value={`${Math.round(((metrics?.completedTasks || 0) / (metrics?.totalTasks || 1)) * 100)}%`}
+                icon={<CheckCircle className="text-emerald-600" />}
+                trend={{ value: 8, isPositive: true }}
+                description="from last month"
+              />
+            </div>
+            <div className="transform transition-all duration-300 hover:scale-105">
+              <MetricCard
+                title="On-Time Rate"
+                value={`${metrics?.onTimeRate || 0}%`}
+                icon={<Clock className="text-amber-600" />}
+                trend={{ value: 3, isPositive: true }}
+                description="from last month"
+              />
+            </div>
+            <div className="transform transition-all duration-300 hover:scale-105">
+              <MetricCard
+                title="Avg Resolution Time"
+                value={`${metrics?.avgResolutionTime || 0} days`}
+                icon={<Zap className="text-violet-600" />}
+                trend={{ value: 12, isPositive: false }}
+                description="from last month"
+              />
+            </div>
           </div>
 
           {/* Tabs for different views */}
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className={`grid w-full ${(user as any)?.role === 'admin' ? 'grid-cols-4' : 'grid-cols-3'}`}>
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="weekly">Weekly Scoring</TabsTrigger>
-              {(user as any)?.role === 'admin' && <TabsTrigger value="doers">All Doers Performance</TabsTrigger>}
-              <TabsTrigger value="report">Reporting</TabsTrigger>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+            <TabsList className={`grid w-full ${(user as any)?.role === 'admin' ? 'grid-cols-4' : 'grid-cols-3'} bg-white shadow-sm border border-gray-200 p-1 rounded-lg`}>
+              <TabsTrigger value="overview" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white flex items-center gap-2">
+                <BarChart3 className="h-4 w-4" />
+                Overview
+              </TabsTrigger>
+              <TabsTrigger value="weekly" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white flex items-center gap-2">
+                <Calendar className="h-4 w-4" />
+                Weekly Scoring
+              </TabsTrigger>
+              {(user as any)?.role === 'admin' && (
+                <TabsTrigger value="doers" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  All Doers
+                </TabsTrigger>
+              )}
+              <TabsTrigger value="report" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white flex items-center gap-2">
+                <TrendingUp className="h-4 w-4" />
+                Reporting
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-6">
               {/* Charts Section */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Flow Performance Chart */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <TrendingUp className="h-5 w-5" />
-                      Flow Performance
+                <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm hover:shadow-xl transition-shadow duration-300">
+                  <CardHeader className="border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
+                    <CardTitle className="flex items-center gap-2 text-gray-800">
+                      <div className="p-2 bg-blue-100 rounded-lg">
+                        <TrendingUp className="h-5 w-5 text-blue-600" />
+                      </div>
+                      Flow Performance Overview
                     </CardTitle>
+                    <CardDescription>Average completion time and on-time delivery rates</CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
+                  <CardContent className="pt-6">
+                    <div className="space-y-3">
                       {flowPerformance?.map((flow: any, index: number) => (
-                        <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div>
-                            <h4 className="font-medium">{flow.system}</h4>
-                            <p className="text-sm text-gray-600">
-                              Avg: {flow.avgCompletionTime} days
-                            </p>
+                        <div key={index} className="group flex items-center justify-between p-4 bg-gradient-to-r from-gray-50 to-white rounded-xl border border-gray-100 hover:border-blue-200 hover:shadow-md transition-all duration-200">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors">
+                              <Activity className="h-5 w-5 text-blue-600" />
+                            </div>
+                            <div>
+                              <h4 className="font-semibold text-gray-800">{flow.system}</h4>
+                              <p className="text-sm text-gray-500">
+                                Average: {flow.avgCompletionTime} days
+                              </p>
+                            </div>
                           </div>
                           <div className="text-right">
-                            <div className="text-lg font-semibold text-green-600">
+                            <div className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-green-600 bg-clip-text text-transparent">
                               {flow.onTimeRate}%
                             </div>
-                            <div className="text-xs text-gray-500">On-time</div>
+                            <div className="text-xs text-gray-500 font-medium">On-time delivery</div>
                           </div>
                         </div>
                       ))}
@@ -261,14 +302,17 @@ export default function Analytics() {
                 </Card>
 
                 {/* Task Distribution */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Users className="h-5 w-5" />
+                <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm hover:shadow-xl transition-shadow duration-300">
+                  <CardHeader className="border-b border-gray-100 bg-gradient-to-r from-violet-50 to-purple-50">
+                    <CardTitle className="flex items-center gap-2 text-gray-800">
+                      <div className="p-2 bg-violet-100 rounded-lg">
+                        <Users className="h-5 w-5 text-violet-600" />
+                      </div>
                       Task Distribution
                     </CardTitle>
+                    <CardDescription>Current status breakdown of all tasks</CardDescription>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="pt-6">
                     <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
@@ -276,15 +320,29 @@ export default function Analytics() {
                             data={taskDistributionData}
                             cx="50%"
                             cy="50%"
-                            outerRadius={80}
+                            innerRadius={60}
+                            outerRadius={90}
                             dataKey="value"
-                            label={({ name, value }) => `${name}: ${value}`}
+                            label={({ name, value, percent }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
+                            labelLine={false}
                           >
                             {taskDistributionData.map((entry, index) => (
                               <Cell key={`cell-${index}`} fill={entry.color} />
                             ))}
                           </Pie>
-                          <Tooltip />
+                          <Tooltip 
+                            contentStyle={{
+                              backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                              border: 'none',
+                              borderRadius: '12px',
+                              boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                            }}
+                          />
+                          <Legend 
+                            verticalAlign="bottom" 
+                            height={36}
+                            iconType="circle"
+                          />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
@@ -294,74 +352,120 @@ export default function Analytics() {
             </TabsContent>
 
             <TabsContent value="weekly" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Calendar className="h-5 w-5" />
+              <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+                <CardHeader className="border-b border-gray-100 bg-gradient-to-r from-emerald-50 to-teal-50">
+                  <CardTitle className="flex items-center gap-2 text-gray-800">
+                    <div className="p-2 bg-emerald-100 rounded-lg">
+                      <Calendar className="h-5 w-5 text-emerald-600" />
+                    </div>
                     My Weekly Performance
                   </CardTitle>
+                  <CardDescription>Track your weekly productivity and completion rates</CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="pt-6">
                   {weeklyLoading ? (
-                    <div className="flex items-center justify-center p-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    <div className="flex items-center justify-center p-12">
+                      <div className="relative">
+                        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600"></div>
+                        <Activity className="h-6 w-6 text-blue-600 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" />
+                      </div>
                     </div>
                   ) : (
-                    <div className="space-y-4">
+                    <div className="space-y-6">
                       {weeklyScoring && weeklyScoring.length > 0 ? (
                         <>
                           {/* Weekly Chart */}
-                          <div className="h-64 mb-6">
+                          <div className="h-80 bg-gradient-to-br from-gray-50 to-blue-50 rounded-xl p-4 border border-gray-100">
                             <ResponsiveContainer width="100%" height="100%">
                               <BarChart data={weeklyScoring}>
-                                <CartesianGrid strokeDasharray="3 3" />
+                                <defs>
+                                  <linearGradient id="colorOnTime" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
+                                    <stop offset="95%" stopColor="#10B981" stopOpacity={0.4}/>
+                                  </linearGradient>
+                                  <linearGradient id="colorCompleted" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8}/>
+                                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.4}/>
+                                  </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                                 <XAxis 
                                   dataKey="weekStart" 
                                   tickFormatter={(value) => format(new Date(value), "MMM dd")}
+                                  tick={{ fill: '#6B7280' }}
                                 />
-                                <YAxis />
+                                <YAxis tick={{ fill: '#6B7280' }} />
                                 <Tooltip 
                                   labelFormatter={(value) => `Week of ${format(new Date(value), "MMM dd, yyyy")}`}
+                                  contentStyle={{
+                                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                    border: 'none',
+                                    borderRadius: '12px',
+                                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                                  }}
                                 />
-                                <Bar dataKey="onTimeRate" fill="#10B981" name="On-Time Rate %" />
-                                <Bar dataKey="completedTasks" fill="#3B82F6" name="Completed Tasks" />
+                                <Legend />
+                                <Bar dataKey="onTimeRate" fill="url(#colorOnTime)" name="On-Time Rate %" radius={[8, 8, 0, 0]} />
+                                <Bar dataKey="completedTasks" fill="url(#colorCompleted)" name="Completed Tasks" radius={[8, 8, 0, 0]} />
                               </BarChart>
                             </ResponsiveContainer>
                           </div>
 
                           {/* Weekly Table */}
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Week</TableHead>
-                                <TableHead>Total Tasks</TableHead>
-                                <TableHead>Completed</TableHead>
-                                <TableHead>On-Time Rate</TableHead>
-                                <TableHead>Avg Days</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {weeklyScoring.map((week: any, index: number) => (
-                                <TableRow key={index}>
-                                  <TableCell>
-                                    {format(new Date(week.weekStart), "MMM dd")} - {format(new Date(week.weekEnd), "MMM dd")}
-                                  </TableCell>
-                                  <TableCell>{week.totalTasks}</TableCell>
-                                  <TableCell>{week.completedTasks}</TableCell>
-                                  <TableCell>
-                                    <Badge variant={week.onTimeRate >= 80 ? "default" : week.onTimeRate >= 60 ? "secondary" : "destructive"}>
-                                      {week.onTimeRate}%
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell>{week.avgCompletionDays.toFixed(1)}</TableCell>
+                          <div className="rounded-xl border border-gray-200 overflow-hidden">
+                            <Table>
+                              <TableHeader>
+                                <TableRow className="bg-gradient-to-r from-gray-50 to-blue-50 hover:from-gray-100 hover:to-blue-100">
+                                  <TableHead className="font-semibold text-gray-700">Week Period</TableHead>
+                                  <TableHead className="font-semibold text-gray-700">Total Tasks</TableHead>
+                                  <TableHead className="font-semibold text-gray-700">Completed</TableHead>
+                                  <TableHead className="font-semibold text-gray-700">On-Time Rate</TableHead>
+                                  <TableHead className="font-semibold text-gray-700">Avg Days</TableHead>
                                 </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
+                              </TableHeader>
+                              <TableBody>
+                                {weeklyScoring.map((week: any, index: number) => (
+                                  <TableRow key={index} className="hover:bg-blue-50/50 transition-colors">
+                                    <TableCell className="font-medium">
+                                      <div className="flex items-center gap-2">
+                                        <Calendar className="h-4 w-4 text-blue-600" />
+                                        {format(new Date(week.weekStart), "MMM dd")} - {format(new Date(week.weekEnd), "MMM dd")}
+                                      </div>
+                                    </TableCell>
+                                    <TableCell>
+                                      <span className="inline-flex items-center justify-center px-3 py-1 rounded-full bg-blue-100 text-blue-700 font-medium">
+                                        {week.totalTasks}
+                                      </span>
+                                    </TableCell>
+                                    <TableCell>
+                                      <span className="inline-flex items-center justify-center px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium">
+                                        {week.completedTasks}
+                                      </span>
+                                    </TableCell>
+                                    <TableCell>
+                                      <Badge 
+                                        variant={week.onTimeRate >= 80 ? "default" : week.onTimeRate >= 60 ? "secondary" : "destructive"}
+                                        className={week.onTimeRate >= 80 ? "bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700" : ""}
+                                      >
+                                        {week.onTimeRate}%
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell>
+                                      <span className="font-semibold text-gray-700">{week.avgCompletionDays.toFixed(1)}</span>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
                         </>
                       ) : (
-                        <div className="text-center py-8 text-gray-500">
-                          No weekly data available yet
+                        <div className="text-center py-16">
+                          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
+                            <Calendar className="h-8 w-8 text-gray-400" />
+                          </div>
+                          <p className="text-lg font-medium text-gray-600">No weekly data available yet</p>
+                          <p className="text-sm text-gray-500 mt-2">Start completing tasks to see your weekly performance</p>
                         </div>
                       )}
                     </div>
@@ -372,107 +476,149 @@ export default function Analytics() {
 
             {(user as any)?.role === 'admin' && (
               <TabsContent value="doers" className="space-y-6">
-                <Card>
-                  <CardHeader>
+                <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+                  <CardHeader className="border-b border-gray-100 bg-gradient-to-r from-purple-50 to-pink-50">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="flex items-center gap-2">
-                        <Users className="h-5 w-5" />
-                        All Doers Performance
-                      </CardTitle>
-                      <Button variant="outline" size="sm">
+                      <div>
+                        <CardTitle className="flex items-center gap-2 text-gray-800">
+                          <div className="p-2 bg-purple-100 rounded-lg">
+                            <Users className="h-5 w-5 text-purple-600" />
+                          </div>
+                          All Doers Performance
+                        </CardTitle>
+                        <CardDescription className="mt-1">Monitor team member performance and productivity</CardDescription>
+                      </div>
+                      <Button variant="outline" size="sm" className="bg-white hover:bg-gray-50 border-gray-300 shadow-sm">
                         <Download className="h-4 w-4 mr-2" />
-                        Export
+                        Export Data
                       </Button>
                     </div>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="pt-6">
                     {/* Filters */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-6 bg-gradient-to-br from-gray-50 to-blue-50 rounded-xl border border-gray-200">
+                      <div className="flex items-center gap-2 text-sm font-medium text-gray-700 md:col-span-4 mb-2">
+                        <Filter className="h-4 w-4 text-blue-600" />
+                        Filter Results
+                      </div>
                       <div>
-                        <Label htmlFor="startDate">Start Date</Label>
+                        <Label htmlFor="startDate" className="text-gray-700 font-medium">Start Date</Label>
                         <Input
                           id="startDate"
                           type="date"
                           value={doerFilters.startDate}
                           onChange={(e) => handleFilterChange('startDate', e.target.value)}
+                          className="mt-1 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                       <div>
-                        <Label htmlFor="endDate">End Date</Label>
+                        <Label htmlFor="endDate" className="text-gray-700 font-medium">End Date</Label>
                         <Input
                           id="endDate"
                           type="date"
                           value={doerFilters.endDate}
                           onChange={(e) => handleFilterChange('endDate', e.target.value)}
+                          className="mt-1 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                       <div>
-                        <Label htmlFor="doerName">Doer Name</Label>
+                        <Label htmlFor="doerName" className="text-gray-700 font-medium">Doer Name</Label>
                         <Input
                           id="doerName"
                           placeholder="Search by name..."
                           value={doerFilters.doerName}
                           onChange={(e) => handleFilterChange('doerName', e.target.value)}
+                          className="mt-1 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                       <div>
-                        <Label htmlFor="doerEmail">Doer Email</Label>
+                        <Label htmlFor="doerEmail" className="text-gray-700 font-medium">Doer Email</Label>
                         <Input
                           id="doerEmail"
                           placeholder="Search by email..."
                           value={doerFilters.doerEmail}
                           onChange={(e) => handleFilterChange('doerEmail', e.target.value)}
+                          className="mt-1 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                     </div>
 
                     {/* Doers Performance Table */}
                     {doersLoading ? (
-                      <div className="flex items-center justify-center p-8">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                      <div className="flex items-center justify-center p-12">
+                        <div className="relative">
+                          <div className="animate-spin rounded-full h-12 w-12 border-4 border-purple-200 border-t-purple-600"></div>
+                          <Activity className="h-6 w-6 text-purple-600 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" />
+                        </div>
                       </div>
                     ) : (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Doer</TableHead>
-                            <TableHead>Total Tasks</TableHead>
-                            <TableHead>Completed</TableHead>
-                            <TableHead>On-Time Rate</TableHead>
-                            <TableHead>Avg Days</TableHead>
-                            <TableHead>Last Task</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {doersPerformance?.map((doer: any, index: number) => (
-                            <TableRow key={index}>
-                              <TableCell>
-                                <div>
-                                  <div className="font-medium">{doer.doerName}</div>
-                                  <div className="text-sm text-gray-500">{doer.doerEmail}</div>
-                                </div>
-                              </TableCell>
-                              <TableCell>{doer.totalTasks}</TableCell>
-                              <TableCell>{doer.completedTasks}</TableCell>
-                              <TableCell>
-                                <Badge variant={doer.onTimeRate >= 80 ? "default" : doer.onTimeRate >= 60 ? "secondary" : "destructive"}>
-                                  {doer.onTimeRate}%
-                                </Badge>
-                              </TableCell>
-                              <TableCell>{doer.avgCompletionDays.toFixed(1)}</TableCell>
-                              <TableCell>
-                                {doer.lastTaskDate ? format(new Date(doer.lastTaskDate), "MMM dd, yyyy") : 'Never'}
-                              </TableCell>
+                      <div className="rounded-xl border border-gray-200 overflow-hidden">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-gradient-to-r from-gray-50 to-purple-50 hover:from-gray-100 hover:to-purple-100">
+                              <TableHead className="font-semibold text-gray-700">Doer</TableHead>
+                              <TableHead className="font-semibold text-gray-700">Total Tasks</TableHead>
+                              <TableHead className="font-semibold text-gray-700">Completed</TableHead>
+                              <TableHead className="font-semibold text-gray-700">On-Time Rate</TableHead>
+                              <TableHead className="font-semibold text-gray-700">Avg Days</TableHead>
+                              <TableHead className="font-semibold text-gray-700">Last Task</TableHead>
                             </TableRow>
-                          )) || (
-                            <TableRow>
-                              <TableCell colSpan={6} className="text-center py-8 text-gray-500">
-                                No doers data available
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </TableBody>
-                      </Table>
+                          </TableHeader>
+                          <TableBody>
+                            {doersPerformance?.map((doer: any, index: number) => (
+                              <TableRow key={index} className="hover:bg-purple-50/50 transition-colors">
+                                <TableCell>
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center text-white font-semibold">
+                                      {doer.doerName.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div>
+                                      <div className="font-semibold text-gray-800">{doer.doerName}</div>
+                                      <div className="text-sm text-gray-500">{doer.doerEmail}</div>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <span className="inline-flex items-center justify-center px-3 py-1 rounded-full bg-blue-100 text-blue-700 font-medium">
+                                    {doer.totalTasks}
+                                  </span>
+                                </TableCell>
+                                <TableCell>
+                                  <span className="inline-flex items-center justify-center px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium">
+                                    {doer.completedTasks}
+                                  </span>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge 
+                                    variant={doer.onTimeRate >= 80 ? "default" : doer.onTimeRate >= 60 ? "secondary" : "destructive"}
+                                    className={doer.onTimeRate >= 80 ? "bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700" : ""}
+                                  >
+                                    {doer.onTimeRate}%
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <span className="font-semibold text-gray-700">{doer.avgCompletionDays.toFixed(1)}</span>
+                                </TableCell>
+                                <TableCell>
+                                  <span className="text-sm text-gray-600">
+                                    {doer.lastTaskDate ? format(new Date(doer.lastTaskDate), "MMM dd, yyyy") : 'Never'}
+                                  </span>
+                                </TableCell>
+                              </TableRow>
+                            )) || (
+                              <TableRow>
+                                <TableCell colSpan={6} className="text-center py-16">
+                                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
+                                    <Users className="h-8 w-8 text-gray-400" />
+                                  </div>
+                                  <p className="text-lg font-medium text-gray-600">No doers data available</p>
+                                  <p className="text-sm text-gray-500 mt-2">Adjust your filters or check back later</p>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </TableBody>
+                        </Table>
+                      </div>
                     )}
                   </CardContent>
                 </Card>
@@ -481,85 +627,184 @@ export default function Analytics() {
 
             {/* Reporting Tab */}
             <TabsContent value="report" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5" /> Reporting Dashboard
+              <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+                <CardHeader className="border-b border-gray-100 bg-gradient-to-r from-cyan-50 to-blue-50">
+                  <CardTitle className="flex items-center gap-2 text-gray-800">
+                    <div className="p-2 bg-cyan-100 rounded-lg">
+                      <TrendingUp className="h-5 w-5 text-cyan-600" />
+                    </div>
+                    Reporting Dashboard
                   </CardTitle>
+                  <CardDescription>Comprehensive analytics and trend analysis</CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="pt-6">
                   {/* Filters */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-6 bg-gradient-to-br from-gray-50 to-cyan-50 rounded-xl border border-gray-200">
+                    <div className="flex items-center gap-2 text-sm font-medium text-gray-700 md:col-span-4 mb-2">
+                      <Filter className="h-4 w-4 text-cyan-600" />
+                      Apply Filters
+                    </div>
                     <div>
-                      <Label htmlFor="system">Flow (System)</Label>
+                      <Label htmlFor="system" className="text-gray-700 font-medium">Flow (System)</Label>
                       <select
                         id="system"
-                        className="w-full border rounded h-9 px-2"
+                        className="w-full border border-gray-300 rounded-lg h-10 px-3 mt-1 focus:border-cyan-500 focus:ring-cyan-500 bg-white"
                         value={reportFilters.system}
                         onChange={(e) => {
                           setReportFilters(prev => ({ ...prev, system: e.target.value, taskName: "" }));
                         }}
                       >
-                        <option value="">All</option>
+                        <option value="">All Systems</option>
                         {systems?.map((s: string) => (
                           <option key={s} value={s}>{s}</option>
                         ))}
                       </select>
                     </div>
                     <div>
-                      <Label htmlFor="task">Process (Task)</Label>
+                      <Label htmlFor="task" className="text-gray-700 font-medium">Process (Task)</Label>
                       <select
                         id="task"
-                        className="w-full border rounded h-9 px-2"
+                        className="w-full border border-gray-300 rounded-lg h-10 px-3 mt-1 focus:border-cyan-500 focus:ring-cyan-500 bg-white disabled:bg-gray-100"
                         value={reportFilters.taskName}
                         onChange={(e) => setReportFilters(prev => ({ ...prev, taskName: e.target.value }))}
                         disabled={!reportFilters.system}
                       >
-                        <option value="">All</option>
+                        <option value="">All Processes</option>
                         {processes?.map((p: string) => (
                           <option key={p} value={p}>{p}</option>
                         ))}
                       </select>
                     </div>
                     <div>
-                      <Label htmlFor="start">Start Date</Label>
-                      <Input id="start" type="date" value={reportFilters.startDate}
-                        onChange={(e) => setReportFilters(prev => ({ ...prev, startDate: e.target.value }))} />
+                      <Label htmlFor="start" className="text-gray-700 font-medium">Start Date</Label>
+                      <Input 
+                        id="start" 
+                        type="date" 
+                        value={reportFilters.startDate}
+                        onChange={(e) => setReportFilters(prev => ({ ...prev, startDate: e.target.value }))} 
+                        className="mt-1 border-gray-300 focus:border-cyan-500 focus:ring-cyan-500"
+                      />
                     </div>
                     <div>
-                      <Label htmlFor="end">End Date</Label>
-                      <Input id="end" type="date" value={reportFilters.endDate}
-                        onChange={(e) => setReportFilters(prev => ({ ...prev, endDate: e.target.value }))} />
+                      <Label htmlFor="end" className="text-gray-700 font-medium">End Date</Label>
+                      <Input 
+                        id="end" 
+                        type="date" 
+                        value={reportFilters.endDate}
+                        onChange={(e) => setReportFilters(prev => ({ ...prev, endDate: e.target.value }))} 
+                        className="mt-1 border-gray-300 focus:border-cyan-500 focus:ring-cyan-500"
+                      />
                     </div>
                   </div>
 
                   {/* KPI Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-                    <MetricCard title="Total Tasks" value={report?.metrics?.totalTasks || 0} icon={<Target className="text-blue-500" />} />
-                    <MetricCard title="Completion Rate" value={`${report?.metrics?.completionRate || 0}%`} icon={<CheckCircle className="text-green-500" />} />
-                    <MetricCard title="On-Time Rate" value={`${report?.metrics?.onTimeRate || 0}%`} icon={<Clock className="text-orange-500" />} />
-                    <MetricCard title="Avg Completion" value={`${report?.metrics?.avgCompletionDays || 0} days`} icon={<Award className="text-purple-500" />} />
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                    <div className="transform transition-all duration-300 hover:scale-105">
+                      <MetricCard 
+                        title="Total Tasks" 
+                        value={report?.metrics?.totalTasks || 0} 
+                        icon={<Target className="text-blue-600" />} 
+                      />
+                    </div>
+                    <div className="transform transition-all duration-300 hover:scale-105">
+                      <MetricCard 
+                        title="Completion Rate" 
+                        value={`${report?.metrics?.completionRate || 0}%`} 
+                        icon={<CheckCircle className="text-emerald-600" />} 
+                      />
+                    </div>
+                    <div className="transform transition-all duration-300 hover:scale-105">
+                      <MetricCard 
+                        title="On-Time Rate" 
+                        value={`${report?.metrics?.onTimeRate || 0}%`} 
+                        icon={<Clock className="text-amber-600" />} 
+                      />
+                    </div>
+                    <div className="transform transition-all duration-300 hover:scale-105">
+                      <MetricCard 
+                        title="Avg Completion" 
+                        value={`${report?.metrics?.avgCompletionDays || 0} days`} 
+                        icon={<Zap className="text-violet-600" />} 
+                      />
+                    </div>
                   </div>
 
                   {/* Timeseries Chart */}
-                  <div className="h-72">
-                    {reportLoading ? (
-                      <div className="flex items-center justify-center h-full">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                      </div>
-                    ) : (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={report?.timeseries || []}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="date" tickFormatter={(v) => format(new Date(v), "MMM dd")} />
-                          <YAxis />
-                          <Tooltip labelFormatter={(v) => format(new Date(v), "MMM dd, yyyy")} />
-                          <Line type="monotone" dataKey="created" stroke="#3B82F6" name="Created" />
-                          <Line type="monotone" dataKey="completed" stroke="#10B981" name="Completed" />
-                          <Line type="monotone" dataKey="overdue" stroke="#EF4444" name="Overdue" />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    )}
+                  <div className="bg-gradient-to-br from-gray-50 to-cyan-50 rounded-xl p-6 border border-gray-200">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                      <Activity className="h-5 w-5 text-cyan-600" />
+                      Task Timeline Analysis
+                    </h3>
+                    <div className="h-80">
+                      {reportLoading ? (
+                        <div className="flex items-center justify-center h-full">
+                          <div className="relative">
+                            <div className="animate-spin rounded-full h-12 w-12 border-4 border-cyan-200 border-t-cyan-600"></div>
+                            <Activity className="h-6 w-6 text-cyan-600 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" />
+                          </div>
+                        </div>
+                      ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={report?.timeseries || []}>
+                            <defs>
+                              <linearGradient id="colorCreated" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/>
+                                <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
+                              </linearGradient>
+                              <linearGradient id="colorCompleted" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#10B981" stopOpacity={0.3}/>
+                                <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
+                              </linearGradient>
+                              <linearGradient id="colorOverdue" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#EF4444" stopOpacity={0.3}/>
+                                <stop offset="95%" stopColor="#EF4444" stopOpacity={0}/>
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                            <XAxis 
+                              dataKey="date" 
+                              tickFormatter={(v) => format(new Date(v), "MMM dd")} 
+                              tick={{ fill: '#6B7280' }}
+                            />
+                            <YAxis tick={{ fill: '#6B7280' }} />
+                            <Tooltip 
+                              labelFormatter={(v) => format(new Date(v), "MMM dd, yyyy")} 
+                              contentStyle={{
+                                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                border: 'none',
+                                borderRadius: '12px',
+                                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                              }}
+                            />
+                            <Legend />
+                            <Area 
+                              type="monotone" 
+                              dataKey="created" 
+                              stroke="#3B82F6" 
+                              strokeWidth={2}
+                              fill="url(#colorCreated)" 
+                              name="Created" 
+                            />
+                            <Area 
+                              type="monotone" 
+                              dataKey="completed" 
+                              stroke="#10B981" 
+                              strokeWidth={2}
+                              fill="url(#colorCompleted)" 
+                              name="Completed" 
+                            />
+                            <Area 
+                              type="monotone" 
+                              dataKey="overdue" 
+                              stroke="#EF4444" 
+                              strokeWidth={2}
+                              fill="url(#colorOverdue)" 
+                              name="Overdue" 
+                            />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
