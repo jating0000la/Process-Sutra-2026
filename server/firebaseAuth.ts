@@ -306,9 +306,10 @@ export async function setupAuth(app: Express) {
           throw new Error('Token issuer mismatch');
         }
         
-        // Check if token is too old (require re-authentication if older than 1 hour)
+        // Check if token is too old (require re-authentication if older than 24 hours)
+        // This should align with typical Firebase token refresh patterns
         const tokenAge = Date.now() / 1000 - (decodedToken.auth_time || decodedToken.iat);
-        if (tokenAge > 3600) { // 1 hour
+        if (tokenAge > 86400) { // 24 hours - more reasonable for user experience
           throw new Error('Token too old, re-authentication required');
         }
         

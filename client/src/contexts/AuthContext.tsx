@@ -18,6 +18,7 @@ interface AuthContextType {
   dbUser: DatabaseUser | null;
   loading: boolean;
   error: string | null;
+  isRefreshing: boolean;
   login: () => void;
   logout: () => void;
 }
@@ -37,8 +38,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [dbUser, setDbUser] = useState<DatabaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
-  const syncUserWithBackend = async (firebaseUser: any) => {
+  const syncUserWithBackend = async (firebaseUser: any, retryCount = 0): Promise<void> => {
     try {
       if (process.env.NODE_ENV === 'development') {
         console.log('Syncing user with backend for:', firebaseUser.email);
@@ -77,21 +79,50 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       } else {
         let errorData: any = {};
         try { errorData = await response.json(); } catch { /* ignore parse errors */ }
+        
+        // Handle token-related errors with retry logic
+        if ((response.status === 401 || errorData.message?.includes('token')) && retryCount < 2) {
+          console.log(`🔄 Token expired, attempting refresh (attempt ${retryCount + 1})...`);
+          setIsRefreshing(true);
+          setError('Refreshing session...');
+          // Wait a bit before retry to allow Firebase token refresh
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+          await syncUserWithBackend(firebaseUser, retryCount + 1);
+          setIsRefreshing(false);
+          return;
+        }
+        
         console.error('Backend authentication failed:', errorData);
-        setError(errorData.message || 'Authentication failed. Please try again.');
-        // Don't set user if backend authentication fails
-        setUser(null);
-        setDbUser(null);
+        
+        // Only clear user state if this is not a temporary token issue
+        if (response.status !== 401 || retryCount >= 2) {
+          setError(errorData.message || 'Authentication failed. Please try again.');
+          setUser(null);
+          setDbUser(null);
+        } else {
+          // For token issues, don't clear the user state immediately
+          setError('Session expired. Trying to refresh...');
+        }
+        setIsRefreshing(false);
       }
     } catch (error) {
       console.error('Error syncing user with backend:', error);
-      setError('Authentication error. Please try again.');
+      
+        // Retry logic for network errors
+        if (retryCount < 2) {
+          console.log(`Network error, retrying authentication (attempt ${retryCount + 1})...`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+          await syncUserWithBackend(firebaseUser, retryCount + 1);
+          return;
+        }      setError('Authentication error. Please try again.');
       setUser(null);
       setDbUser(null);
     }
   };
 
   useEffect(() => {
+    let tokenRefreshInterval: NodeJS.Timeout;
+    
     // Handle redirect result on app load
     const handleRedirect = async () => {
       try {
@@ -112,6 +143,30 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return false; // No redirect handled
     };
 
+    // Set up automatic token refresh for authenticated users
+    const setupTokenRefresh = (firebaseUser: any) => {
+      // Clear any existing interval
+      if (tokenRefreshInterval) {
+        clearInterval(tokenRefreshInterval);
+      }
+      
+      // Refresh token every 45 minutes (Firebase tokens expire after 1 hour)
+      // This gives us a 15-minute buffer before expiration
+      tokenRefreshInterval = setInterval(async () => {
+        try {
+          if (firebaseUser && auth.currentUser && !isRefreshing) {
+            console.log('🔄 Proactive token refresh (45min interval)...');
+            setIsRefreshing(true);
+            await syncUserWithBackend(firebaseUser);
+            setIsRefreshing(false);
+          }
+        } catch (error) {
+          console.error('❌ Proactive token refresh failed:', error);
+          setIsRefreshing(false);
+        }
+      }, 45 * 60 * 1000); // 45 minutes
+    };
+
     // Listen for auth state changes
     const unsubscribe = onAuthStateChange(async (firebaseUser) => {
       if (process.env.NODE_ENV === 'development') {
@@ -124,12 +179,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
         await syncUserWithBackend(firebaseUser);
         setUser(firebaseUser);
+        
+        // Set up token refresh for this user
+        setupTokenRefresh(firebaseUser);
       } else {
         if (process.env.NODE_ENV === 'development') {
           console.log('❌ User signed out');
         }
         setUser(null);
         setDbUser(null);
+        
+        // Clear token refresh when user signs out
+        if (tokenRefreshInterval) {
+          clearInterval(tokenRefreshInterval);
+        }
       }
       
       setLoading(false);
@@ -142,7 +205,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (tokenRefreshInterval) {
+        clearInterval(tokenRefreshInterval);
+      }
+    };
   }, []);
 
   const login = async () => {
@@ -185,6 +253,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     dbUser,
     loading,
     error,
+    isRefreshing,
     login,
     logout,
   };
