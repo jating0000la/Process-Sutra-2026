@@ -92,7 +92,7 @@ const adminNavigationItems = [
   //   badge: null,
   // },
   {
-    name: "MongoDB Data", 
+    name: "Form Data", 
     href: "/mongo-form-data-viewer",
     icon: Database,
     badge: "New",
