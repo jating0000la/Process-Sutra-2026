@@ -586,12 +586,10 @@ export default function Tasks() {
 
   const handleFormSubmit = async (formData: Record<string, any>) => {
     try {
-      console.log("Submitting form data:", formData);
-      console.log("Task info:", { 
-        taskId: selectedTask?.id, 
-        flowId: selectedTask?.flowId,
-        formId: formTemplate?.formId 
-      });
+      // SECURITY: Don't log sensitive form data in production
+      if (process.env.NODE_ENV === 'development') {
+        console.log("Submitting form for task:", selectedTask?.id);
+      }
       
       // Create enhanced form data with question titles
       let enhancedFormData = { ...formData };

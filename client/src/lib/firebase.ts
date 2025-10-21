@@ -43,12 +43,18 @@ googleProvider.setCustomParameters({
 // Sign in with Google - try popup first, fallback to redirect
 export const signInWithGoogle = async () => {
   try {
-    console.log('🔑 Attempting popup sign-in...');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔑 Attempting popup sign-in...');
+    }
     const result = await signInWithPopup(auth, googleProvider);
-    console.log('✅ Popup sign-in successful:', result.user.email);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('✅ Popup sign-in successful');
+    }
     return result;
   } catch (error: any) {
-    console.log('❌ Popup failed, trying redirect...', error.message);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('❌ Popup failed, trying redirect...', error.message);
+    }
     // Fallback to redirect if popup fails
     return signInWithRedirect(auth, googleProvider);
   }

@@ -3,6 +3,7 @@ import { getAuth } from 'firebase-admin/auth';
 import type { Express, RequestHandler } from "express";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
+import rateLimit from 'express-rate-limit';
 import { storage } from "./storage";
 import * as dotenv from 'dotenv';
 
@@ -54,14 +55,25 @@ if (firebaseInitialized && getApps().length > 0) {
 }
 
 export function getSession() {
-  const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
-  // Determine cookie security flags. In production on plain HTTP (no TLS),
-  // "secure" cookies won't be set/sent by the browser which causes 401s on /api/auth/user.
-  // Allow overriding via env when running behind an IP or without HTTPS.
+  const sessionTtl = 4 * 60 * 60 * 1000; // 4 hours (reduced from 1 week for security)
+  // Determine cookie security flags. In production, always use secure cookies
+  // Allow overriding only in development for local testing
   const isProd = process.env.NODE_ENV === 'production';
-  const forceInsecure = process.env.INSECURE_COOKIES === 'true' || process.env.COOKIE_SECURE === 'false';
-  const cookieSecure = isProd && !forceInsecure; // default secure in prod unless explicitly disabled
-  const sameSite: any = process.env.COOKIE_SAMESITE || 'lax';
+  const isDev = process.env.NODE_ENV === 'development';
+  
+  // Force secure cookies in production, allow override only in development
+  const forceInsecure = isDev && (process.env.INSECURE_COOKIES === 'true' || process.env.COOKIE_SECURE === 'false');
+  const cookieSecure = isProd || !forceInsecure;
+  
+  // Use strict SameSite in production for better CSRF protection
+  const sameSite: any = isProd ? 'strict' : (process.env.COOKIE_SAMESITE || 'lax');
+  
+  // Validate session secret
+  if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
+    console.error('CRITICAL: SESSION_SECRET must be at least 32 characters long for security!');
+    throw new Error('SESSION_SECRET must be properly configured for security');
+  }
+  
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
     conString: process.env.DATABASE_URL,
@@ -69,18 +81,17 @@ export function getSession() {
     ttl: sessionTtl,
     tableName: "sessions",
   });
+  
   return session({
-    secret: process.env.SESSION_SECRET || (() => {
-      console.error('CRITICAL: SESSION_SECRET environment variable is not set!');
-      throw new Error('SESSION_SECRET must be set for security');
-    })(),
+    secret: process.env.SESSION_SECRET,
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
+    rolling: true, // Refresh session on activity for better security
     cookie: {
       httpOnly: true,
-  secure: cookieSecure,
-  sameSite,
+      secure: cookieSecure,
+      sameSite,
       maxAge: sessionTtl,
     },
   });
@@ -191,13 +202,43 @@ export async function setupAuth(app: Express) {
   app.set("trust proxy", 1);
   app.use(getSession());
 
+  // Rate limiting for authentication endpoints
+  const authRateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // Limit each IP to 5 authentication requests per windowMs
+    message: {
+      error: "Too many authentication attempts",
+      message: "Please wait 15 minutes before trying again",
+      retryAfter: 15 * 60
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    // Skip rate limiting for successful authentications to avoid blocking legitimate users
+    skipSuccessfulRequests: true,
+  });
+
+  // Apply rate limiting to auth endpoints
+  app.use('/api/auth/firebase-login', authRateLimiter);
+  app.use('/api/auth/dev-login', authRateLimiter);
+
   // Firebase login endpoint
   app.post('/api/auth/firebase-login', async (req, res) => {
     try {
       const { idToken, uid, email, displayName, photoURL } = req.body;
 
       // Development bypass when Firebase is not available
+      // SECURITY WARNING: This bypass should NEVER be enabled in production
       if (process.env.NODE_ENV === 'development' && !adminAuth) {
+        console.warn('⚠️ SECURITY WARNING: Using development authentication bypass');
+        console.warn('⚠️ This should NEVER be enabled in production environments');
+        
+        // Additional safety check - respect DISABLE_DEV_AUTH flag
+        if (process.env.DISABLE_DEV_AUTH === 'true') {
+          return res.status(503).json({ 
+            message: 'Development authentication disabled',
+            error: 'Set DISABLE_DEV_AUTH=false to enable development authentication'
+          });
+        }
         const userEmail = email || 'dev@test.com';
         const userName = displayName || 'Dev User';
         
@@ -241,18 +282,45 @@ export async function setupAuth(app: Express) {
         return res.status(400).json({ message: 'ID token required' });
       }
 
-      // Verify the Firebase ID token
+      // Verify the Firebase ID token with enhanced validation
       if (!adminAuth) {
         return res.status(503).json({ message: 'Firebase authentication not available' });
       }
       
       let decodedToken;
       try {
-        decodedToken = await adminAuth.verifyIdToken(idToken);
+        // Enhanced token validation with audience and issuer checks
+        const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
+        if (!projectId) {
+          throw new Error('Firebase project ID not configured');
+        }
+        
+        decodedToken = await adminAuth.verifyIdToken(idToken, true); // checkRevoked = true
+        
+        // Additional security validations
+        if (decodedToken.aud !== projectId) {
+          throw new Error('Token audience mismatch');
+        }
+        
+        if (decodedToken.iss !== `https://securetoken.google.com/${projectId}`) {
+          throw new Error('Token issuer mismatch');
+        }
+        
+        // Check if token is too old (require re-authentication if older than 1 hour)
+        const tokenAge = Date.now() / 1000 - (decodedToken.auth_time || decodedToken.iat);
+        if (tokenAge > 3600) { // 1 hour
+          throw new Error('Token too old, re-authentication required');
+        }
+        
         console.log('Token verified for user:', decodedToken.email);
       } catch (tokenError) {
-        console.error('Token verification failed:', tokenError);
-        return res.status(401).json({ message: 'Invalid or expired token' });
+        console.error('Token verification failed:', tokenError instanceof Error ? tokenError.message : 'Unknown error');
+        
+        // Don't expose detailed error information to prevent information leakage
+        const isTokenExpired = tokenError instanceof Error && tokenError.message.includes('expired');
+        const errorMessage = isTokenExpired ? 'Token expired, please login again' : 'Invalid or expired token';
+        
+        return res.status(401).json({ message: errorMessage });
       }
       
       if (decodedToken.uid !== uid) {
@@ -360,8 +428,19 @@ export async function setupAuth(app: Express) {
 
   // Development login bypass (only in development)
   if (process.env.NODE_ENV === 'development') {
+    console.warn('⚠️ SECURITY WARNING: Development login bypass is enabled');
+    
     app.post('/api/auth/dev-login', async (req, res) => {
       try {
+        console.warn('⚠️ Development authentication bypass used');
+        
+        // Respect DISABLE_DEV_AUTH flag
+        if (process.env.DISABLE_DEV_AUTH === 'true') {
+          return res.status(503).json({ 
+            message: 'Development authentication disabled',
+            error: 'Set DISABLE_DEV_AUTH=false to enable development authentication'
+          });
+        }
         const { email } = req.body;
         
         if (!email) {

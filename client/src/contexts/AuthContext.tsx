@@ -40,7 +40,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   
   const syncUserWithBackend = async (firebaseUser: any) => {
     try {
-      console.log('Syncing user with backend:', firebaseUser.email);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Syncing user with backend for:', firebaseUser.email);
+      }
       const idToken = await firebaseUser.getIdToken(true); // Force refresh
       
       const response = await fetch('/api/auth/firebase-login', {
@@ -59,9 +61,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       });
       
       if (response.ok) {
-        console.log('Successfully authenticated with backend');
+        if (process.env.NODE_ENV === 'development') {
+          console.log('Successfully authenticated with backend');
+        }
         const data = await response.json();
-        console.log('Backend response:', data);
+        // SECURITY: Don't log sensitive backend response data
         
         // Clear any previous errors
         setError(null);
@@ -110,14 +114,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     // Listen for auth state changes
     const unsubscribe = onAuthStateChange(async (firebaseUser) => {
-      console.log('🔄 Auth state changed:', firebaseUser?.email || 'signed out');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔄 Auth state changed:', firebaseUser?.email ? 'user signed in' : 'signed out');
+      }
       
       if (firebaseUser) {
-        console.log('✅ User authenticated:', firebaseUser.email);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('✅ User authenticated');
+        }
         await syncUserWithBackend(firebaseUser);
         setUser(firebaseUser);
       } else {
-        console.log('❌ User signed out');
+        if (process.env.NODE_ENV === 'development') {
+          console.log('❌ User signed out');
+        }
         setUser(null);
         setDbUser(null);
       }
@@ -143,7 +153,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       // If popup succeeded, handle the result immediately
       if (result?.user) {
-        console.log('✅ Login successful via popup:', result.user.email);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('✅ Login successful via popup');
+        }
         await syncUserWithBackend(result.user);
         setUser(result.user);
         // ✅ Redirect to home after popup login

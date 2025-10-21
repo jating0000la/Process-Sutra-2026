@@ -301,7 +301,10 @@ export default function FormBuilder() {
       questions: updatedQuestions,
     };
 
-    console.log("Saving form data:", JSON.stringify(formData, null, 2));
+    // SECURITY: Don't log sensitive form template data in production
+    if (process.env.NODE_ENV === 'development') {
+      console.log("Saving form template for formId:", formData.formId);
+    }
 
     if (currentForm) {
       updateTemplateMutation.mutate({ id: currentForm.id, data: formData });
