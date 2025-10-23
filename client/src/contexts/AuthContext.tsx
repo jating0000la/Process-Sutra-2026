@@ -80,13 +80,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         let errorData: any = {};
         try { errorData = await response.json(); } catch { /* ignore parse errors */ }
         
+        // Handle different types of errors
+        if (response.status === 429) {
+          // Rate limited - stop retrying and show appropriate message
+          console.log('🚫 Rate limited, stopping retry attempts');
+          setError('Too many login attempts. Please wait a few minutes and try again.');
+          setIsRefreshing(false);
+          return;
+        }
+        
         // Handle token-related errors with retry logic
         if ((response.status === 401 || errorData.message?.includes('token')) && retryCount < 2) {
           console.log(`🔄 Token expired, attempting refresh (attempt ${retryCount + 1})...`);
           setIsRefreshing(true);
           setError('Refreshing session...');
-          // Wait a bit before retry to allow Firebase token refresh
-          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+          // Wait longer between retries to avoid hitting rate limits
+          await new Promise(resolve => setTimeout(resolve, 3000 * (retryCount + 1)));
           await syncUserWithBackend(firebaseUser, retryCount + 1);
           setIsRefreshing(false);
           return;
@@ -150,12 +159,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         clearInterval(tokenRefreshInterval);
       }
       
-      // Refresh token every 45 minutes (Firebase tokens expire after 1 hour)
-      // This gives us a 15-minute buffer before expiration
+      // Refresh token every 50 minutes (Firebase tokens expire after 1 hour)
+      // Reduced frequency to prevent rate limiting issues
       tokenRefreshInterval = setInterval(async () => {
         try {
           if (firebaseUser && auth.currentUser && !isRefreshing) {
-            console.log('🔄 Proactive token refresh (45min interval)...');
+            console.log('🔄 Proactive token refresh (50min interval)...');
             setIsRefreshing(true);
             await syncUserWithBackend(firebaseUser);
             setIsRefreshing(false);
@@ -164,7 +173,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           console.error('❌ Proactive token refresh failed:', error);
           setIsRefreshing(false);
         }
-      }, 45 * 60 * 1000); // 45 minutes
+      }, 50 * 60 * 1000); // 50 minutes
     };
 
     // Listen for auth state changes

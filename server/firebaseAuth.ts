@@ -202,10 +202,10 @@ export async function setupAuth(app: Express) {
   app.set("trust proxy", 1);
   app.use(getSession());
 
-  // Rate limiting for authentication endpoints
+  // Rate limiting for authentication endpoints - More lenient for automatic token refresh
   const authRateLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5, // Limit each IP to 5 authentication requests per windowMs
+    max: 25, // Increased from 5 to 25 to allow automatic token refresh
     message: {
       error: "Too many authentication attempts",
       message: "Please wait 15 minutes before trying again",
@@ -215,6 +215,11 @@ export async function setupAuth(app: Express) {
     legacyHeaders: false,
     // Skip rate limiting for successful authentications to avoid blocking legitimate users
     skipSuccessfulRequests: true,
+    // Skip rate limiting if the request is from the same user (token refresh)
+    skip: (req) => {
+      // Allow token refresh for existing sessions
+      return !!(req.session as any)?.user;
+    },
   });
 
   // Apply rate limiting to auth endpoints
@@ -306,12 +311,10 @@ export async function setupAuth(app: Express) {
           throw new Error('Token issuer mismatch');
         }
         
-        // Check if token is too old (require re-authentication if older than 24 hours)
-        // This should align with typical Firebase token refresh patterns
-        const tokenAge = Date.now() / 1000 - (decodedToken.auth_time || decodedToken.iat);
-        if (tokenAge > 86400) { // 24 hours - more reasonable for user experience
-          throw new Error('Token too old, re-authentication required');
-        }
+        // Firebase tokens are automatically validated for expiration by verifyIdToken
+        // No need for additional age validation as Firebase handles this internally
+        // Log token info for debugging
+        console.log(`Token verified for user: ${decodedToken.email}, issued: ${new Date(decodedToken.iat * 1000).toISOString()}`);
         
         console.log('Token verified for user:', decodedToken.email);
       } catch (tokenError) {

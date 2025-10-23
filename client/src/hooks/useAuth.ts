@@ -48,6 +48,10 @@ export function useAuth() {
               if (retryRes.ok) {
                 return await retryRes.json();
               }
+            } else if (refreshResponse.status === 429) {
+              console.log('🚫 Rate limited in useAuth, skipping refresh');
+              // Don't retry if rate limited
+              return null;
             } else {
               const errorData = await refreshResponse.json().catch(() => ({}));
               console.log('❌ Failed to refresh session:', errorData.message);
