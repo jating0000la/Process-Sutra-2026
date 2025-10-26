@@ -1,8 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { isUnauthorizedError } from "@/lib/authUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import Header from "@/components/header";
 import Sidebar from "@/components/sidebar";
@@ -34,7 +33,7 @@ const startFlowSchema = z.object({
 
 export default function Tasks() {
   const { toast } = useToast();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, loading, handleTokenExpired } = useAuth();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [systemFilter, setSystemFilter] = useState<string>("all");
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
@@ -70,20 +69,13 @@ export default function Tasks() {
     },
   });
 
-  // Redirect to login if not authenticated
+  // Redirect to login if not authenticated - use the global handler
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      toast({
-        title: "Unauthorized",
-        description: "You are logged out. Logging in again...",
-        variant: "destructive",
-      });
-      setTimeout(() => {
-        window.location.href = "/api/login";
-      }, 500);
+    if (!loading && !user) {
+      handleTokenExpired();
       return;
     }
-  }, [isAuthenticated, isLoading, toast]);
+  }, [user, loading, handleTokenExpired]);
 
   const { data: tasks, isLoading: tasksLoading } = useQuery({
     queryKey: ["/api/tasks", { status: statusFilter }],
@@ -93,7 +85,7 @@ export default function Tasks() {
         : `/api/tasks?status=${statusFilter}`;
       return fetch(url).then(res => res.json());
     },
-    enabled: isAuthenticated,
+    enabled: !!user, // Only run query if user is authenticated
     staleTime: 0, // Always refetch to avoid cache issues
     gcTime: 0, // Don't cache results
   });
@@ -110,19 +102,19 @@ export default function Tasks() {
   // Fetch form template
   const { data: formTemplates } = useQuery({
     queryKey: ["/api/form-templates"],
-    enabled: isAuthenticated,
+    enabled: !!user,
   });
 
   // Fetch form responses for flow data viewer
   const { data: formResponses } = useQuery({
     queryKey: ["/api/form-responses"],
-    enabled: isAuthenticated,
+    enabled: !!user,
   });
 
   // Fetch flow rules to check transferability and get completion statuses
   const { data: flowRules } = useQuery({
     queryKey: ["/api/flow-rules"],
-    enabled: isAuthenticated,
+    enabled: !!user,
   });
 
   // Get available completion statuses for a specific task
@@ -817,18 +809,6 @@ export default function Tasks() {
       setCompletionStatus("");
     },
     onError: (error: any) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
-      
       // Check if error is due to missing form submission
       const errorData = error?.response?.data;
       if (errorData?.requiresForm) {
@@ -867,17 +847,6 @@ export default function Tasks() {
       setTransferReason("");
     },
     onError: (error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
       toast({
         title: "Error",
         description: "Failed to transfer task. Please try again.",
@@ -901,17 +870,6 @@ export default function Tasks() {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
     },
     onError: (error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
       toast({
         title: "Error",
         description: "Failed to start flow",
@@ -1108,7 +1066,7 @@ export default function Tasks() {
 
 
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="flex h-screen bg-neutral">
         <Sidebar />

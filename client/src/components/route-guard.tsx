@@ -13,19 +13,14 @@ interface RouteGuardProps {
 }
 
 export default function RouteGuard({ children, requireAdmin = false }: RouteGuardProps) {
-  const { user, dbUser, loading } = useAuth();
+  const { user, dbUser, loading, handleTokenExpired } = useAuth();
   const { toast } = useToast();
 
   useEffect(() => {
     if (!loading && !user) {
-      toast({
-        title: "Unauthorized",
-        description: "You are logged out. Please log in again...",
-        variant: "destructive",
-      });
-      setTimeout(() => {
-        window.location.href = "/";
-      }, 500);
+      // If user is not authenticated, use the token expired handler
+      // which will show a proper message and redirect to login
+      handleTokenExpired();
       return;
     }
 
@@ -39,7 +34,7 @@ export default function RouteGuard({ children, requireAdmin = false }: RouteGuar
       window.location.href = "/";
       return;
     }
-  }, [user, loading, requireAdmin, toast]);
+  }, [user, loading, requireAdmin, toast, handleTokenExpired]);
 
   // Show loading while checking authentication
   if (loading) {

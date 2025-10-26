@@ -1,8 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { isUnauthorizedError } from "@/lib/authUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import Header from "@/components/header";
 import Sidebar from "@/components/sidebar";
@@ -55,7 +54,7 @@ const startFlowSchema = z.object({
 
 export default function Flows() {
   const { toast } = useToast();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, loading, handleTokenExpired } = useAuth();
   const [, setLocation] = useLocation();
   const [isRuleDialogOpen, setIsRuleDialogOpen] = useState(false);
   const [isStartFlowDialogOpen, setIsStartFlowDialogOpen] = useState(false);
@@ -64,28 +63,21 @@ export default function Flows() {
 
   // Redirect to login if not authenticated
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      toast({
-        title: "Unauthorized",
-        description: "You are logged out. Logging in again...",
-        variant: "destructive",
-      });
-      setTimeout(() => {
-        window.location.href = "/api/login";
-      }, 500);
+    if (!loading && !user) {
+      handleTokenExpired();
       return;
     }
-  }, [isAuthenticated, isLoading, toast]);
+  }, [user, loading, handleTokenExpired]);
 
   const { data: flowRules, isLoading: rulesLoading } = useQuery({
     queryKey: ["/api/flow-rules"],
-    enabled: isAuthenticated,
+    enabled: !!user,
   });
 
   // Fetch users for dropdown
   const { data: users = [] } = useQuery({
     queryKey: ["/api/users"],
-    enabled: isAuthenticated,
+    enabled: !!user,
   });
 
   // Get unique systems and tasks from existing rules for dropdowns
@@ -140,17 +132,6 @@ export default function Flows() {
       ruleForm.reset();
     },
     onError: (error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
       toast({
         title: "Error",
         description: "Failed to create flow rule",
@@ -174,17 +155,6 @@ export default function Flows() {
       ruleForm.reset();
     },
     onError: (error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
       toast({
         title: "Error",
         description: "Failed to update flow rule",
@@ -205,17 +175,6 @@ export default function Flows() {
       queryClient.invalidateQueries({ queryKey: ["/api/flow-rules"] });
     },
     onError: (error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
       toast({
         title: "Error",
         description: "Failed to delete flow rule",
@@ -239,17 +198,6 @@ export default function Flows() {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
     },
     onError: (error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
       toast({
         title: "Error",
         description: "Failed to start flow",
@@ -1247,7 +1195,7 @@ export default function Flows() {
     }
   };
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="flex h-screen bg-neutral">
         <Sidebar />
@@ -1280,7 +1228,7 @@ export default function Flows() {
               <Button 
                 variant="secondary" 
                 onClick={importFromFile}
-                disabled={isLoading}
+                disabled={loading}
               >
                 <Upload className="w-4 h-4 mr-2" />
                 Import Complete Workflow

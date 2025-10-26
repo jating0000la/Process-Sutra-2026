@@ -1,8 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { isUnauthorizedError } from "@/lib/authUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import Header from "@/components/header";
 import Sidebar from "@/components/sidebar";
@@ -77,7 +76,7 @@ const questionTypes = [
 
 export default function FormBuilder() {
   const { toast } = useToast();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, loading, handleTokenExpired } = useAuth();
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
   const [currentForm, setCurrentForm] = useState<any>(null);
   const [questions, setQuestions] = useState<FormQuestion[]>([]);
@@ -86,22 +85,15 @@ export default function FormBuilder() {
 
   // Redirect to login if not authenticated
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      toast({
-        title: "Unauthorized",
-        description: "You are logged out. Logging in again...",
-        variant: "destructive",
-      });
-      setTimeout(() => {
-        window.location.href = "/api/login";
-      }, 500);
+    if (!loading && !user) {
+      handleTokenExpired();
       return;
     }
-  }, [isAuthenticated, isLoading, toast]);
+  }, [user, loading, handleTokenExpired]);
 
   const { data: formTemplates, isLoading: templatesLoading } = useQuery<any[]>({
     queryKey: ["/api/form-templates"],
-    enabled: isAuthenticated,
+    enabled: !!user,
   });
 
   const form = useForm({
@@ -128,17 +120,6 @@ export default function FormBuilder() {
       resetBuilder();
     },
     onError: (error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
       toast({
         title: "Error",
         description: "Failed to create form template",
@@ -161,17 +142,6 @@ export default function FormBuilder() {
       resetBuilder();
     },
     onError: (error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
       toast({
         title: "Error",
         description: "Failed to update form template",
@@ -192,17 +162,6 @@ export default function FormBuilder() {
       queryClient.invalidateQueries({ queryKey: ["/api/form-templates"] });
     },
     onError: (error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
       toast({
         title: "Error",
         description: "Failed to delete form template",
@@ -444,7 +403,7 @@ export default function FormBuilder() {
     }
   };
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="flex h-screen bg-neutral">
         <Sidebar />

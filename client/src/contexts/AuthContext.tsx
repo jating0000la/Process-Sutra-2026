@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { User } from 'firebase/auth';
 import { auth, handleRedirectResult, onAuthStateChange } from '@/lib/firebase';
+import { useToast } from '@/hooks/use-toast';
 
 interface DatabaseUser {
   id: string;
@@ -21,6 +22,7 @@ interface AuthContextType {
   isRefreshing: boolean;
   login: () => void;
   logout: () => void;
+  handleTokenExpired: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -39,6 +41,38 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const { toast } = useToast();
+
+  const handleTokenExpired = async () => {
+    console.log('🔐 Token expired, clearing authentication state...');
+    
+    // Show user-friendly message
+    toast({
+      title: "Session Expired",
+      description: "Your session has expired. Please log in again.",
+      variant: "destructive",
+      duration: 3000,
+    });
+
+    // Clear authentication state
+    setUser(null);
+    setDbUser(null);
+    setError(null);
+    setIsRefreshing(false);
+
+    // Clear any Firebase auth state
+    try {
+      const { logOut } = await import('@/lib/firebase');
+      await logOut();
+    } catch (error) {
+      console.error('Error clearing Firebase auth:', error);
+    }
+
+    // Force redirect to login page
+    setTimeout(() => {
+      window.location.href = '/';
+    }, 1000);
+  };
   
   const syncUserWithBackend = async (firebaseUser: any, retryCount = 0): Promise<void> => {
     try {
@@ -98,6 +132,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           await new Promise(resolve => setTimeout(resolve, 3000 * (retryCount + 1)));
           await syncUserWithBackend(firebaseUser, retryCount + 1);
           setIsRefreshing(false);
+          return;
+        }
+        
+        // If this is a final 401 error (after retries), handle token expiration
+        if (response.status === 401) {
+          console.log('🔐 Authentication failed after retries, token likely expired');
+          await handleTokenExpired();
           return;
         }
         
@@ -265,6 +306,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     isRefreshing,
     login,
     logout,
+    handleTokenExpired,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
