@@ -68,9 +68,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       console.error('Error clearing Firebase auth:', error);
     }
 
-    // Force redirect to login page
+    // Force redirect to login page, avoiding redirect loops
     setTimeout(() => {
-      window.location.href = '/';
+      const currentPath = window.location.pathname;
+      if (currentPath !== '/' && currentPath !== '/api/login') {
+        window.location.replace('/');
+      }
     }, 1000);
   };
   

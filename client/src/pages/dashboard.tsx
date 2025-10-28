@@ -1,8 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/contexts/AuthContext";
 import { useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { isUnauthorizedError } from "@/lib/authUtils";
 import Header from "@/components/header";
 import Sidebar from "@/components/sidebar";
 import { useLayout } from "@/contexts/LayoutContext";
@@ -18,23 +17,16 @@ import { CheckCircle, Clock, AlertTriangle, TrendingUp, Plus, FileText, Workflow
 
 export default function Dashboard() {
   const { toast } = useToast();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, loading, handleTokenExpired } = useAuth();
   const { sidebarOpen } = useLayout();
 
   // Redirect to login if not authenticated
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      toast({
-        title: "Unauthorized",
-        description: "You are logged out. Logging in again...",
-        variant: "destructive",
-      });
-      setTimeout(() => {
-        window.location.href = "/api/login";
-      }, 500);
+    if (!loading && !user) {
+      handleTokenExpired();
       return;
     }
-  }, [isAuthenticated, isLoading, toast]);
+  }, [user, loading, handleTokenExpired]);
 
   const { data: metrics, isLoading: metricsLoading } = useQuery<{
     totalTasks: number;
@@ -44,12 +36,12 @@ export default function Dashboard() {
     avgResolutionTime: number;
   }>({
     queryKey: ["/api/analytics/metrics"],
-    enabled: isAuthenticated,
+    enabled: !!user,
   });
 
   const { data: tasks, isLoading: tasksLoading } = useQuery<any[]>({
     queryKey: ["/api/tasks"],
-    enabled: isAuthenticated,
+    enabled: !!user,
   });
 
   const { data: flowPerformance } = useQuery<Array<{
@@ -58,7 +50,7 @@ export default function Dashboard() {
     onTimeRate: number;
   }>>({
     queryKey: ["/api/analytics/flow-performance"],
-    enabled: isAuthenticated,
+    enabled: !!user,
   });
 
   // Mock chart data for completion trends
@@ -72,7 +64,7 @@ export default function Dashboard() {
     { name: 'Sun', completed: 18 },
   ];
 
-  if (isLoading || metricsLoading) {
+  if (loading || metricsLoading) {
     return (
       <div className="h-screen flex bg-neutral">
         <Sidebar />

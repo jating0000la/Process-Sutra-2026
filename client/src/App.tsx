@@ -29,6 +29,21 @@ import SystemSuperAdmin from "@/pages/system-super-admin";
 
 import FormDataViewer from "@/pages/form-data-viewer";
 import MongoFormDataViewer from "@/pages/mongo-form-data-viewer";
+import { useEffect } from "react";
+
+// Component to handle /api/login redirect
+function ApiLoginRedirect() {
+  useEffect(() => {
+    // Redirect to home page (login page) immediately
+    window.location.replace('/');
+  }, []);
+  
+  return (
+    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
+      <div className="text-lg">Redirecting to login...</div>
+    </div>
+  );
+}
 
 function Router() {
   const { user, loading } = useAuth();
@@ -44,9 +59,14 @@ function Router() {
 
   return (
     <Switch>
+      {/* Handle /api/login redirect - always redirect to / regardless of auth state */}
+      <Route path="/api/login" component={ApiLoginRedirect} />
+      
       {!user ? (
         <>
           <Route path="/" component={LoginPage} />
+          {/* Catch all other routes and redirect to login */}
+          <Route component={LoginPage} />
         </>
       ) : (
         <>

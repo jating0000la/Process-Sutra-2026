@@ -37,8 +37,13 @@ function handleAuthError() {
   }
   
   // Force redirect to login page after a brief delay
+  // Use replace instead of href to avoid back button issues
   setTimeout(() => {
-    window.location.href = '/';
+    // Check if we're already on login-related pages to avoid redirect loops
+    const currentPath = window.location.pathname;
+    if (currentPath !== '/' && currentPath !== '/api/login') {
+      window.location.replace('/');
+    }
   }, 1000);
 }
 

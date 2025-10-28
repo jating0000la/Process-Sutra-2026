@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import Header from "@/components/header";
@@ -47,7 +47,7 @@ import { format } from "date-fns";
 
 export default function Analytics() {
   const { toast } = useToast();
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { user, loading, handleTokenExpired } = useAuth();
   const [activeTab, setActiveTab] = useState("overview");
   const [doerFilters, setDoerFilters] = useState({
     startDate: "",
@@ -66,18 +66,11 @@ export default function Analytics() {
 
   // Redirect to login if not authenticated
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      toast({
-        title: "Unauthorized",
-        description: "You are logged out. Logging in again...",
-        variant: "destructive",
-      });
-      setTimeout(() => {
-        window.location.href = "/api/login";
-      }, 500);
+    if (!loading && !user) {
+      handleTokenExpired();
       return;
     }
-  }, [isAuthenticated, isLoading, toast]);
+  }, [user, loading, handleTokenExpired]);
 
   const { data: metrics, isLoading: metricsLoading } = useQuery<{
     totalTasks: number;
@@ -87,7 +80,7 @@ export default function Analytics() {
     avgResolutionTime: number;
   }>({
     queryKey: ["/api/analytics/metrics"],
-    enabled: isAuthenticated,
+    enabled: !!user,
   });
 
   const { data: flowPerformance, isLoading: flowLoading } = useQuery<Array<{
@@ -96,19 +89,19 @@ export default function Analytics() {
     onTimeRate: number;
   }>>({
     queryKey: ["/api/analytics/flow-performance"],
-    enabled: isAuthenticated,
+    enabled: !!user,
   });
 
   // Weekly scoring for users
   const { data: weeklyScoring, isLoading: weeklyLoading } = useQuery<any[]>({
     queryKey: ["/api/analytics/weekly-scoring"],
-    enabled: isAuthenticated,
+    enabled: !!user,
   });
 
   // Reporting queries
   const { data: systems } = useQuery<string[]>({
     queryKey: ["/api/analytics/report/systems"],
-    enabled: isAuthenticated,
+    enabled: !!user,
   });
 
   const { data: processes, refetch: refetchProcesses } = useQuery<string[]>({
@@ -119,7 +112,7 @@ export default function Analytics() {
       if (!res.ok) throw new Error("Failed to fetch processes");
       return res.json();
     },
-    enabled: isAuthenticated && !!reportFilters.system,
+    enabled: !!user && !!reportFilters.system,
   });
 
   const { data: report, isLoading: reportLoading, refetch: refetchReport } = useQuery<{
@@ -141,7 +134,7 @@ export default function Analytics() {
       if (!res.ok) throw new Error("Failed to fetch report");
       return res.json();
     },
-    enabled: isAuthenticated,
+    enabled: !!user,
   });
 
   // Admin-only: All doers performance with filtering
@@ -156,7 +149,7 @@ export default function Analytics() {
       if (!response.ok) throw new Error('Failed to fetch doers performance');
       return response.json();
     },
-    enabled: isAuthenticated && (user as any)?.role === 'admin',
+    enabled: !!user && (user as any)?.role === 'admin',
   });
 
   const handleFilterChange = (key: string, value: string) => {
@@ -170,7 +163,7 @@ export default function Analytics() {
     { name: 'Overdue', value: metrics?.overdueTasks || 0, color: '#EF4444' },
   ];
 
-  if (isLoading || !isAuthenticated) {
+  if (loading || !user) {
     return (
       <div className="flex h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
         <div className="flex-1 flex items-center justify-center">
