@@ -22,9 +22,9 @@ import {
 // Navigation items for all users
 const userNavigationItems = [
   {
-    name: "Dashboard",
+    name: "Analytics",
     href: "/",
-    icon: LayoutDashboard,
+    icon: BarChart3,
     badge: null,
   },
   {
@@ -33,18 +33,6 @@ const userNavigationItems = [
     icon: CheckSquare,
     badge: null,
   },
-  {
-    name: "My Performance",
-    href: "/analytics",
-    icon: BarChart3,
-    badge: null,
-  },
-  // {
-  //   name: "My Performance",
-  //   href: "/analytics", 
-  //   icon: BarChart3,
-  //   badge: null,
-  // },
 ];
 
 // Additional navigation items for admins only

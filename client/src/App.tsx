@@ -9,7 +9,7 @@ import { LayoutProvider } from "@/contexts/LayoutContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
-import Dashboard from "@/pages/dashboard";
+// import Dashboard from "@/pages/dashboard";
 import Tasks from "@/pages/tasks";
 import Flows from "@/pages/flows";
 import FormBuilder from "@/pages/form-builder";
@@ -71,7 +71,7 @@ function Router() {
       ) : (
         <>
           {/* Public user routes */}
-          <Route path="/" component={Dashboard} />
+          <Route path="/" component={Analytics} />
           <Route path="/tasks" component={Tasks} />
           <Route path="/analytics" component={Analytics} />
           <Route path="/profile" component={Profile} />
