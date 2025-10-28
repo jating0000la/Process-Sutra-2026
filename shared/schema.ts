@@ -36,12 +36,24 @@ export const organizations = pgTable(
     isActive: boolean("is_active").default(true),
     maxUsers: integer("max_users").default(50), // subscription limits
     planType: varchar("plan_type").default("free"), // free, pro, enterprise
+    // Extended organization details
+    companyName: varchar("company_name"),
+    address: text("address"),
+    phone: varchar("phone"),
+    gstNumber: varchar("gst_number"),
+    industry: varchar("industry"),
+    customerType: varchar("customer_type").$type<"B2B" | "B2C" | "B2G">(), // B2B, B2C, B2G
+    businessType: varchar("business_type").$type<"Trading" | "Manufacturing" | "Wholesaler" | "Retailer" | "Service Provider">(), // Trading, Manufacturing, Wholesaler, Retailer, Service Provider
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
   },
   (table) => [
     index("idx_organizations_domain").on(table.domain),
     index("idx_organizations_inactive").on(table.isActive, table.updatedAt).where(sql`${table.isActive} = false`),
+    index("idx_organizations_gst").on(table.gstNumber),
+    index("idx_organizations_industry").on(table.industry),
+    index("idx_organizations_customer_type").on(table.customerType),
+    index("idx_organizations_business_type").on(table.businessType),
   ]
 );
 

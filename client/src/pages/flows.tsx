@@ -1546,7 +1546,18 @@ export default function Flows() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>Assign to User</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value}>
+                              <Select 
+                                onValueChange={(value) => {
+                                  field.onChange(value);
+                                  // Auto-fill doer name when email is selected
+                                  const selectedUser = (users as any[])?.find((user: any) => user.email === value);
+                                  if (selectedUser) {
+                                    const doerName = `${selectedUser.firstName} ${selectedUser.lastName}`.trim();
+                                    ruleForm.setValue('doer', doerName);
+                                  }
+                                }} 
+                                value={field.value}
+                              >
                                 <FormControl>
                                   <SelectTrigger>
                                     <SelectValue placeholder="Select user to assign task" />

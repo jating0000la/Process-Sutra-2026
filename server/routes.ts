@@ -1993,6 +1993,32 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     }
   });
 
+  app.put("/api/organizations/current", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+    try {
+      console.log("PUT /api/organizations/current - User:", req.currentUser?.email);
+      console.log("PUT /api/organizations/current - Body:", req.body);
+      
+      const user = req.currentUser;
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User organization not found" });
+      }
+      
+      const validatedData = insertOrganizationSchema.partial().parse(req.body);
+      console.log("PUT /api/organizations/current - Validated data:", validatedData);
+      
+      const organization = await storage.updateOrganization(user.organizationId, validatedData);
+      console.log("PUT /api/organizations/current - Updated organization:", organization);
+      
+      res.json(organization);
+    } catch (error) {
+      console.error("Error updating organization:", error);
+      res.status(400).json({ 
+        message: "Invalid organization data", 
+        error: error instanceof Error ? error.message : "Unknown error" 
+      });
+    }
+  });
+
   // Login Logs API
   app.get("/api/login-logs", isAuthenticated, async (req: any, res) => {
     try {
