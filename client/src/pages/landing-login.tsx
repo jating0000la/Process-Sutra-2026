@@ -74,7 +74,7 @@ const LandingLogin: React.FC = () => {
         "priceCurrency": "USD",
         "priceValidUntil": "2026-12-31",
         "availability": "https://schema.org/InStock",
-        "description": "Usage-based pricing: (Flow × Rate) + (User Count × Rate) + (Form Submission × Rate)"
+        "description": "It is Free for All Now!"//"Usage-based pricing: (Flow × Rate) + (User Count × Rate) + (Form Submission × Rate)"
       },
       "aggregateRating": {
         "@type": "AggregateRating",

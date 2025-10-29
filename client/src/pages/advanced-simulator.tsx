@@ -51,8 +51,7 @@ interface Settings {
   peakStart: string; // HH:mm
   peakEnd: string;   // HH:mm
   peakSpeedPercent: number; // percentage boost during peak
-  teamSize: number; // affects speed
-  repeatPerStep: number; // rework count per step
+  teamSize: number; // auto-calculated: total number of people (one per task); affects overall speed
   costPerHour: number; // operational cost per hour
   // arrivals
   arrivalMode?: "none" | "period" | "uniform" | "normal" | "trendUp" | "trendDown";
@@ -71,6 +70,10 @@ interface Settings {
   ignoreWorkingHours?: boolean; // allow processing outside working hours
   // reporting
   onTimeBufferPct?: number; // allowed buffer over planned time to still count as on-time
+  // realistic completion times
+  useRealisticTimes?: boolean; // use realistic completion times instead of max TAT
+  avgCompletionPct?: number; // average % of TAT actually used (e.g., 20% means tasks typically complete in 20% of TAT)
+  completionVariability?: number; // variability range as % (e.g., 10 means ±10% from average)
 }
 
 // Decision weights: for a decision task name, define weight per status
@@ -119,7 +122,6 @@ export default function AdvancedSimulator() {
     peakEnd: "16:00",
     peakSpeedPercent: 70,
     teamSize: 1,
-    repeatPerStep: 1,
     costPerHour: 20,
     arrivalMode: "period",
     arrivalPeriodMin: 60,
@@ -134,6 +136,9 @@ export default function AdvancedSimulator() {
     fastMode: true,
     ignoreWorkingHours: false,
     onTimeBufferPct: 0,
+    useRealisticTimes: true,
+    avgCompletionPct: 20,
+    completionVariability: 10,
   });
 
   useEffect(() => {
@@ -152,8 +157,9 @@ export default function AdvancedSimulator() {
   const [decisionWeights, setDecisionWeights] = useState<DecisionWeights>({});
   const [resourceCaps, setResourceCaps] = useState<Record<string, number>>({});
   // instance sequencing: create next task only after previous completes
-  type InstanceState = { nextSeq: number; currentTask: string | null; repeatsLeft: number; deferredNext?: Array<{ taskName: string; email?: string; plannedMin: number; sequence: number }>; };
+  type InstanceState = { nextSeq: number; currentTask: string | null; deferredNext?: Array<{ taskName: string; email?: string; plannedMin: number; sequence: number }>; };
   const [instanceState, setInstanceState] = useState<Record<string, InstanceState>>({});
+  const instanceStateRef = useRef<Record<string, InstanceState>>({});
   // arrivals scheduling state
   const [remainingToSpawn, setRemainingToSpawn] = useState(0);
   const [nextArrivalAt, setNextArrivalAt] = useState<Date | null>(null);
@@ -223,6 +229,34 @@ export default function AdvancedSimulator() {
     }
     setDrill({ open: true, task: taskName, onTime: wantOnTime, rows });
   };
+
+  // Bottleneck analysis: average processing time per task
+  const bottleneckData = useMemo(() => {
+    const byTask: Record<string, { task: string; totalTime: number; count: number }> = {};
+    
+    for (const t of tasks) {
+      if (t.status === "completed" && t.startedAt && t.completedAt) {
+        const task = t.taskName;
+        if (!byTask[task]) {
+          byTask[task] = { task, totalTime: 0, count: 0 };
+        }
+        
+        // Processing time (started to completed) - actual work duration
+        const processMin = Math.max(0, (t.completedAt.getTime() - t.startedAt.getTime()) / 60000);
+        byTask[task].totalTime += processMin;
+        byTask[task].count += 1;
+      }
+    }
+    
+    const result = Object.values(byTask).map((r) => ({
+      task: r.task,
+      avgTime: r.count ? Math.round((r.totalTime / r.count) * 100) / 100 : 0,
+      count: r.count,
+    }));
+    
+    // Sort by avgTime descending (slowest first)
+    return result.sort((a, b) => b.avgTime - a.avgTime);
+  }, [tasks]);
 
   // Derived metrics
   const metrics = useMemo(() => {
@@ -592,7 +626,12 @@ export default function AdvancedSimulator() {
       Object.keys(next).forEach((k) => { if (!uniqueTasks.has(k)) delete next[k]; });
       return next;
     });
-  }, [graph.decisions]);
+    // Auto-set team size to match number of unique tasks (one person per task)
+    const taskCount = uniqueTasks.size;
+    if (taskCount > 0) {
+      setSettings((s) => ({ ...s, teamSize: taskCount }));
+    }
+  }, [graph.decisions, graph.rules]);
 
   // Weighted choice helper
   const chooseByWeights = (weights: Record<string, number>): string | null => {
@@ -615,6 +654,31 @@ export default function AdvancedSimulator() {
     if (tt === "specifytat") return t * 60;
     if (tt === "beforetat") return Math.max(60, t * 60);
     return 60;
+  };
+
+  // Calculate realistic completion time based on TAT
+  const calculateRealisticTime = (baseTatMinutes: number): number => {
+    if (!settings.useRealisticTimes) {
+      // Use the old behavior: random variation around the base TAT
+      return Math.max(5, Math.round(baseTatMinutes * (0.7 + Math.random() * 0.6)));
+    }
+    
+    // Use realistic completion times
+    const avgPct = Math.max(1, Math.min(100, settings.avgCompletionPct || 20)) / 100;
+    const variability = Math.max(0, Math.min(50, settings.completionVariability || 10)) / 100;
+    
+    // Calculate base realistic time (e.g., 20% of TAT)
+    const baseRealistic = baseTatMinutes * avgPct;
+    
+    // Add variability (e.g., ±10% of the realistic time)
+    const variation = baseRealistic * variability;
+    const minTime = Math.max(1, baseRealistic - variation);
+    const maxTime = Math.min(baseTatMinutes, baseRealistic + variation); // Cap at max TAT
+    
+    // Random time within the realistic range
+    const realisticTime = minTime + Math.random() * (maxTime - minTime);
+    
+    return Math.max(5, Math.round(realisticTime));
   };
 
   // Build one instance path using decision weights and loop guards
@@ -702,7 +766,7 @@ export default function AdvancedSimulator() {
         const firstPlanned = tatToMinutes(startRuleRec.tat, startRuleRec.tatType);
         for (let i = 0; i < settings.startEvents; i++) {
           const instanceId = `SIM-${now.getTime()}-${i + 1}`;
-          newInstState[instanceId] = { nextSeq: 1, currentTask: graph.startNode, repeatsLeft: Math.max(0, (settings.repeatPerStep || 1) - 1), deferredNext: [] };
+          newInstState[instanceId] = { nextSeq: 1, currentTask: graph.startNode, deferredNext: [] };
           const wait = settings.fastMode ? 0 : rand(2, 45);
           const t: SimTask = {
             id: `T-${taskIdCounter++}`,
@@ -711,7 +775,7 @@ export default function AdvancedSimulator() {
             assignee: startRuleRec.email,
             status: "created",
             sequence: 0,
-            plannedMinutes: Math.max(5, Math.round(firstPlanned * (0.7 + Math.random() * 0.6))),
+            plannedMinutes: calculateRealisticTime(firstPlanned),
             createdAt: now,
             waitMinutes: Math.round(wait),
             processMinutes: 0,
@@ -719,6 +783,7 @@ export default function AdvancedSimulator() {
           newTasks.push(t);
           newLogs.push({ ts: now, instanceId, taskName: t.taskName, event: "created" });
         }
+        instanceStateRef.current = newInstState;
         setInstanceState(newInstState);
         setTasks(newTasks);
         setLogs(newLogs);
@@ -846,7 +911,7 @@ export default function AdvancedSimulator() {
 
       // Realize any deferred next-step creations when allowed
       if (creationAllowedNow) {
-        const instEntries = Object.entries(instanceState);
+        const instEntries = Object.entries(instanceStateRef.current);
         for (const [instId, st] of instEntries) {
           if (st?.deferredNext && st.deferredNext.length) {
             const spawnedNow: SimTask[] = [];
@@ -858,7 +923,7 @@ export default function AdvancedSimulator() {
                 assignee: def.email,
                 status: "created",
                 sequence: def.sequence,
-                plannedMinutes: Math.max(5, Math.round(def.plannedMin * (0.7 + Math.random() * 0.6))),
+                plannedMinutes: calculateRealisticTime(def.plannedMin),
                 createdAt: now,
                 waitMinutes: Math.round(settings.fastMode ? 0 : rand(2, 45)),
                 processMinutes: 0,
@@ -869,6 +934,7 @@ export default function AdvancedSimulator() {
             if (spawnedNow.length) {
               items.push(...spawnedNow);
               st.deferredNext = [];
+              instanceStateRef.current[instId] = st;
             }
           }
         }
@@ -969,8 +1035,9 @@ export default function AdvancedSimulator() {
                 activeByTask[t.taskName] = Math.max(0, (activeByTask[t.taskName] || 0) - 1);
               }
               // sequentially create next task for this instance
-              const curState = instanceState[t.instanceId];
-              if (curState && curState.currentTask) {
+              const curState = instanceStateRef.current[t.instanceId];
+              // Only process next task if the completed task is the expected current task for this instance
+              if (curState && curState.currentTask && t.taskName === curState.currentTask) {
                 const spawned: SimTask[] = [];
                 const pushTask = (taskName: string, email: string | undefined, plannedMin: number) => {
                   if (creationAllowedNow) {
@@ -981,7 +1048,7 @@ export default function AdvancedSimulator() {
                       assignee: email,
                       status: "created",
                       sequence: curState.nextSeq++,
-                      plannedMinutes: Math.max(5, Math.round(plannedMin * (0.7 + Math.random() * 0.6))),
+                      plannedMinutes: calculateRealisticTime(plannedMin),
                       createdAt: now,
                       waitMinutes: Math.round(settings.fastMode ? 0 : rand(2, 45)),
                       processMinutes: 0,
@@ -996,18 +1063,9 @@ export default function AdvancedSimulator() {
                     newLogs.push({ ts: now, instanceId: t.instanceId, taskName, event: "creation deferred (off-hours)" });
                   }
                 };
-                // If repeatsLeft > 0, repeat same task
-                if (curState.repeatsLeft > 0 && curState.currentTask === t.taskName) {
-                  curState.repeatsLeft -= 1;
-                  // find rule to get tat/email
-                  const options = graph.byCurrent[t.taskName] || [];
-                  const chosen = options[0];
-                  const plannedMin = chosen ? tatToMinutes(chosen.tat, chosen.tatType) : t.plannedMinutes;
-                  pushTask(t.taskName, (chosen && chosen.email) || t.assignee, plannedMin);
-                } else {
-                  // move to next: prefer 'Done' for linear; only use weights for true decisions
-                  const options = graph.byCurrent[t.taskName] || [];
-                  if (options.length) {
+                // move to next: prefer 'Done' for linear; only use weights for true decisions
+                const options = graph.byCurrent[t.taskName] || [];
+                if (options.length) {
                     let chosen: any = null;
                     const statuses = Array.from(new Set(options.map((o: any) => (o.status || "").toString())));
                     const hasDone = statuses.some((s) => s.toLowerCase() === "done");
@@ -1033,7 +1091,6 @@ export default function AdvancedSimulator() {
                       pushTask(chosen.nextTask, chosen.email, plannedMin);
                       newLogs.push({ ts: now, instanceId: t.instanceId, taskName: t.taskName, event: `next: ${chosen.nextTask} (status=${String(chosen.status)})` });
                       curState.currentTask = chosen.nextTask;
-                      curState.repeatsLeft = Math.max(0, (settings.repeatPerStep || 1) - 1);
                     } else {
                       curState.currentTask = null; // end
                       newLogs.push({ ts: now, instanceId: t.instanceId, taskName: t.taskName, event: "end-of-flow" });
@@ -1042,11 +1099,10 @@ export default function AdvancedSimulator() {
                     curState.currentTask = null; // end
                     newLogs.push({ ts: now, instanceId: t.instanceId, taskName: t.taskName, event: "end-of-flow (no rules)" });
                   }
-                }
-                if (spawned.length) {
-                  items.push(...spawned);
-                  // In fast mode, attempt immediate promotion of just-spawned tasks in this tick
-                  if (settings.fastMode) {
+                  if (spawned.length) {
+                    items.push(...spawned);
+                    // In fast mode, attempt immediate promotion of just-spawned tasks in this tick
+                    if (settings.fastMode) {
                     for (const s of spawned) {
                       // move created -> queued
                       s.status = "queued";
@@ -1070,6 +1126,7 @@ export default function AdvancedSimulator() {
                     }
                   }
                 }
+                instanceStateRef.current = { ...instanceStateRef.current, [t.instanceId]: curState };
                 setInstanceState((s) => ({ ...s, [t.instanceId]: curState }));
               }
             }
@@ -1135,9 +1192,11 @@ export default function AdvancedSimulator() {
     const instanceId = `SIM-${now.getTime()}-A${i}`;
     const startRuleRec: any = graph.rules.find((r: any) => r.currentTask === "");
     if (!startRuleRec) return;
-  const planned = Math.max(5, Math.round(tatToMinutes(startRuleRec.tat, startRuleRec.tatType) * (0.7 + Math.random() * 0.6)));
-  const wait = settings.fastMode ? 0 : rand(2, 45);
-    const newInst: InstanceState = { nextSeq: 1, currentTask: graph.startNode, repeatsLeft: Math.max(0, (settings.repeatPerStep || 1) - 1), deferredNext: [] };
+    const baseTat = tatToMinutes(startRuleRec.tat, startRuleRec.tatType);
+    const planned = calculateRealisticTime(baseTat);
+    const wait = settings.fastMode ? 0 : rand(2, 45);
+    const newInst: InstanceState = { nextSeq: 1, currentTask: graph.startNode, deferredNext: [] };
+    instanceStateRef.current = { ...instanceStateRef.current, [instanceId]: newInst };
     setInstanceState((s) => ({ ...s, [instanceId]: newInst }));
     const newTask: SimTask = {
       id: `T-${tasks.length + 1}`,
@@ -1224,12 +1283,11 @@ export default function AdvancedSimulator() {
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium">Team size</label>
-                  <Input className="mt-1" type="number" min={1} max={10} value={settings.teamSize} onChange={handleNumber("teamSize")} />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Repeat per step</label>
-                  <Input className="mt-1" type="number" min={1} max={5} value={settings.repeatPerStep} onChange={handleNumber("repeatPerStep")} />
+                  <label className="text-sm font-medium">Team size (auto-calculated)</label>
+                  <Input className="mt-1" type="number" value={settings.teamSize} disabled />
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Auto-set to {settings.teamSize} (one person per task). Adjust individual task capacity in Config.
+                  </div>
                 </div>
                 <div>
                   <label className="text-sm font-medium flex items-center gap-2"><DollarSign className="w-4 h-4" /> Avg operation cost per hour</label>
@@ -1328,6 +1386,42 @@ export default function AdvancedSimulator() {
                 </label>
               </div>
 
+              <Separator className="my-4" />
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 text-sm font-medium">
+                    <input type="checkbox" checked={!!settings.useRealisticTimes} 
+                      onChange={(e) => setSettings((s) => ({ ...s, useRealisticTimes: e.target.checked }))} />
+                    Use realistic completion times
+                  </label>
+                </div>
+                <div className="text-xs text-muted-foreground ml-6 mb-3">
+                  When enabled, tasks complete faster than max TAT based on real-world patterns. For example, if TAT is 1 hour but tasks typically finish in 10-15 minutes, set average to 20% with some variability.
+                </div>
+                {settings.useRealisticTimes && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 ml-6">
+                    <div>
+                      <label className="text-sm font-medium">Average completion % of TAT</label>
+                      <Input className="mt-1" type="number" min={1} max={100} 
+                        value={settings.avgCompletionPct}
+                        onChange={(e) => setSettings((s) => ({ ...s, avgCompletionPct: Math.max(1, Math.min(100, Number(e.target.value) || 20)) }))} />
+                      <div className="text-xs text-muted-foreground mt-1">
+                        E.g., 20% means tasks finish in ~20% of the max TAT on average
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">Variability (±%)</label>
+                      <Input className="mt-1" type="number" min={0} max={50} 
+                        value={settings.completionVariability}
+                        onChange={(e) => setSettings((s) => ({ ...s, completionVariability: Math.max(0, Math.min(50, Number(e.target.value) || 10)) }))} />
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Random variation around the average (e.g., ±10%)
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="flex gap-3 pt-2">
                 {!running ? (
                   <Button onClick={startSim} className="gap-2"><Play className="w-4 h-4" /> Start</Button>
@@ -1385,12 +1479,17 @@ export default function AdvancedSimulator() {
                     {/* Resource Capacity per Task */}
                     {Object.keys(resourceCaps).length > 0 && (
                       <div className="space-y-4 mt-6">
-                        <div className="text-sm font-semibold">Resource Capacity</div>
+                        <div>
+                          <div className="text-sm font-semibold">Resource Capacity (People per Task)</div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            Each task defaults to 1 person. Increase to add more people working on the same task concurrently.
+                          </div>
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                           {Object.keys(resourceCaps).sort().map((task) => (
                             <div key={task} className="border rounded-md p-3">
                               <div className="text-sm font-medium mb-1">{task}</div>
-                              <label className="text-xs text-muted-foreground">Concurrent capacity</label>
+                              <label className="text-xs text-muted-foreground">Number of people</label>
                               <Input
                                 className="mt-1"
                                 type="number"
@@ -1415,6 +1514,11 @@ export default function AdvancedSimulator() {
               </div>
               <div className="text-xs text-muted-foreground pt-2">
                 Arrivals and processing follow working hours unless you enable Fast mode or Ignore working hours.
+              </div>
+              <div className="text-xs text-muted-foreground pt-1">
+                {settings.useRealisticTimes 
+                  ? `Realistic times enabled: Tasks complete in ~${settings.avgCompletionPct}% of max TAT (±${settings.completionVariability}%) instead of full TAT duration.`
+                  : "Using default time model: Tasks complete with random variation around max TAT."}
               </div>
               <div className="text-xs text-muted-foreground pt-1">
                 Instances spawned: {spawnedInstancesCount} of {settings.startEvents} | Remaining to spawn: {remainingToSpawn} {nextArrivalAt ? `| Next arrival at: ${format(nextArrivalAt, "pp")}` : ""} {simClock ? (isWorking(simClock) ? "| In working hours" : "| Outside working hours") : ""}
@@ -1571,6 +1675,42 @@ export default function AdvancedSimulator() {
                       />
                     </BarChart>
                   </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Bottleneck Analysis - Slowest Steps */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-amber-500" /> Bottleneck Analysis - Slowest Steps</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {bottleneckData.length === 0 ? (
+                <div className="text-sm text-muted-foreground">No completed tasks yet.</div>
+              ) : (
+                <div>
+                  <div className="text-xs text-muted-foreground mb-3">
+                    Average processing time per task (from start to completion). Higher times indicate bottlenecks.
+                  </div>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={bottleneckData} layout="horizontal">
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="task" angle={-20} textAnchor="end" height={80} interval={0} />
+                        <YAxis label={{ value: 'Minutes', angle: -90, position: 'insideLeft' }} />
+                        <Tooltip 
+                          formatter={(value: any) => `${Number(value).toFixed(2)} min`}
+                          labelFormatter={(label) => `Task: ${label}`}
+                        />
+                        <Bar dataKey="avgTime" fill="#ef4444" name="Avg Processing Time" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="mt-4 text-xs text-muted-foreground">
+                    Slowest step: <span className="font-semibold text-foreground">{bottleneckData[0]?.task}</span> 
+                    {bottleneckData[0] && ` (${bottleneckData[0].avgTime.toFixed(2)} min avg processing time, ${bottleneckData[0].count} completed)`}
+                  </div>
                 </div>
               )}
             </CardContent>

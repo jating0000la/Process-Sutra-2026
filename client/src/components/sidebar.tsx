@@ -65,7 +65,7 @@ const adminNavigationItems = [
     name: "Advanced Simulator",
     href: "/advanced-simulator",
     icon: Activity,
-    badge: "New",
+    badge: null,
   },
   {
     name: "User Management",
