@@ -21,14 +21,13 @@ interface HeaderProps {
 }
 
 export default function Header({ title, description, actions }: HeaderProps) {
-  const { user, logout } = useAuth();
+  const { user, logout, isLoggingOut } = useAuth();
   const [ , setLocation ] = useLocation();
   const { toggleSidebar, sidebarOpen } = useLayout();
 
   const handleLogout = async () => {
+    // Logout function now handles redirect automatically
     await logout();
-    // After logging out, send the user to the login screen
-    setLocation("/");
   };
 
   const getInitials = (displayName?: string | null) => {
@@ -108,9 +107,9 @@ export default function Header({ title, description, actions }: HeaderProps) {
                   Settings
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={handleLogout}>
+                <DropdownMenuItem onSelect={handleLogout} disabled={isLoggingOut}>
                   <LogOut className="mr-2 h-4 w-4" />
-                  Log out
+                  {isLoggingOut ? 'Logging out...' : 'Log out'}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

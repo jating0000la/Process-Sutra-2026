@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { User } from 'firebase/auth';
 import { auth, handleRedirectResult, onAuthStateChange } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
+import { queryClient } from '@/lib/queryClient';
 
 interface DatabaseUser {
   id: string;
@@ -20,8 +21,9 @@ interface AuthContextType {
   loading: boolean;
   error: string | null;
   isRefreshing: boolean;
+  isLoggingOut: boolean;
   login: () => void;
-  logout: () => void;
+  logout: (redirect?: boolean) => Promise<void>;
   handleTokenExpired: () => void;
 }
 
@@ -41,6 +43,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const { toast } = useToast();
 
   const handleTokenExpired = async () => {
@@ -59,6 +62,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setDbUser(null);
     setError(null);
     setIsRefreshing(false);
+
+    // Clear React Query cache
+    queryClient.clear();
 
     // Clear any Firebase auth state
     try {
@@ -289,15 +295,71 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const logout = async () => {
+  const logout = async (redirect: boolean = true) => {
+    // Prevent duplicate logout calls
+    if (isLoggingOut) {
+      console.log('Logout already in progress, skipping...');
+      return;
+    }
+
+    setIsLoggingOut(true);
+    
     try {
+      // Clear Firebase authentication
       const { logOut } = await import('@/lib/firebase');
       await logOut();
-      await fetch('/api/auth/logout', { method: 'POST' });
+      
+      // Clear backend session and check response
+      const logoutResponse = await fetch('/api/auth/logout', { method: 'POST' });
+      if (!logoutResponse.ok) {
+        console.warn('Backend logout failed, but continuing with client cleanup');
+      }
+      
+      // Clear client state
       setUser(null);
       setDbUser(null);
+      setError(null);
+      
+      // Clear React Query cache to prevent data leakage
+      queryClient.clear();
+      
+      // Show success notification
+      toast({
+        title: "Logged Out",
+        description: "You have been successfully logged out.",
+        duration: 2000,
+      });
+      
+      // Redirect to login page if requested
+      if (redirect) {
+        setTimeout(() => {
+          window.location.replace('/');
+        }, 100);
+      }
     } catch (error) {
       console.error('Error signing out:', error);
+      
+      // Show error notification to user
+      toast({
+        title: "Logout Error",
+        description: "There was an issue logging you out. Please try again.",
+        variant: "destructive",
+        duration: 3000,
+      });
+      
+      // Still attempt state cleanup even on error
+      setUser(null);
+      setDbUser(null);
+      queryClient.clear();
+      
+      // Still redirect on error to ensure user is logged out
+      if (redirect) {
+        setTimeout(() => {
+          window.location.replace('/');
+        }, 100);
+      }
+    } finally {
+      setIsLoggingOut(false);
     }
   };
 
@@ -307,6 +369,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     loading,
     error,
     isRefreshing,
+    isLoggingOut,
     login,
     logout,
     handleTokenExpired,

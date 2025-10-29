@@ -2,7 +2,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 
 export default function AuthDebug() {
-  const { user, loading, login, logout } = useAuth();
+  const { user, loading, login, logout, isLoggingOut } = useAuth();
 
   return (
     <div className="fixed bottom-4 right-4 bg-white border rounded-lg p-4 shadow-lg max-w-sm">
@@ -16,8 +16,8 @@ export default function AuthDebug() {
         <Button size="sm" onClick={login} disabled={loading}>
           Login
         </Button>
-        <Button size="sm" variant="outline" onClick={logout} disabled={!user}>
-          Logout
+        <Button size="sm" variant="outline" onClick={() => logout()} disabled={!user || isLoggingOut}>
+          {isLoggingOut ? 'Logging out...' : 'Logout'}
         </Button>
       </div>
     </div>
