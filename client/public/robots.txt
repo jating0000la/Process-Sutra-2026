@@ -1,0 +1,19 @@
+# robots.txt for Process Sutra
+User-agent: *
+Allow: /
+
+# Sitemaps
+Sitemap: https://www.processsutra.com/sitemap.xml
+
+# Disallow admin areas
+Disallow: /admin
+Disallow: /api/
+Disallow: /*.json$
+
+# Allow important pages
+Allow: /welcome
+Allow: /login
+Allow: /dashboard
+
+# Crawl delay
+Crawl-delay: 1

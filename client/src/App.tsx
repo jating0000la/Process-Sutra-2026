@@ -9,6 +9,8 @@ import { LayoutProvider } from "@/contexts/LayoutContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
+import LandingLogin from "@/pages/landing-login";
+
 // import Dashboard from "@/pages/dashboard";
 import Tasks from "@/pages/tasks";
 import Flows from "@/pages/flows";
@@ -64,9 +66,11 @@ function Router() {
       
       {!user ? (
         <>
-          <Route path="/" component={LoginPage} />
-          {/* Catch all other routes and redirect to login */}
-          <Route component={LoginPage} />
+          {/* Public routes - Landing page at root */}
+          <Route path="/" component={LandingLogin} />
+          <Route path="/login" component={LoginPage} />
+          {/* Catch all other routes and redirect to landing */}
+          <Route component={LandingLogin} />
         </>
       ) : (
         <>
