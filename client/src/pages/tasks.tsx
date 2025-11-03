@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CheckCircle, Clock, AlertTriangle, Eye, Edit, Plus, Database, Download, UserCheck, Grid, List, MoreHorizontal, Play, XCircle, RefreshCw } from "lucide-react";
+import { CheckCircle, Clock, AlertTriangle, Eye, Edit, Plus, Database, Download, UserCheck, Grid, List, MoreHorizontal, Play, XCircle, RefreshCw, Printer } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import FormRenderer from "@/components/form-renderer";
 import { format } from "date-fns";
@@ -956,46 +956,37 @@ export default function Tasks() {
 
   const handleViewFlowData = async (task: any) => {
     try {
-      // Get all tasks for this flow
-      const allTasks = (tasks as any[])?.filter((t: any) => t.flowId === task.flowId) || [];
-      
-      // Sort tasks by creation time to find the first task
-      const sortedTasks = allTasks.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-      const firstTask = sortedTasks[0];
-      
-      // Get all form responses for tasks in this flow
-      const flowFormResponses = (formResponses as any[])?.filter((response: any) => {
-        return allTasks.some((t: any) => t.id === response.taskId);
-      }) || [];
-
-      // Find the first form response (from the initial task)
-      const firstFormResponse = flowFormResponses.find((response: any) => 
-        response.taskId === firstTask?.id
-      );
-
-      // Add task names to form responses
-      const enrichedResponses = flowFormResponses.map((response: any) => {
-        const responseTask = allTasks.find((t: any) => t.id === response.taskId);
-        return {
-          ...response,
-          taskName: responseTask?.taskName || "Unknown Task"
-        };
+      // Fetch comprehensive flow data from the API
+      const response = await fetch(`/api/flows/${task.flowId}/data`, {
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
-
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch flow data: ${response.status}`);
+      }
+      
+      const flowData = await response.json();
+      
+      // Set the flow data for the dialog
       setFlowDataForTask({
         flowId: task.flowId,
         orderNumber: task.orderNumber,
         system: task.system,
-        tasks: allTasks,
-        formResponses: enrichedResponses,
-        firstTask: firstTask,
-        firstFormData: firstFormResponse?.formData || null
+        tasks: flowData.tasks || [],
+        formResponses: flowData.formResponses || [],
+        firstTask: flowData.tasks?.[0] || null,
+        firstFormData: flowData.tasks?.[0]?.initialData || flowData.tasks?.[0]?.formResponse || null,
+        userAccess: flowData.userAccess || { isAdmin: false, userEmail: '', userTasks: 0 }
       });
       setIsFlowDataDialogOpen(true);
     } catch (error) {
+      console.error('Error fetching flow data:', error);
       toast({
         title: "Error",
-        description: "Failed to load flow data",
+        description: "Failed to load flow data. Please try again.",
         variant: "destructive",
       });
     }
@@ -2092,19 +2083,85 @@ export default function Tasks() {
 
       {/* Flow Data Dialog */}
       <Dialog open={isFlowDataDialogOpen} onOpenChange={setIsFlowDataDialogOpen}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden">
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-auto print:max-h-none print:overflow-visible">
           <DialogHeader className="border-b pb-4">
             <div className="flex items-center justify-between">
               <div>
-                <DialogTitle className="text-xl font-bold">
-                  Flow Data - {flowDataForTask?.orderNumber || flowDataForTask?.flowId}
+                <DialogTitle className="text-xl font-bold flex items-center">
+                  <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center mr-3">
+                    <Database className="w-4 h-4 text-white" />
+                  </div>
+                  Flow Data - {flowDataForTask?.orderNumber || flowDataForTask?.flowId?.slice(-8)}
                 </DialogTitle>
-                <p className="text-sm text-gray-500 mt-1">
-                  System: {flowDataForTask?.system} • {flowDataForTask?.tasks?.length || 0} Tasks • 
-                  Created: {flowDataForTask?.tasks?.[0] ? new Date(flowDataForTask.tasks[0].createdAt).toLocaleDateString() : 'N/A'}
+                <p className="text-sm text-gray-500 mt-1 flex items-center space-x-4">
+                  <span>System: <span className="font-medium text-gray-700 dark:text-gray-300">{flowDataForTask?.system}</span></span>
+                  <span>•</span>
+                  <span>{flowDataForTask?.tasks?.length || 0} Total Tasks</span>
+                  <span>•</span>
+                  <span>Started: {flowDataForTask?.tasks?.[0] ? new Date(flowDataForTask.tasks[0].createdAt).toLocaleDateString() : 'N/A'}</span>
                 </p>
+                <div className="mt-2 flex items-center space-x-2">
+                  <div className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded-md font-medium">
+                    📋 Complete Flow Context Available
+                  </div>
+                  {flowDataForTask?.userAccess?.userTasks > 0 && (
+                    <div className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs rounded-md font-medium">
+                      👤 You have {flowDataForTask.userAccess.userTasks} task(s) in this flow
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    // Print the flow data dialog as it appears on screen
+                    const printContent = document.getElementById('flow-data-dialog-content');
+                    if (printContent) {
+                      const printWindow = window.open('', '_blank');
+                      if (printWindow) {
+                        // Get current page styles
+                        const styles = Array.from(document.styleSheets)
+                          .map(styleSheet => {
+                            try {
+                              return Array.from(styleSheet.cssRules)
+                                .map(rule => rule.cssText)
+                                .join('\n');
+                            } catch (e) {
+                              return '';
+                            }
+                          })
+                          .join('\n');
+
+                        printWindow.document.write(`
+                          <html>
+                            <head>
+                              <title>Flow Data - ${flowDataForTask?.orderNumber || flowDataForTask?.flowId?.slice(-8)}</title>
+                              <style>
+                                ${styles}
+                                @media print {
+                                  body { margin: 0; padding: 20px; }
+                                  .no-print { display: none !important; }
+                                }
+                              </style>
+                            </head>
+                            <body>
+                              ${printContent.innerHTML}
+                            </body>
+                          </html>
+                        `);
+                        printWindow.document.close();
+                        printWindow.focus();
+                        printWindow.print();
+                        printWindow.close();
+                      }
+                    }
+                  }}
+                >
+                  <Printer className="w-4 h-4 mr-1" />
+                  Print
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -2134,32 +2191,47 @@ export default function Tasks() {
           </DialogHeader>
           
           {flowDataForTask && (
-            <div className="flex flex-col h-full overflow-hidden">
+            <div id="flow-data-dialog-content" className="flex flex-col h-full overflow-hidden print:h-auto print:overflow-visible">
               {/* Progress Bar */}
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium">Flow Progress</span>
                   <span className="text-sm text-gray-500">
-                    {flowDataForTask.tasks?.filter((t: any) => t.status === 'completed').length || 0} of {flowDataForTask.tasks?.length || 0} completed
+                    {flowDataForTask.tasks?.filter((t: any) => t.status === 'completed').length || 0} of {flowDataForTask.tasks?.length || 0} tasks completed
                   </span>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
                   <div 
-                    className="bg-green-500 h-2 rounded-full transition-all duration-300"
+                    className="bg-gradient-to-r from-green-500 to-emerald-500 h-3 rounded-full transition-all duration-300 relative"
                     style={{ 
                       width: `${flowDataForTask.tasks?.length ? 
                         ((flowDataForTask.tasks.filter((t: any) => t.status === 'completed').length / flowDataForTask.tasks.length) * 100) : 0}%` 
                     }}
-                  />
+                  >
+                    {/* Progress percentage overlay */}
+                    <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white">
+                      {flowDataForTask.tasks?.length ? 
+                        Math.round((flowDataForTask.tasks.filter((t: any) => t.status === 'completed').length / flowDataForTask.tasks.length) * 100) : 0}%
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
+                  <span>Started: {flowDataForTask.tasks?.[0] ? new Date(flowDataForTask.tasks[0].createdAt).toLocaleDateString() : 'Unknown'}</span>
+                  <span>
+                    {flowDataForTask.tasks?.filter((t: any) => t.status === 'completed').length === flowDataForTask.tasks?.length 
+                      ? '✅ Flow Complete' 
+                      : `${flowDataForTask.tasks?.length - flowDataForTask.tasks?.filter((t: any) => t.status === 'completed').length || 0} tasks remaining`
+                    }
+                  </span>
                 </div>
               </div>
 
               {/* Main Content */}
-              <div className="flex-1 overflow-hidden">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
-                  {/* Flow Overview */}
-                  <div className="lg:col-span-1 space-y-4">
-                    {/* Flow Summary Card */}
+              <div className="flex-1 overflow-hidden print:overflow-visible">
+                <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 h-full print:h-auto">
+                  {/* Left Column: Flow Overview + Tasks Timeline (Narrower) */}
+                  <div className="lg:col-span-2 space-y-6">
+                    {/* Flow Overview */}
                     <Card className="h-fit">
                       <CardHeader className="pb-3">
                         <CardTitle className="text-base">Flow Overview</CardTitle>
@@ -2219,61 +2291,13 @@ export default function Tasks() {
                       </CardContent>
                     </Card>
 
-                    {/* Initial Form Data */}
-                    {flowDataForTask.firstFormData && (
-                      <Card className="flex-1">
-                        <CardHeader className="pb-3">
-                          <CardTitle className="text-base flex items-center">
-                            <div className="w-3 h-3 bg-blue-500 rounded-full mr-2"></div>
-                            Initial Form Data
-                          </CardTitle>
-                          <p className="text-xs text-gray-500">{flowDataForTask.firstTask?.taskName}</p>
-                        </CardHeader>
-                        <CardContent className="overflow-y-auto max-h-64">
-                          <div className="space-y-3">
-                            {Object.entries(getReadableFormData(flowDataForTask.firstFormData, flowDataForTask.firstTask?.formId)).map(([key, value]) => (
-                              <div key={key} className="border-l-2 border-blue-200 pl-3">
-                                <Label className="text-xs font-medium text-blue-700 block">{key}</Label>
-                                <div className="text-sm text-gray-800 mt-1">
-                                  {typeof value === 'string' && value.includes('<table') ? (
-                                    <div dangerouslySetInnerHTML={{ __html: value }} />
-                                  ) : Array.isArray(value) ? (
-                                    <div className="space-y-1">
-                                      {value.map((item, index) => (
-                                        <div key={index} className="bg-gray-50 p-2 rounded text-xs">
-                                          {typeof item === 'object' ? 
-                                            Object.entries(item).map(([k, v]) => (
-                                              <div key={k}><span className="font-medium">{k}:</span> {String(v)}</div>
-                                            )) : 
-                                            String(item)
-                                          }
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : typeof value === 'object' ? (
-                                    <div className="bg-gray-50 p-2 rounded text-xs font-mono">
-                                      {JSON.stringify(value, null, 2)}
-                                    </div>
-                                  ) : (
-                                    <span className="break-words">{String(value)}</span>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
-                  </div>
-
-                  {/* Tasks Timeline */}
-                  <div className="lg:col-span-1">
-                    <Card className="h-full">
+                    {/* Tasks Timeline */}
+                    <Card className="h-fit">
                       <CardHeader className="pb-3">
                         <CardTitle className="text-base">Tasks Timeline</CardTitle>
                         <p className="text-xs text-gray-500">{flowDataForTask.tasks?.length || 0} tasks in this flow</p>
                       </CardHeader>
-                      <CardContent className="overflow-y-auto">
+                      <CardContent className="overflow-y-visible print:overflow-visible">
                         <div className="space-y-3">
                           {flowDataForTask.tasks
                             ?.sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
@@ -2337,51 +2361,201 @@ export default function Tasks() {
                     </Card>
                   </div>
 
-                  {/* Form Data */}
-                  <div className="lg:col-span-1">
+                  {/* Right Column: Step-wise Form Data (Wider) */}
+                  <div className="lg:col-span-3 flex-1">
                     <Card className="h-full">
                       <CardHeader className="pb-3">
-                        <CardTitle className="text-base">Form Responses</CardTitle>
-                        <p className="text-xs text-gray-500">{flowDataForTask.formResponses?.length || 0} form submissions</p>
+                        <CardTitle className="text-base flex items-center">
+                          <Database className="w-4 h-4 mr-2 text-green-600" />
+                          Step-wise Form Data
+                        </CardTitle>
+                        <p className="text-xs text-gray-500">
+                          {flowDataForTask.formResponses?.length || 0} form submissions • 
+                          All previous step data is visible to provide context
+                        </p>
                       </CardHeader>
-                      <CardContent className="overflow-y-auto">
+                      <CardContent className="overflow-y-visible print:overflow-visible">
                         <div className="space-y-4">
                           {flowDataForTask.formResponses?.length === 0 ? (
                             <div className="text-center py-8">
                               <Database className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                               <p className="text-gray-500 text-sm">No form data available</p>
+                              <p className="text-gray-400 text-xs mt-1">
+                                Form responses will appear here as tasks are completed
+                              </p>
                             </div>
                           ) : (
-                            flowDataForTask.formResponses?.map((response: any) => (
-                              <Card key={response.id} className="border-l-4 border-l-green-400">
-                                <CardHeader className="pb-2">
-                                  <div className="flex items-center justify-between">
-                                    <CardTitle className="text-sm">{response.taskName}</CardTitle>
-                                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                                      {new Date(response.submittedAt).toLocaleDateString()}
-                                    </span>
-                                  </div>
-                                </CardHeader>
-                                <CardContent className="pt-0">
-                                  <div className="space-y-2">
-                                    {Object.entries(getReadableFormData(response.data || {}, response.formId)).map(([key, value]) => (
-                                      <div key={key} className="border-b border-gray-100 pb-2 last:border-b-0">
-                                        <Label className="text-xs font-medium text-gray-600 block">{key}</Label>
-                                        <div className="text-sm text-gray-800 mt-1">
-                                          {typeof value === 'string' && value.includes('<table') ? (
-                                            <div dangerouslySetInnerHTML={{ __html: value }} />
-                                          ) : (
-                                            <span className="break-words">
-                                              {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                                            </span>
+                            flowDataForTask.formResponses
+                              ?.sort((a: any, b: any) => {
+                                // Sort by task creation time to show chronological order
+                                const taskA = flowDataForTask.tasks?.find((t: any) => t.id === a.taskId);
+                                const taskB = flowDataForTask.tasks?.find((t: any) => t.id === b.taskId);
+                                const dateA = taskA?.createdAt ? new Date(taskA.createdAt).getTime() : 0;
+                                const dateB = taskB?.createdAt ? new Date(taskB.createdAt).getTime() : 0;
+                                return dateA - dateB;
+                              })
+                              ?.map((response: any, index: number) => {
+                                const isCurrentUserTask = response.doerEmail === flowDataForTask.userAccess?.userEmail;
+                                const taskIndex = flowDataForTask.tasks?.findIndex((t: any) => t.id === response.taskId) + 1 || index + 1;
+                                
+                                return (
+                                  <Card 
+                                    key={response.id || index} 
+                                    className={`border-l-4 ${
+                                      isCurrentUserTask 
+                                        ? 'border-l-blue-500 bg-blue-50/50 dark:bg-blue-900/10' 
+                                        : 'border-l-green-400 bg-white dark:bg-gray-800'
+                                    } relative`}
+                                  >
+                                    {/* Step indicator */}
+                                    <div className="absolute -left-6 top-4 w-8 h-8 bg-white dark:bg-gray-800 rounded-full border-2 border-green-400 flex items-center justify-center text-xs font-bold text-green-600">
+                                      {taskIndex}
+                                    </div>
+                                    
+                                    <CardHeader className="pb-2">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center space-x-2">
+                                          <CardTitle className="text-sm">
+                                            Step {taskIndex}: {response.taskName}
+                                          </CardTitle>
+                                          {isCurrentUserTask && (
+                                            <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700">
+                                              Your Task
+                                            </Badge>
                                           )}
                                         </div>
+                                        <span className="text-xs text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+                                          {response.submittedAt 
+                                            ? new Date(response.submittedAt).toLocaleDateString()
+                                            : response.timestamp 
+                                            ? new Date(response.timestamp).toLocaleDateString()
+                                            : 'Unknown Date'
+                                          }
+                                        </span>
                                       </div>
-                                    ))}
-                                  </div>
-                                </CardContent>
-                              </Card>
-                            ))
+                                      {response.doerEmail && (
+                                        <div className="flex items-center text-xs text-gray-500">
+                                          <UserCheck className="w-3 h-3 mr-1" />
+                                          Completed by: {response.doerEmail}
+                                        </div>
+                                      )}
+                                    </CardHeader>
+                                    <CardContent className="pt-0">
+                                      {response.formData || response.data ? (
+                                        <div className="space-y-2">
+                                          {Object.entries(getReadableFormData(response.formData || response.data, response.formId)).map(([key, value]) => (
+                                            <div key={key} className="border-b border-gray-100 dark:border-gray-600 pb-2 last:border-b-0">
+                                              <Label className="text-xs font-medium text-gray-600 dark:text-gray-400 block">{key}</Label>
+                                              <div className="text-sm text-gray-800 dark:text-gray-200 mt-1">
+                                                {typeof value === 'string' && value.includes('<table') ? (
+                                                  <div dangerouslySetInnerHTML={{ __html: value }} />
+                                                ) : Array.isArray(value) ? (
+                                                  <div className="space-y-1">
+                                                    {value.map((item, idx) => (
+                                                      <div key={idx} className="bg-gray-50 dark:bg-gray-700 p-2 rounded text-xs">
+                                                        {typeof item === 'object' ? 
+                                                          Object.entries(item).map(([k, v]) => (
+                                                            <div key={k}><span className="font-medium">{k}:</span> {String(v)}</div>
+                                                          )) : 
+                                                          String(item)
+                                                        }
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                ) : typeof value === 'object' && value !== null ? (
+                                                  // Check if it's a file upload object
+                                                  (value as any).type === 'file' && (value as any).originalName ? (
+                                                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded border">
+                                                      <div className="flex items-center space-x-3">
+                                                        <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center">
+                                                          {(value as any).mimeType?.startsWith('image/') ? (
+                                                            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                            </svg>
+                                                          ) : (value as any).mimeType?.includes('pdf') ? (
+                                                            <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                                            </svg>
+                                                          ) : (
+                                                            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                            </svg>
+                                                          )}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                                            {(value as any).originalName}
+                                                          </p>
+                                                          <div className="flex items-center space-x-2 text-xs text-gray-500">
+                                                            <span>{(value as any).mimeType}</span>
+                                                            <span>•</span>
+                                                            <span>
+                                                              {((value as any).size / 1024).toFixed(1)} KB
+                                                            </span>
+                                                          </div>
+                                                        </div>
+                                                        <div className="flex items-center space-x-2">
+                                                          {(value as any).gridFsId && (
+                                                            <button
+                                                              onClick={() => {
+                                                                // View file in new tab
+                                                                const viewUrl = `/api/files/${(value as any).gridFsId}/view`;
+                                                                window.open(viewUrl, '_blank');
+                                                              }}
+                                                              className="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 bg-blue-100 rounded hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300 dark:hover:bg-blue-800"
+                                                            >
+                                                              <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                              </svg>
+                                                              View
+                                                            </button>
+                                                          )}
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  ) : (
+                                                    <div className="bg-gray-50 dark:bg-gray-700 p-2 rounded text-xs font-mono max-h-32 overflow-y-auto">
+                                                      {JSON.stringify(value, null, 2)}
+                                                    </div>
+                                                  )
+                                                ) : (
+                                                  <span className="break-words">{String(value)}</span>
+                                                )}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <div className="text-center py-4 text-gray-500 text-sm">
+                                          <Database className="w-6 h-6 mx-auto mb-2 text-gray-300" />
+                                          No form data submitted for this step
+                                        </div>
+                                      )}
+                                    </CardContent>
+                                  </Card>
+                                );
+                              })
+                          )}
+                          
+                          {/* Information note */}
+                          {flowDataForTask.formResponses?.length > 0 && (
+                            <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
+                              <div className="flex items-start space-x-2">
+                                <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center mt-0.5">
+                                  <div className="w-2 h-2 bg-white rounded-full"></div>
+                                </div>
+                                <div className="text-xs text-blue-700 dark:text-blue-300">
+                                  <p className="font-medium mb-1">Complete Flow Context</p>
+                                  <p>You can see all previous step data from this flow to help you complete your current task with full context.</p>
+                                  {flowDataForTask.userAccess?.userTasks > 0 && (
+                                    <p className="mt-1">
+                                      You have {flowDataForTask.userAccess.userTasks} task(s) in this flow.
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
                           )}
                         </div>
                       </CardContent>

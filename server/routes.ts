@@ -1470,6 +1470,14 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       const allTasks = await storage.getTasksByOrganization(user.organizationId);
       const flowTasks = allTasks.filter(task => task.flowId === flowId);
       
+      // Check if user has access to this flow (either admin or has tasks in this flow)
+      const userHasAccess = user.role === 'admin' || 
+        flowTasks.some(task => task.doerEmail === user.email);
+      
+      if (!userHasAccess) {
+        return res.status(403).json({ message: "Access denied. You don't have permission to view this flow data." });
+      }
+      
       // Get all form responses for this flow - organization-specific
       const allResponses = await storage.getFormResponsesByOrganization(user.organizationId);
       const flowResponses = allResponses.filter(response => response.flowId === flowId);
@@ -1478,13 +1486,13 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       const tasksWithFormData = flowTasks.map(task => {
         // Find corresponding form response for this task
         const formResponse = flowResponses.find(response => 
-          response.taskId === task.id || 
-          (response.formData && task.taskName && (response.formData as any)[task.taskName])
+          response.taskId === task.id
         );
         
         return {
           ...task,
-          formResponse: formResponse?.formData || null
+          formResponse: formResponse?.formData || null,
+          initialData: task.flowInitialFormData || null // Include initial flow data if available
         };
       });
       
@@ -1497,14 +1505,32 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       
       // Get flow metadata from first task
       const firstTask = tasksWithFormData[0];
+      
+      // Also return all form responses with task names for better organization
+      const formResponsesWithTaskNames = flowResponses.map(response => {
+        const responseTask = flowTasks.find(task => task.id === response.taskId);
+        return {
+          ...response,
+          taskName: responseTask?.taskName || "Unknown Task",
+          taskCreatedAt: responseTask?.createdAt || null,
+          doerEmail: responseTask?.doerEmail || "Unknown"
+        };
+      });
+      
       const flowData = {
         flowId,
         tasks: tasksWithFormData,
+        formResponses: formResponsesWithTaskNames,
         flowDescription: firstTask?.flowDescription,
         flowInitiatedAt: firstTask?.flowInitiatedAt,
         flowInitiatedBy: firstTask?.flowInitiatedBy,
         orderNumber: firstTask?.orderNumber,
-        system: firstTask?.system
+        system: firstTask?.system,
+        userAccess: {
+          isAdmin: user.role === 'admin',
+          userEmail: user.email,
+          userTasks: flowTasks.filter(task => task.doerEmail === user.email).length
+        }
       };
       
       res.json(flowData);
