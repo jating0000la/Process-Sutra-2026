@@ -4,20 +4,33 @@ A comprehensive workflow automation and process management platform built with m
 
 ## 🛡️ Security Status
 
-**Security Rating: 🟢 LOW RISK** (Post-Security Audit - October 2025)
+**Security Rating: 🟢 LOW RISK / ENTERPRISE-GRADE** (Post-Security Audit - November 2025)
 
 ### Recent Security Improvements ✅
 - **Firebase Authorization**: Enhanced token validation with audience, issuer, and age verification
 - **Session Security**: Cryptographically secure session management with 4-hour TTL
-- **Rate Limiting**: Authentication endpoint protection (5 attempts/15 minutes)
+- **Rate Limiting**: Authentication endpoint protection (25 attempts/15 minutes)
 - **Cookie Security**: Secure, HttpOnly cookies with strict SameSite policy
 - **Data Protection**: Removed sensitive data logging from production builds
 - **Development Security**: Enhanced development authentication controls
+- **Comprehensive Documentation**: Complete security documentation package for customers and partners
 
-### Security Documentation
+### Security Documentation 📚
+
+#### Core Security Documents
+- 🔒 [**Security Audit Report**](./SECURITY_AUDIT_REPORT.md) - Comprehensive internal security assessment
+- 📖 [**Customer Security Documentation**](./CUSTOMER_SECURITY_DOCUMENTATION.md) - Public-facing security information
+- ⚖️ [**Non-Disclosure Agreement (NDA)**](./NDA_AGREEMENT.md) - Legal confidentiality agreement template
+- 📋 [**Documentation Summary**](./SECURITY_DOCUMENTATION_SUMMARY.md) - Overview of all security documentation
+- ⚡ [**Security Quick Reference**](./SECURITY_QUICK_REFERENCE.md) - Fast reference guide for all stakeholders
+
+#### Additional Resources
 - 📄 [Firebase Authorization Audit](./FIREBASE_AUTHORIZATION_AUDIT.md)
 - 📄 [Security Best Practices](./SECURITY_BEST_PRACTICES.md)
 - 📄 [Security Fixes Summary](./SECURITY_FIXES_SUMMARY.md)
+
+### For Customers & Partners
+Start with the [**Customer Security Documentation**](./CUSTOMER_SECURITY_DOCUMENTATION.md) to understand how we protect your data. For legal agreements, refer to our [**NDA template**](./NDA_AGREEMENT.md).
 
 ## 🚀 Features
 
