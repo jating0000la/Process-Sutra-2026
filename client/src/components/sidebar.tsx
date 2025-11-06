@@ -97,6 +97,12 @@ const adminNavigationItems = [
     icon: BookOpen,
     badge: null,
   },
+  {
+    name: "NDA & Security",
+    href: "/nda-security",
+    icon: Shield,
+    badge: null,
+  },
   // {
   //   name: "Organization Settings",
   //   href: "/organization-settings",

@@ -112,18 +112,17 @@ export default function NDASecurityPage() {
     // Create NDA content
     const ndaContent = `
 NON-DISCLOSURE AGREEMENT (NDA)
-Process-Sutra 2026
 
 This Non-Disclosure Agreement ("Agreement") is entered into as of ${userCreatedAt || new Date().toLocaleDateString()} by and between:
 
-DISCLOSING PARTY: Process-Sutra 2026
+DISCLOSING PARTY: ProcessSutra by Muxro Technologies
 RECEIVING PARTY: ${dbUser?.firstName && dbUser?.lastName ? `${dbUser.firstName} ${dbUser.lastName}` : dbUser?.email}
 Organization: ${organizationName}
 
 1. PURPOSE
-The parties wish to explore a business opportunity of mutual interest and in connection with this opportunity, 
-Disclosing Party may share certain confidential technical and business information that the Receiving Party 
-is required to maintain in confidence.
+ProcessSutra by Muxro Technologies is a workflow management platform. In connection with the use 
+of this platform, Disclosing Party may share certain confidential technical and business information that 
+the Receiving Party is required to maintain in confidence.
 
 2. DEFINITION OF CONFIDENTIAL INFORMATION
 "Confidential Information" means all information disclosed by Disclosing Party to Receiving Party, including:
@@ -173,11 +172,11 @@ Email: ${dbUser?.email}
 Date: ${userCreatedAt || new Date().toLocaleDateString()}
 Organization: ${organizationName}
 
-Disclosing Party: Process-Sutra 2026
+Disclosing Party: ProcessSutra by Muxro Technologies
 Date: ${userCreatedAt || new Date().toLocaleDateString()}
 
 CONFIDENTIAL AND PROPRIETARY INFORMATION
-© ${new Date().getFullYear()} Process-Sutra. All Rights Reserved.
+© ${new Date().getFullYear()} Muxro Technologies. All Rights Reserved.
 `;
 
     // Create blob and download
@@ -192,15 +191,23 @@ CONFIDENTIAL AND PROPRIETARY INFORMATION
     window.URL.revokeObjectURL(url);
   };
 
-  const handleDownloadSecurityDoc = () => {
+  // Security documentation is available for viewing only - no download needed
+  const handleViewSecurityDoc = () => {
+    // Scroll to security tab or show information
+    setActiveTab("security");
+  };
+
+  // Removed security doc download functionality
+  const handleDownloadSecurityDoc_OLD = () => {
     const securityDoc = `
 SECURITY DOCUMENTATION
-Process-Sutra 2026
+ProcessSutra by Muxro Technologies
 Security Rating: LOW RISK / ENTERPRISE-GRADE
 
 Generated for: ${dbUser?.firstName && dbUser?.lastName ? `${dbUser.firstName} ${dbUser.lastName}` : dbUser?.email}
 Organization: ${organizationName}
-Date: ${new Date().toLocaleDateString()}
+Date: ${userCreatedAt || new Date().toLocaleDateString()}
+NDA Agreement Date: ${userCreatedAt || new Date().toLocaleDateString()}
 
 ==============================================================================
 TABLE OF CONTENTS
@@ -218,8 +225,8 @@ TABLE OF CONTENTS
 1. SECURITY OVERVIEW
 ==============================================================================
 
-Process-Sutra implements enterprise-grade security measures to protect your data and ensure
-system integrity. Our multi-layered security approach includes:
+ProcessSutra by Muxro Technologies implements enterprise-grade security measures to protect 
+your data and ensure system integrity. Our multi-layered security approach includes:
 
 ✓ Firebase OAuth 2.0 Authentication
 ✓ Enhanced Token Validation
@@ -407,8 +414,8 @@ Last Security Audit: October 21, 2025
 SUPPORT & CONTACT
 ==============================================================================
 
-Security Inquiries: security@process-sutra.com
-Support: support@process-sutra.com
+Security Inquiries: security@muxrotechnologies.com
+Support: support@muxrotechnologies.com
 Emergency: Available 24/7
 
 For NDA Agreements: Refer to NDA section of this portal
@@ -419,7 +426,8 @@ For Security Updates: Check documentation regularly
 This document is confidential and proprietary. Distribution is restricted to
 authorized personnel only.
 
-© ${new Date().getFullYear()} Process-Sutra. All Rights Reserved.
+© ${new Date().getFullYear()} Muxro Technologies. All Rights Reserved.
+Product: ProcessSutra
 Security Rating: 🟢 LOW RISK / ENTERPRISE-GRADE
 Last Updated: ${new Date().toLocaleDateString()}
 `;
@@ -452,7 +460,7 @@ Last Updated: ${new Date().toLocaleDateString()}
                 <div>
                   <CardTitle className="text-2xl">Security & Legal Documentation</CardTitle>
                   <CardDescription className="text-base mt-1">
-                    Official NDA and security documentation for Process-Sutra
+                    Official NDA and security documentation for ProcessSutra by Muxro Technologies
                   </CardDescription>
                 </div>
               </div>
@@ -592,9 +600,9 @@ Last Updated: ${new Date().toLocaleDateString()}
                         <CheckCircle className="w-4 h-4 text-green-600" />
                         <span>Best practices included</span>
                       </div>
-                      <Button onClick={handleDownloadSecurityDoc} className="w-full" variant="secondary">
-                        <Download className="w-4 h-4 mr-2" />
-                        Download Security Doc
+                      <Button onClick={() => setActiveTab("security")} className="w-full" variant="secondary">
+                        <Eye className="w-4 h-4 mr-2" />
+                        View Security Details
                       </Button>
                     </CardContent>
                   </Card>
@@ -630,8 +638,8 @@ Last Updated: ${new Date().toLocaleDateString()}
                       <p className="font-medium">Administrator</p>
                     </div>
                     <div>
-                      <span className="text-gray-600">Document Date:</span>
-                      <p className="font-medium">{new Date().toLocaleDateString()}</p>
+                      <span className="text-gray-600">NDA Agreement Date:</span>
+                      <p className="font-medium">{userCreatedAt || 'Loading...'}</p>
                     </div>
                   </div>
                 </div>
@@ -656,7 +664,7 @@ Last Updated: ${new Date().toLocaleDateString()}
                 <div className="bg-gray-50 rounded-lg p-6 border space-y-4 max-h-96 overflow-y-auto">
                   <div>
                     <h3 className="font-bold text-lg mb-2">NON-DISCLOSURE AGREEMENT</h3>
-                    <p className="text-sm text-gray-600">Process-Sutra 2026</p>
+                    <p className="text-sm text-gray-600">ProcessSutra by Muxro Technologies</p>
                   </div>
 
                   <Separator />
@@ -664,9 +672,9 @@ Last Updated: ${new Date().toLocaleDateString()}
                   <div>
                     <h4 className="font-semibold mb-2">1. PURPOSE</h4>
                     <p className="text-sm text-gray-700">
-                      The parties wish to explore a business opportunity of mutual interest and in connection with this opportunity, 
-                      Disclosing Party may share certain confidential technical and business information that the Receiving Party 
-                      is required to maintain in confidence.
+                      ProcessSutra by Muxro Technologies is a workflow management platform. In connection with the use 
+                      of this platform, Disclosing Party may share certain confidential technical and business information that 
+                      the Receiving Party is required to maintain in confidence.
                     </p>
                   </div>
 
@@ -904,11 +912,8 @@ Last Updated: ${new Date().toLocaleDateString()}
                   <div>
                     <p className="text-2xl font-bold text-green-800">🟢 LOW RISK / ENTERPRISE-GRADE</p>
                     <p className="text-sm text-green-700 mt-1">Last Security Audit: October 21, 2025</p>
+                    <p className="text-xs text-green-600 mt-2">All security documentation is available for review on this page</p>
                   </div>
-                  <Button onClick={handleDownloadSecurityDoc} variant="outline" className="border-green-300">
-                    <Download className="w-4 h-4 mr-2" />
-                    Download Full Report
-                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -1031,11 +1036,11 @@ Last Updated: ${new Date().toLocaleDateString()}
                   <div className="grid md:grid-cols-2 gap-4 text-sm">
                     <div>
                       <p className="text-gray-600">Security Inquiries:</p>
-                      <p className="font-medium">security@process-sutra.com</p>
+                      <p className="font-medium">security@muxrotechnologies.com</p>
                     </div>
                     <div>
                       <p className="text-gray-600">General Support:</p>
-                      <p className="font-medium">support@process-sutra.com</p>
+                      <p className="font-medium">support@muxrotechnologies.com</p>
                     </div>
                     <div>
                       <p className="text-gray-600">Emergency Contact:</p>
@@ -1065,7 +1070,7 @@ Last Updated: ${new Date().toLocaleDateString()}
                   Unauthorized disclosure or distribution is strictly prohibited and may result in legal action.
                 </p>
                 <p className="mt-2 text-xs text-gray-600">
-                  © {new Date().getFullYear()} Process-Sutra. All Rights Reserved. | Last Updated: {new Date().toLocaleDateString()}
+                  © {new Date().getFullYear()} Muxro Technologies. All Rights Reserved. | Product: ProcessSutra | Last Updated: {new Date().toLocaleDateString()}
                 </p>
               </div>
             </div>
