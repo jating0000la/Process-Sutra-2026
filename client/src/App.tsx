@@ -32,6 +32,7 @@ import SystemSuperAdmin from "@/pages/system-super-admin";
 import FormDataViewer from "@/pages/form-data-viewer";
 import MongoFormDataViewer from "@/pages/mongo-form-data-viewer";
 import NDASecurityPage from "@/pages/nda-security";
+import VisualFlowBuilder from "@/pages/visual-flow-builder";
 import { useEffect } from "react";
 
 // Component to handle /api/login redirect
@@ -156,6 +157,12 @@ function Router() {
           <Route path="/nda-security">
             <ProtectedRoute requireAdmin>
               <NDASecurityPage />
+            </ProtectedRoute>
+          </Route>
+          
+          <Route path="/visual-flow-builder">
+            <ProtectedRoute requireAdmin>
+              <VisualFlowBuilder />
             </ProtectedRoute>
           </Route>
         </>

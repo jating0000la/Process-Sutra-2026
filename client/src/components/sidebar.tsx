@@ -16,7 +16,8 @@ import {
   Activity,
   Database,
   BookOpen,
-  Shield
+  Shield,
+  Boxes
 } from "lucide-react";
 
 // Navigation items for all users
@@ -42,6 +43,12 @@ const adminNavigationItems = [
     href: "/flows",
     icon: Workflow,
     badge: null,
+  },
+  {
+    name: "Visual Flow Builder",
+    href: "/visual-flow-builder",
+    icon: Boxes,
+    badge: "New",
   },
   {
     name: "Form Builder",
