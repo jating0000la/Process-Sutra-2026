@@ -75,50 +75,99 @@ export default function FormRenderer({
 
     const prefillData: Record<string, any> = {};
 
-    // Iterate through previous responses to find matching field labels
+    // Iterate through ALL previous responses to find matching field labels
+    // This allows prefilling from ANY previous form in the same flow
     flowResponses.forEach((response: any) => {
-      if (response.formData && typeof response.formData === 'object') {
-        template.questions.forEach((question) => {
-          // Handle both old simple structure and new enhanced structure
-          let value = undefined;
+      if (!response.formData || typeof response.formData !== 'object') {
+        return;
+      }
+
+      // For each question in current template, search for matching label in previous responses
+      template.questions.forEach((question) => {
+        // Skip if we already found a value for this question
+        if (prefillData[question.id] !== undefined) {
+          return;
+        }
+
+        let value: any = undefined;
+        
+        // Search through all fields in the response formData
+        Object.entries(response.formData).forEach(([key, fieldData]) => {
+          if (value !== undefined) return; // Skip if already found
           
-          // First check if there's a direct match by question label (enhanced structure)
-          if (response.formData[question.label]) {
-            const fieldData = response.formData[question.label];
-            if (typeof fieldData === 'object' && fieldData.answer !== undefined) {
-              // Enhanced structure: { questionId, questionTitle, answer }
-              value = fieldData.answer;
+          // Try to match by question label (case-insensitive for better matching)
+          // This allows the same question to be prefilled across different forms
+          const normalizedKey = key.toLowerCase().trim();
+          const normalizedQuestionLabel = question.label.toLowerCase().trim();
+          
+          // Check if the key matches the question label
+          if (normalizedKey === normalizedQuestionLabel) {
+            // Extract the value based on data structure
+            if (typeof fieldData === 'object' && fieldData !== null) {
+              // Check for enhanced structure: { questionId, questionTitle, answer }
+              if ('answer' in fieldData) {
+                value = fieldData.answer;
+              } 
+              // Check if it's a file object
+              else if ('type' in fieldData && fieldData.type === 'file') {
+                value = fieldData;
+              }
+              // Check if it's an array (checkbox, table)
+              else if (Array.isArray(fieldData)) {
+                value = fieldData;
+              }
+              // Otherwise use the whole object
+              else {
+                value = fieldData;
+              }
             } else {
               // Simple structure: direct value
               value = fieldData;
             }
-          } 
-          // Also check by question ID for backwards compatibility
-          else if (response.formData[question.id]) {
-            const fieldData = response.formData[question.id];
-            if (typeof fieldData === 'object' && fieldData.answer !== undefined) {
+          }
+          // Also try matching by question ID (exact match)
+          else if (key === question.id) {
+            if (typeof fieldData === 'object' && fieldData !== null && 'answer' in fieldData) {
               value = fieldData.answer;
             } else {
               value = fieldData;
             }
           }
+        });
+        
+        // Set the value if found
+        if (value !== undefined) {
+          // Validate the value is appropriate for the question type
+          const isValidValue = (() => {
+            switch (question.type) {
+              case 'checkbox':
+                return Array.isArray(value);
+              case 'table':
+                return Array.isArray(value);
+              case 'file':
+                return typeof value === 'object' || value === null;
+              default:
+                return true; // Accept any value for other types
+            }
+          })();
           
-          // Set the value if found and not already set (first match wins)
-          if (value !== undefined && prefillData[question.id] === undefined) {
+          if (isValidValue) {
             prefillData[question.id] = value;
             console.log('FormRenderer: Auto-prefill match found', {
               questionId: question.id,
               questionLabel: question.label,
-              prefillValue: value
+              questionType: question.type,
+              prefillValue: value,
+              sourceResponse: response.formId
             });
           }
-        });
-      }
+        }
+      });
     });
 
     console.log('FormRenderer: Final auto-prefill data', prefillData);
     return prefillData;
-  }, [flowResponses, template.questions]);
+  }, [flowResponses, template.questions, flowId]);
 
   // Show user feedback if auto-prefill fails
   useEffect(() => {
@@ -448,8 +497,8 @@ export default function FormRenderer({
             <FormLabel>
               {question.label}
               {question.required && <span className="text-red-500 ml-1">*</span>}
-              {autoPrefillData[question.label] && !initialData[question.id] && (
-                <span className="text-blue-500 ml-2 text-xs">(Auto-filled)</span>
+              {autoPrefillData[question.id] !== undefined && !initialData[question.id] && (
+                <span className="text-blue-500 ml-2 text-xs">(Auto-filled from previous form)</span>
               )}
             </FormLabel>
             <FormControl>
