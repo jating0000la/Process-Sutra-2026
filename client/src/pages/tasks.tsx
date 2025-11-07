@@ -2023,6 +2023,7 @@ export default function Tasks() {
             <FormRenderer
               template={formTemplate}
               onSubmit={handleFormSubmit}
+              onCancel={() => setIsFormDialogOpen(false)}
               isSubmitting={false}
               flowId={selectedTask?.flowId}
             />

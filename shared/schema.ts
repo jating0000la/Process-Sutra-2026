@@ -377,6 +377,46 @@ export const insertFlowRuleSchema = createInsertSchema(flowRules).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  system: z.string()
+    .min(1, "System is required")
+    .max(100, "System name too long")
+    .refine(val => !/<[^>]*>/g.test(val), "HTML tags not allowed in system name"),
+  
+  currentTask: z.string()
+    .max(200, "Task name too long")
+    .refine(val => !/<[^>]*>/g.test(val), "HTML tags not allowed in task name"),
+  
+  status: z.string()
+    .max(100, "Status too long")
+    .refine(val => !/<[^>]*>/g.test(val), "HTML tags not allowed in status"),
+  
+  nextTask: z.string()
+    .min(1, "Next task is required")
+    .max(200, "Task name too long")
+    .refine(val => !/<[^>]*>/g.test(val), "HTML tags not allowed in task name"),
+  
+  doer: z.string()
+    .min(1, "Doer is required")
+    .max(100, "Doer name too long")
+    .refine(val => !/<[^>]*>/g.test(val), "HTML tags not allowed in doer name"),
+  
+  email: z.string()
+    .email("Valid email is required")
+    .max(254, "Email too long")
+    .toLowerCase()
+    .refine(val => !val.includes('%0A') && !val.includes('%0D'), "Invalid email format")
+    .refine(val => !val.includes('<') && !val.includes('>'), "Invalid characters in email"),
+  
+  formId: z.string()
+    .max(100, "Form ID too long")
+    .refine(val => !val || !/<[^>]*>/g.test(val), "HTML tags not allowed in form ID")
+    .optional(),
+  
+  transferToEmails: z.string()
+    .max(500, "Transfer emails too long")
+    .refine(val => !val || !/<[^>]*>/g.test(val), "HTML tags not allowed in emails")
+    .optional(),
 });
 
 export const insertTaskSchema = createInsertSchema(tasks).omit({

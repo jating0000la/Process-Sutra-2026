@@ -63,6 +63,7 @@ export interface IStorage {
   // Flow Rules operations (organization-specific)
   getFlowRules(system?: string): Promise<FlowRule[]>;
   getFlowRulesByOrganization(organizationId: string, system?: string): Promise<FlowRule[]>;
+  getFlowRuleById(id: string): Promise<FlowRule | undefined>;
   createFlowRule(flowRule: InsertFlowRule): Promise<FlowRule>;
   updateFlowRule(id: string, flowRule: Partial<InsertFlowRule>): Promise<FlowRule>;
   deleteFlowRule(id: string): Promise<void>;
@@ -348,6 +349,11 @@ export class DatabaseStorage implements IStorage {
       );
     }
     return await db.select().from(flowRules).where(eq(flowRules.organizationId, organizationId)).orderBy(asc(flowRules.system));
+  }
+
+  async getFlowRuleById(id: string): Promise<FlowRule | undefined> {
+    const [rule] = await db.select().from(flowRules).where(eq(flowRules.id, id));
+    return rule;
   }
 
   async createFlowRule(flowRule: InsertFlowRule): Promise<FlowRule> {

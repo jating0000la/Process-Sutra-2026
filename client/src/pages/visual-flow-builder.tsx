@@ -120,6 +120,27 @@ export default function VisualFlowBuilder() {
     }
   }, [isAuthenticated, isLoading, toast]);
 
+  // Admin-only access check
+  if (isAuthenticated && user?.role !== 'admin') {
+    return (
+      <div className="flex h-screen items-center justify-center bg-neutral">
+        <Card className="max-w-md">
+          <CardHeader>
+            <CardTitle>Access Denied</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-gray-600 mb-4">
+              Only administrators can access the Visual Flow Builder.
+            </p>
+            <Button onClick={() => window.location.href = "/"}>
+              Return to Dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   // Cleanup debounce timer on unmount
   useEffect(() => {
     return () => {
@@ -127,7 +148,7 @@ export default function VisualFlowBuilder() {
         clearTimeout(formIdDebounceTimer);
       }
     };
-  }, [formIdDebounceTimer]);
+  }, []); // Empty deps - only runs on unmount
 
   // Fetch flow rules
   const { data: flowRules = [], isLoading: rulesLoading } = useQuery<FlowRule[]>({
@@ -206,9 +227,12 @@ export default function VisualFlowBuilder() {
   // Create form template mutation
   const createFormTemplateMutation = useMutation({
     mutationFn: async (data: any) => {
+      // Backend automatically adds organizationId from session
       await apiRequest("POST", "/api/form-templates", {
-        ...data,
-        organizationId: user?.organizationId,
+        formId: data.formId,
+        title: data.title,
+        description: data.description,
+        questions: data.questions || [],
       });
     },
     onSuccess: () => {

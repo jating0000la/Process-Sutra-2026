@@ -15,38 +15,36 @@ import {
   Settings,
   Activity,
   Database,
-  BookOpen,
-  Shield,
   Boxes,
-  Building2,
-  CreditCard,
-  TrendingUp
 } from "lucide-react";
 
 // All navigation items in the correct order
 const allNavigationItems = [
+  // Dashboard Section - visible to all users
   {
-    name: "Main", 
+    name: "Dashboard", 
     href: "/",
-    icon: CheckSquare,
+    icon: LayoutDashboard,
     badge: null,
     adminOnly: false,
+    section: "main",
   },
-  // My Tasks - visible to all users
   {
     name: "My Tasks", 
     href: "/tasks",
     icon: CheckSquare,
     badge: null,
     adminOnly: false,
+    section: "main",
   },
-  // Flow Builder Section - admin only
+  // Builder Tools Section - admin only
   {
     name: "Visual Flow Builder",
     href: "/visual-flow-builder",
     icon: Boxes,
     badge: "New",
     adminOnly: true,
+    section: "builders",
   },
   {
     name: "Flow Builder",
@@ -54,112 +52,58 @@ const allNavigationItems = [
     icon: Workflow,
     badge: null,
     adminOnly: true,
+    section: "builders",
   },
-  // Form Builder - admin only
   {
     name: "Form Builder",
     href: "/form-builder", 
     icon: FileText,
     badge: null,
     adminOnly: true,
+    section: "builders",
   },
-  // Advanced Simulator - admin only
   {
     name: "Advanced Simulator",
     href: "/advanced-simulator",
     icon: Activity,
     badge: null,
     adminOnly: true,
+    section: "builders",
   },
-  // My Data Section
+  // Data Section - admin only
   {
     name: "Flow Data",
     href: "/flow-data",
     icon: FileBarChart,
     badge: null,
-    isSubItem: true,
     adminOnly: true,
+    section: "data",
   },
   {
     name: "Form Data", 
     href: "/mongo-form-data-viewer",
     icon: Database,
     badge: "New",
-    isSubItem: true,
     adminOnly: true,
+    section: "data",
   },
-  // Settings Section
-  {
-    name: "TAT Config",
-    href: "/tat-config",
-    icon: Settings,
-    badge: null,
-    isSubItem: true,
-    adminOnly: true,
-  },
-  {
-    name: "User Management",
-    href: "/user-management",
-    icon: Users,
-    badge: null,
-    isSubItem: true,
-    adminOnly: true,
-  },
-  {
-    name: "Organisation Details",
-    href: "/organization-settings",
-    icon: Building2,
-    badge: null,
-    isSubItem: true,
-    adminOnly: true,
-  },
-  {
-    name: "Start Flow API",
-    href: "/api-startflow",
-    icon: Activity,
-    badge: null,
-    isSubItem: true,
-    adminOnly: true,
-  },
-  {
-    name: "API Documentation",
-    href: "/api-documentation",
-    icon: BookOpen,
-    badge: null,
-    isSubItem: true,
-    adminOnly: true,
-  },
-  {
-    name: "NDA & Security",
-    href: "/nda-security",
-    icon: Shield,
-    badge: null,
-    isSubItem: true,
-    adminOnly: true,
-  },
-  {
-    name: "Usage",
-    href: "/usage",
-    icon: TrendingUp,
-    badge: null,
-    isSubItem: true,
-    adminOnly: true,
-  },
-  {
-    name: "Payments",
-    href: "/payments",
-    icon: CreditCard,
-    badge: null,
-    isSubItem: true,
-    adminOnly: true,
-  },
-  // Reports Section
+  // Analytics Section - admin only
   {
     name: "Analytics",
-    href: "/",
+    href: "/analytics",
     icon: BarChart3,
     badge: null,
     adminOnly: true,
+    section: "analytics",
+  },
+  // Settings Section - admin only
+  {
+    name: "Settings",
+    href: "/settings",
+    icon: Settings,
+    badge: null,
+    adminOnly: true,
+    section: "settings",
   },
 ];
 
@@ -213,74 +157,62 @@ export default function Sidebar() {
         <div className="block md:hidden h-16" />
         
         <nav className="px-3 md:px-4 flex-1 py-4">
-        <div className="space-y-2">
-          {navigationItems.map((item: any, index: number) => {
-            const IconComponent = item.icon;
-            // Show section headers only for admin users and at the right positions
-            const showMyDataHeader = item.name === "Flow Data" && isAdmin && sidebarOpen;
-            const showSettingsHeader = item.name === "TAT Config" && isAdmin && sidebarOpen;
-            const showReportsHeader = item.name === "Analytics" && isAdmin && sidebarOpen;
-            
-            return (
-              <div key={item.name}>
-                {showMyDataHeader && (
-                  <div className="px-3 py-2 mt-6 mb-2">
-                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      Dashboard
-                    </h3>
-                  </div>
-                )}
-                {/* My Data Section Header */}
-                {showMyDataHeader && (
-                  <div className="px-3 py-2 mt-6 mb-2">
-                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      My Data
-                    </h3>
-                  </div>
-                )}
-                
-                {/* Settings Section Header */}
-                {showSettingsHeader && (
-                  <div className="px-3 py-2 mt-6 mb-2">
-                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      Settings
-                    </h3>
-                  </div>
-                )}
-                
-                {/* Reports Section Header */}
-                {showReportsHeader && (
-                  <div className="px-3 py-2 mt-6 mb-2">
-                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      Reports
-                    </h3>
-                  </div>
-                )}
-                
-                <Link href={item.href}>
-                  <div
-                    className={cn(
-                      "sidebar-nav-item flex items-center rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 transition group",
-                      isActive(item.href) && "bg-gray-100 text-gray-900",
-                      !sidebarOpen && "md:justify-center md:px-2",
-                      item.isSubItem && sidebarOpen && "pl-6"
-                    )}
-                  >
-                    <IconComponent className={cn("h-5 w-5 mr-3", !sidebarOpen && "md:mr-0")} />
-                    <span className={cn("truncate", !sidebarOpen && "hidden md:inline-block md:opacity-0 md:w-0")}>{item.name}</span>
-                    {item.badge && sidebarOpen && (
-                      <span className="ml-auto bg-orange-500 text-white text-xs px-2 py-1 rounded-full">
-                        {item.badge}
-                      </span>
-                    )}
-                  </div>
-                </Link>
-              </div>
-            );
-          })}
-        </div>
+          <div className="space-y-2">
+            {navigationItems.map((item: any, index: number) => {
+              const IconComponent = item.icon;
+              const prevItem = navigationItems[index - 1];
+              
+              // Determine if we need to show a section header
+              const showSectionHeader = 
+                sidebarOpen && 
+                prevItem && 
+                prevItem.section !== item.section;
+              
+              // Get section title
+              const getSectionTitle = (section: string) => {
+                switch (section) {
+                  case "builders": return "Builder Tools";
+                  case "data": return "My Data";
+                  case "analytics": return "Analytics";
+                  case "settings": return "Settings";
+                  default: return "";
+                }
+              };
+              
+              return (
+                <div key={item.name}>
+                  {/* Section Header */}
+                  {showSectionHeader && (
+                    <div className="px-3 py-2 mt-6 mb-2">
+                      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        {getSectionTitle(item.section)}
+                      </h3>
+                    </div>
+                  )}
+                  
+                  <Link href={item.href}>
+                    <div
+                      className={cn(
+                        "sidebar-nav-item flex items-center rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 transition group",
+                        isActive(item.href) && "bg-gray-100 text-gray-900",
+                        !sidebarOpen && "md:justify-center md:px-2"
+                      )}
+                    >
+                      <IconComponent className={cn("h-5 w-5 mr-3", !sidebarOpen && "md:mr-0")} />
+                      <span className={cn("truncate", !sidebarOpen && "hidden md:inline-block md:opacity-0 md:w-0")}>{item.name}</span>
+                      {item.badge && sidebarOpen && (
+                        <span className="ml-auto bg-orange-500 text-white text-xs px-2 py-1 rounded-full">
+                          {item.badge}
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                </div>
+              );
+            })}
+          </div>
         
-        {isAdmin && (
+          {isAdmin && (
             <div className={cn("mt-8", !sidebarOpen && "hidden md:block md:opacity-0") }>
               <div className="px-3 py-2 bg-blue-50 rounded-lg">
                 <div className="flex items-center">
@@ -291,7 +223,7 @@ export default function Sidebar() {
                 </div>
               </div>
             </div>
-        )}
+          )}
         </nav>
       </aside>
     </>

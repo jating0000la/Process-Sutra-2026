@@ -22,6 +22,7 @@ import AdvancedSimulator from "@/pages/advanced-simulator";
 import UserManagement from "@/pages/user-management";
 import OrganizationSettings from "@/pages/organization-settings";
 import Profile from "@/pages/profile";
+import Settings from "@/pages/settings";
 import { useNotifications } from "@/hooks/useNotifications";
 import ApiStartFlow from "@/pages/api-startflow";
 import ApiDocumentation from "@/pages/api-documentation";
@@ -33,6 +34,9 @@ import FormDataViewer from "@/pages/form-data-viewer";
 import MongoFormDataViewer from "@/pages/mongo-form-data-viewer";
 import NDASecurityPage from "@/pages/nda-security";
 import VisualFlowBuilder from "@/pages/visual-flow-builder";
+import Usage from "@/pages/usage";
+import Payments from "@/pages/payments";
+import DataManagement from "@/pages/data-management";
 import { useEffect } from "react";
 
 // Component to handle /api/login redirect
@@ -98,6 +102,18 @@ function Router() {
               <TATConfig />
             </ProtectedRoute>
           </Route>
+          <Route path="/settings">
+            <ProtectedRoute requireAdmin>
+              <Settings />
+            </ProtectedRoute>
+          </Route>
+          
+          <Route path="/data-management">
+            <ProtectedRoute requireAdmin>
+              <DataManagement />
+            </ProtectedRoute>
+          </Route>
+          
           <Route path="/flow-data">
             <ProtectedRoute requireAdmin>
               <FlowData />
@@ -163,6 +179,18 @@ function Router() {
           <Route path="/visual-flow-builder">
             <ProtectedRoute requireAdmin>
               <VisualFlowBuilder />
+            </ProtectedRoute>
+          </Route>
+          
+          <Route path="/usage">
+            <ProtectedRoute requireAdmin>
+              <Usage />
+            </ProtectedRoute>
+          </Route>
+          
+          <Route path="/payments">
+            <ProtectedRoute requireAdmin>
+              <Payments />
             </ProtectedRoute>
           </Route>
         </>

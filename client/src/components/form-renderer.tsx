@@ -37,6 +37,7 @@ interface FormTemplate {
 interface FormRendererProps {
   template: FormTemplate;
   onSubmit: (data: Record<string, any>) => void;
+  onCancel?: () => void;
   isSubmitting?: boolean;
   initialData?: Record<string, any>;
   readonly?: boolean;
@@ -45,7 +46,8 @@ interface FormRendererProps {
 
 export default function FormRenderer({ 
   template, 
-  onSubmit, 
+  onSubmit,
+  onCancel,
   isSubmitting = false, 
   initialData = {},
   readonly = false,
@@ -716,7 +718,11 @@ export default function FormRenderer({
             
             {!readonly && (
               <div className="flex justify-end space-x-3 pt-4">
-                <Button type="button" variant="outline">
+                <Button 
+                  type="button" 
+                  variant="outline"
+                  onClick={onCancel}
+                >
                   Cancel
                 </Button>
                 <Button type="submit" disabled={isSubmitting}>
