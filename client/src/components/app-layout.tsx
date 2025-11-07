@@ -16,7 +16,7 @@ export function AppLayout({ title, description, actions, children }: AppLayoutPr
   return (
     <div className="h-screen flex bg-neutral overflow-hidden">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto pt-16">
+      <main className="flex-1 overflow-y-auto">
         <Header title={title} description={description} actions={actions} />
         <div className="p-6">
           {children}

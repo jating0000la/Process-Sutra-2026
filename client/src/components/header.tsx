@@ -118,7 +118,7 @@ export default function Header({ title, description, actions }: HeaderProps) {
       </header>
 
       {/* Page Header */}
-  <div className="bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60 border-b border-gray-200 px-6 py-4 mt-16 sticky top-16 z-30">
+      <div className="bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60 border-b border-gray-200 px-6 py-4 sticky top-16 z-30">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
@@ -129,7 +129,7 @@ export default function Header({ title, description, actions }: HeaderProps) {
           {actions && <div>{actions}</div>}
         </div>
       </div>
-  {/* Overlay handled at layout level */}
+      {/* Overlay handled at layout level */}
     </>
   )
 }
