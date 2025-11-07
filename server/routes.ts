@@ -713,23 +713,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('SSE notify error:', e);
       }
 
-      // Fire webhooks (non-blocking)
+      // Fire webhooks (non-blocking with proper logging and retry)
       (async () => {
-        try {
-          const hooks = await storage.getActiveWebhooksForEvent(user.organizationId, 'flow.started');
-          for (const hook of hooks) {
-            const payload = {
-              id: randomUUID(),
-              type: 'flow.started',
-              createdAt: new Date().toISOString(),
-              data: { flowId, orderNumber, system, description, initiatedBy: userId, initiatedAt: flowStartTime, task: { id: task.id, name: task.taskName, assignee: task.doerEmail } }
-            };
-            const body = JSON.stringify(payload);
-            const sig = crypto.createHmac('sha256', hook.secret).update(body).digest('hex');
-            fetch(hook.targetUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Webhook-Signature': sig, 'X-Webhook-Id': payload.id, 'X-Webhook-Type': payload.type }, body }).catch(()=>{});
+        const { fireWebhooksForEvent } = await import('./webhookUtils');
+        await fireWebhooksForEvent(user.organizationId, 'flow.started', {
+          flowId,
+          orderNumber,
+          system,
+          description,
+          initiatedBy: userId,
+          initiatedAt: flowStartTime.toISOString(),
+          task: {
+            id: task.id,
+            name: task.taskName,
+            assignee: task.doerEmail
           }
-        } catch {}
-      })();
+        });
+      })().catch(err => console.error('[Webhook] Error firing flow.started webhooks:', err));
 
       res.status(201).json({
         flowId,
@@ -902,41 +902,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Fire webhooks (non-blocking)
+      // Fire webhooks (non-blocking with proper logging and retry)
       (async () => {
-        try {
-          const hooks = await storage.getActiveWebhooksForEvent(user.organizationId, 'flow.resumed');
-          for (const hook of hooks) {
-            const payload = {
-              id: randomUUID(),
-              type: 'flow.resumed',
-              createdAt: new Date().toISOString(),
-              data: { 
-                flowId, 
-                orderNumber: firstTask.orderNumber,
-                system: firstTask.system, 
-                description: firstTask.flowDescription,
-                resumedBy: user.id,
-                resumedAt: new Date().toISOString(),
-                reason: reason || "Flow resumed by admin",
-                resumedTasksCount: resumedCount,
-              }
-            };
-            const body = JSON.stringify(payload);
-            const sig = crypto.createHmac('sha256', hook.secret).update(body).digest('hex');
-            fetch(hook.targetUrl, { 
-              method: 'POST', 
-              headers: { 
-                'Content-Type': 'application/json', 
-                'X-Webhook-Signature': sig, 
-                'X-Webhook-Id': payload.id, 
-                'X-Webhook-Type': payload.type 
-              }, 
-              body 
-            }).catch(()=>{});
-          }
-        } catch {}
-      })();
+        const { fireWebhooksForEvent } = await import('./webhookUtils');
+        await fireWebhooksForEvent(user.organizationId, 'flow.resumed', {
+          flowId,
+          orderNumber: firstTask.orderNumber,
+          system: firstTask.system,
+          description: firstTask.flowDescription,
+          resumedBy: user.id,
+          resumedAt: new Date().toISOString(),
+          reason: reason || "Flow resumed by admin",
+          resumedTasksCount: resumedCount,
+        });
+      })().catch(err => console.error('[Webhook] Error firing flow.resumed webhooks:', err));
 
       res.json({
         success: true,
@@ -1092,7 +1071,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const exampleKey = 'your-organization-id';
     const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8" /><title>Start Flow API</title>
-<style>body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:24px;max-width:900px;margin:0 auto;color:#111}code,pre{background:#f6f8fa;border-radius:6px;padding:12px;display:block;overflow:auto}h1{font-size:24px;margin:0 0 12px}h2{font-size:18px;margin:24px 0 8px}table{border-collapse:collapse}td,th{border:1px solid #e5e7eb;padding:6px 8px;text-align:left}</style>
+<style>body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:24px;max-width:900px;margin:0 auto;color:#111}code,pre{background:#f6f8fa;border-radius:6px;padding:12px;display:block;overflow:auto}h1{font-size:24px;margin:0 0 12px}h2{font-size:18px;margin:24px 0 8px}table{border-collapse:collapse}td,th{border:1px solid #e5e7eb;padding:6px 8px;text-align:left}.note{background:#fef3c7;border-left:4px solid #f59e0b;padding:12px;margin:16px 0;border-radius:4px}.security{background:#dbeafe;border-left:4px solid #3b82f6;padding:12px;margin:16px 0;border-radius:4px}</style>
 </head><body>
 <h1>Start Flow API</h1>
 <p>Create the first task for a system using your organization rules.</p>
@@ -1123,6 +1102,35 @@ POST /api/integrations/start-flow (full featured)</code></pre>
   "taskId": "...",
   "message": "Flow started successfully"
 }</code></pre>
+
+<div class="note">
+<strong>📢 Webhook Notifications:</strong> When a flow is started, a <code>flow.started</code> webhook event is automatically triggered to all active webhooks configured in your organization. Configure webhooks in the admin panel to receive real-time notifications.
+</div>
+
+<h2>Webhook Event Payload</h2>
+<p>When this API is called, your configured webhook endpoints will receive:</p>
+<pre><code>{
+  "id": "webhook-delivery-uuid",
+  "type": "flow.started",
+  "createdAt": "2025-11-07T10:30:00Z",
+  "data": {
+    "flowId": "...",
+    "orderNumber": "ORD-12345",
+    "system": "CRM Onboarding",
+    "description": "New account setup",
+    "initiatedBy": "user-email",
+    "initiatedAt": "2025-11-07T10:30:00Z",
+    "task": {
+      "id": "task-uuid",
+      "name": "First Task Name",
+      "assignee": "assignee@company.com"
+    }
+  }
+}</code></pre>
+
+<div class="security">
+<strong>🔒 Webhook Security:</strong> All webhook requests include an <code>X-Webhook-Signature</code> header containing an HMAC-SHA256 signature. Verify this signature using your webhook secret to ensure authenticity. Webhooks use enterprise-grade security with SSRF protection, automatic retries, and delivery logging.
+</div>
 
 <h2>PowerShell example</h2>
 <pre><code>$headers = @{ "x-api-key" = "${exampleKey}" }
@@ -1396,23 +1404,19 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       });
       const response = await storage.createFormResponse(validatedData);
 
-      // Fire webhooks (non-blocking)
+      // Fire webhooks (non-blocking with proper logging and retry)
       (async () => {
-        try {
-          const hooks = await storage.getActiveWebhooksForEvent(user.organizationId, 'form.submitted');
-          for (const hook of hooks) {
-            const payload = {
-              id: randomUUID(),
-              type: 'form.submitted',
-              createdAt: new Date().toISOString(),
-              data: { responseId: response.responseId, taskId: response.taskId, flowId: response.flowId, formId: response.formId, formData: response.formData, submittedBy: response.submittedBy, timestamp: response.timestamp }
-            };
-            const body = JSON.stringify(payload);
-            const sig = crypto.createHmac('sha256', hook.secret).update(body).digest('hex');
-            fetch(hook.targetUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Webhook-Signature': sig, 'X-Webhook-Id': payload.id, 'X-Webhook-Type': payload.type }, body }).catch(()=>{});
-          }
-        } catch {}
-      })();
+        const { fireWebhooksForEvent } = await import('./webhookUtils');
+        await fireWebhooksForEvent(user.organizationId, 'form.submitted', {
+          responseId: response.responseId,
+          taskId: response.taskId,
+          flowId: response.flowId,
+          formId: response.formId,
+          formData: response.formData,
+          submittedBy: response.submittedBy,
+          timestamp: response.timestamp
+        });
+      })().catch(err => console.error('[Webhook] Error firing form.submitted webhooks:', err));
 
       res.status(201).json(response);
     } catch (error) {
@@ -1444,6 +1448,22 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       if (user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
       const { event, targetUrl, secret, description, isActive } = req.body;
       if (!event || !targetUrl || !secret) return res.status(400).json({ message: 'event, targetUrl, secret required' });
+      
+      // Validate webhook URL safety
+      const { isSafeWebhookUrl, validateWebhookSecret } = await import('./webhookUtils');
+      
+      if (!isSafeWebhookUrl(targetUrl)) {
+        return res.status(400).json({ 
+          message: 'Invalid webhook URL. Must use HTTPS and cannot be an internal/private IP address.' 
+        });
+      }
+      
+      // Validate secret strength
+      const secretValidation = validateWebhookSecret(secret);
+      if (!secretValidation.valid) {
+        return res.status(400).json({ message: secretValidation.error });
+      }
+      
       const record = await storage.createWebhook({ organizationId: user.organizationId, event, targetUrl, secret, description, isActive });
       res.status(201).json(record);
     } catch (e) {
@@ -1510,6 +1530,43 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       res.json({ deliveredTo: url, status, elapsedMs: Date.now() - started, responseText, signature: sig, payload });
     } catch (e) {
       res.status(500).json({ message: 'Webhook test failed' });
+    }
+  });
+
+  // Get webhook delivery logs for a specific webhook
+  app.get('/api/webhooks/:id/deliveries', isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      if (user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+      
+      const webhook = await storage.getWebhookById(req.params.id);
+      if (!webhook || webhook.organizationId !== user.organizationId) {
+        return res.status(404).json({ message: 'Webhook not found' });
+      }
+      
+      const limit = parseInt(req.query.limit as string) || 100;
+      const deliveries = await storage.getWebhookDeliveryLogs(req.params.id, limit);
+      
+      res.json(deliveries);
+    } catch (e) {
+      console.error('[Webhooks] Error fetching delivery logs:', e);
+      res.status(500).json({ message: 'Failed to fetch delivery logs' });
+    }
+  });
+
+  // Get all webhook delivery logs for the organization
+  app.get('/api/webhooks-deliveries', isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      if (user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+      
+      const limit = parseInt(req.query.limit as string) || 100;
+      const deliveries = await storage.getOrganizationWebhookDeliveryLogs(user.organizationId, limit);
+      
+      res.json(deliveries);
+    } catch (e) {
+      console.error('[Webhooks] Error fetching organization delivery logs:', e);
+      res.status(500).json({ message: 'Failed to fetch delivery logs' });
     }
   });
 

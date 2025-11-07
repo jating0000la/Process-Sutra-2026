@@ -312,6 +312,12 @@ x-source: zapier (optional)</pre>
   "initiatedAt": "2025-08-23T10:05:00.000Z",
   "message": "Flow started successfully"
 }`}</pre>
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <div className="text-sm font-medium text-blue-900 mb-2">📢 Automatic Webhook Notifications</div>
+                <div className="text-xs text-blue-800">
+                  When a flow starts successfully, a <code className="bg-blue-100 px-1 rounded">flow.started</code> webhook event is automatically triggered to all active webhooks configured below. Configure your webhook endpoints to receive real-time notifications with full flow details, including flowId, task assignments, and metadata.
+                </div>
+              </div>
             </CardContent>
           </Card>
 
@@ -401,7 +407,25 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
                 <CardTitle>Webhooks</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="text-sm text-gray-600">Configure outbound webhooks for events: <code className="bg-gray-100 px-1 rounded">flow.started</code>, <code className="bg-gray-100 px-1 rounded">form.submitted</code>. Your server must verify signatures (HMAC SHA256) sent in <code className="bg-gray-100 px-1 rounded">X-Webhook-Signature</code>.</div>
+                <div className="space-y-3">
+                  <div className="text-sm text-gray-700">
+                    Configure outbound webhooks for events: <code className="bg-gray-100 px-1 rounded">flow.started</code>, <code className="bg-gray-100 px-1 rounded">flow.resumed</code>, <code className="bg-gray-100 px-1 rounded">form.submitted</code>.
+                  </div>
+                  <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+                    <div className="text-sm font-medium text-green-900 mb-2">🔒 Enterprise Security Features</div>
+                    <ul className="text-xs text-green-800 space-y-1 ml-4 list-disc">
+                      <li><strong>HMAC-SHA256 Signatures:</strong> All requests include <code className="bg-green-100 px-1 rounded">X-Webhook-Signature</code> header for authenticity verification</li>
+                      <li><strong>SSRF Protection:</strong> Blocks internal IPs, cloud metadata services (AWS/Azure/GCP), and prevents redirect-based attacks</li>
+                      <li><strong>Automatic Retries:</strong> Failed deliveries retry 3 times with exponential backoff (1min → 5min → 30min)</li>
+                      <li><strong>10-second Timeout:</strong> Prevents hanging requests</li>
+                      <li><strong>Delivery Logging:</strong> Track all webhook attempts, HTTP status, latency, and errors</li>
+                      <li><strong>HTTPS Required:</strong> Production webhooks must use HTTPS (HTTP allowed for localhost in development)</li>
+                    </ul>
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    Your webhook endpoint must verify the signature using constant-time comparison to prevent timing attacks.
+                  </div>
+                </div>
                 <div className="border rounded-md p-4 space-y-4 bg-white/50">
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
@@ -470,7 +494,55 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
                   )}
                 </div>
                 <div className="text-xs text-gray-500 border-t pt-3">
-                  Signature = HMAC_SHA256(secret, raw_body). Verify with constant-time compare. Headers: X-Webhook-Type, X-Webhook-Id, X-Webhook-Signature.
+                  <div className="font-medium mb-2">Webhook Payload Example (flow.started):</div>
+                  <pre className="bg-gray-50 p-3 rounded-md border whitespace-pre-wrap">{`{
+  "id": "webhook-delivery-uuid",
+  "type": "flow.started",
+  "createdAt": "2025-11-07T10:30:00Z",
+  "data": {
+    "flowId": "flow-uuid",
+    "orderNumber": "ORD-12345",
+    "system": "CRM Onboarding",
+    "description": "New account setup",
+    "initiatedBy": "user@company.com",
+    "initiatedAt": "2025-11-07T10:30:00Z",
+    "task": {
+      "id": "task-uuid",
+      "name": "First Task Name",
+      "assignee": "assignee@company.com"
+    }
+  }
+}`}</pre>
+                  <div className="mt-3 font-medium mb-2">Signature Verification Example (Node.js):</div>
+                  <pre className="bg-gray-50 p-3 rounded-md border whitespace-pre-wrap">{`const crypto = require('crypto');
+
+function verifyWebhookSignature(secret, body, signature) {
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(JSON.stringify(body))
+    .digest('hex');
+  
+  // Use constant-time comparison to prevent timing attacks
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  );
+}
+
+// In your webhook handler:
+app.post('/webhook', (req, res) => {
+  const signature = req.headers['x-webhook-signature'];
+  const secret = 'your-webhook-secret';
+  
+  if (!verifyWebhookSignature(secret, req.body, signature)) {
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+  
+  // Process the webhook
+  console.log('Event:', req.body.type);
+  console.log('Data:', req.body.data);
+  res.json({ received: true });
+});`}</pre>
                 </div>
                 <div className="border-t pt-4 space-y-3">
                   <div className="text-sm font-medium">Ad-hoc Test URL</div>

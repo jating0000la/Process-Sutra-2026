@@ -34,8 +34,18 @@ import {
   type InsertAuditLog,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, asc, count, sql } from "drizzle-orm";
-import { webhooks, type InsertWebhook, type Webhook } from "@shared/schema";
+import { eq, and, desc, asc, count, sql, lte } from "drizzle-orm";
+import { 
+  webhooks, 
+  webhookDeliveryLog,
+  webhookRetryQueue,
+  type InsertWebhook, 
+  type Webhook,
+  type InsertWebhookDeliveryLog,
+  type WebhookDeliveryLog,
+  type InsertWebhookRetryQueue,
+  type WebhookRetryQueue,
+} from "@shared/schema";
 
 export interface IStorage {
   // Organization operations
@@ -186,6 +196,17 @@ export interface IStorage {
   updateWebhook(id: string, data: Partial<InsertWebhook>): Promise<Webhook>;
   deleteWebhook(id: string): Promise<void>;
   getWebhookById(id: string): Promise<Webhook | undefined>;
+  
+  // Webhook Delivery Log operations
+  createWebhookDeliveryLog(log: InsertWebhookDeliveryLog): Promise<WebhookDeliveryLog>;
+  getWebhookDeliveryLogs(webhookId: string, limit?: number): Promise<WebhookDeliveryLog[]>;
+  getOrganizationWebhookDeliveryLogs(organizationId: string, limit?: number): Promise<WebhookDeliveryLog[]>;
+  
+  // Webhook Retry Queue operations
+  createWebhookRetryQueueItem(item: InsertWebhookRetryQueue): Promise<WebhookRetryQueue>;
+  getPendingRetries(limit?: number): Promise<WebhookRetryQueue[]>;
+  updateRetryQueueItem(id: string, data: Partial<InsertWebhookRetryQueue>): Promise<WebhookRetryQueue>;
+  deleteRetryQueueItem(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -206,7 +227,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createOrganization(organizationData: InsertOrganization): Promise<Organization> {
-    const [organization] = await db.insert(organizations).values(organizationData).returning();
+    const [organization] = await db.insert(organizations).values(organizationData as any).returning();
     return organization;
   }
 
@@ -240,7 +261,7 @@ export class DatabaseStorage implements IStorage {
       .set({
         ...updates,
         updatedAt: new Date(),
-      })
+      } as any)
       .where(eq(organizations.id, id))
       .returning();
     return organization;
@@ -1740,6 +1761,65 @@ export class DatabaseStorage implements IStorage {
 
     return await query;
   }
+
+  // Webhook Delivery Log operations
+  async createWebhookDeliveryLog(log: InsertWebhookDeliveryLog): Promise<WebhookDeliveryLog> {
+    const [record] = await db.insert(webhookDeliveryLog).values(log).returning();
+    return record;
+  }
+
+  async getWebhookDeliveryLogs(webhookId: string, limit: number = 100): Promise<WebhookDeliveryLog[]> {
+    return await db
+      .select()
+      .from(webhookDeliveryLog)
+      .where(eq(webhookDeliveryLog.webhookId, webhookId))
+      .orderBy(desc(webhookDeliveryLog.deliveredAt))
+      .limit(limit);
+  }
+
+  async getOrganizationWebhookDeliveryLogs(organizationId: string, limit: number = 100): Promise<WebhookDeliveryLog[]> {
+    return await db
+      .select()
+      .from(webhookDeliveryLog)
+      .where(eq(webhookDeliveryLog.organizationId, organizationId))
+      .orderBy(desc(webhookDeliveryLog.deliveredAt))
+      .limit(limit);
+  }
+
+  // Webhook Retry Queue operations
+  async createWebhookRetryQueueItem(item: InsertWebhookRetryQueue): Promise<WebhookRetryQueue> {
+    const [record] = await db.insert(webhookRetryQueue).values(item).returning();
+    return record;
+  }
+
+  async getPendingRetries(limit: number = 100): Promise<WebhookRetryQueue[]> {
+    return await db
+      .select()
+      .from(webhookRetryQueue)
+      .where(
+        and(
+          eq(webhookRetryQueue.status, 'pending'),
+          lte(webhookRetryQueue.nextRetryAt, new Date()),
+          sql`${webhookRetryQueue.attemptNumber} <= ${webhookRetryQueue.maxRetries}`
+        )
+      )
+      .orderBy(asc(webhookRetryQueue.nextRetryAt))
+      .limit(limit);
+  }
+
+  async updateRetryQueueItem(id: string, data: Partial<InsertWebhookRetryQueue>): Promise<WebhookRetryQueue> {
+    const [record] = await db
+      .update(webhookRetryQueue)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(webhookRetryQueue.id, id))
+      .returning();
+    return record;
+  }
+
+  async deleteRetryQueueItem(id: string): Promise<void> {
+    await db.delete(webhookRetryQueue).where(eq(webhookRetryQueue.id, id));
+  }
 }
 
 export const storage = new DatabaseStorage();
+

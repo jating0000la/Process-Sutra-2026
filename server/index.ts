@@ -70,6 +70,26 @@ app.use((req, res, next) => {
   try {
     const server = await registerRoutes(app);
 
+    // Start webhook retry worker (runs every minute)
+    const { processWebhookRetries } = await import('./webhookUtils');
+    const RETRY_INTERVAL_MS = 60000; // 1 minute
+    
+    const webhookRetryWorker = setInterval(async () => {
+      try {
+        await processWebhookRetries();
+      } catch (error) {
+        console.error('[Webhook Retry Worker] Error:', error);
+      }
+    }, RETRY_INTERVAL_MS);
+    
+    log('[Webhook Retry Worker] Started (runs every 60 seconds)');
+    
+    // Cleanup on server shutdown
+    process.on('SIGTERM', () => {
+      log('[Webhook Retry Worker] Stopping...');
+      clearInterval(webhookRetryWorker);
+    });
+
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";

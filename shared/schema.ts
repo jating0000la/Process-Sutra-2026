@@ -619,9 +619,101 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
   }),
 }));
 
-export const webhooksRelations = relations(webhooks, ({ one }) => ({
+export const webhooksRelations = relations(webhooks, ({ one, many }) => ({
   organization: one(organizations, {
     fields: [webhooks.organizationId],
     references: [organizations.id],
   }),
+  deliveryLogs: many(webhookDeliveryLog),
 }));
+
+// Webhook Delivery Log - Track all webhook delivery attempts
+export const webhookDeliveryLog = pgTable(
+  "webhook_delivery_log",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    webhookId: varchar("webhook_id").notNull().references(() => webhooks.id, { onDelete: "cascade" }),
+    organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    event: varchar("event").notNull(),
+    payloadId: varchar("payload_id").notNull(),
+    targetUrl: text("target_url").notNull(),
+    httpStatus: integer("http_status"),
+    responseBody: text("response_body"),
+    errorMessage: text("error_message"),
+    latencyMs: integer("latency_ms"),
+    attemptNumber: integer("attempt_number").default(1),
+    deliveredAt: timestamp("delivered_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_webhook_delivery_log_webhook").on(table.webhookId, table.deliveredAt),
+    index("idx_webhook_delivery_log_org").on(table.organizationId, table.deliveredAt),
+    index("idx_webhook_delivery_log_status").on(table.httpStatus, table.deliveredAt),
+  ]
+);
+
+// Webhook Retry Queue - Manage failed webhook retries
+export const webhookRetryQueue = pgTable(
+  "webhook_retry_queue",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    webhookId: varchar("webhook_id").notNull().references(() => webhooks.id, { onDelete: "cascade" }),
+    organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    event: varchar("event").notNull(),
+    payload: jsonb("payload").notNull(),
+    targetUrl: text("target_url").notNull(),
+    secret: varchar("secret").notNull(),
+    attemptNumber: integer("attempt_number").default(1),
+    maxRetries: integer("max_retries").default(3),
+    nextRetryAt: timestamp("next_retry_at").notNull(),
+    status: varchar("status").default("pending"), // pending, success, failed
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_webhook_retry_queue_next_retry").on(table.nextRetryAt, table.status).where(sql`${table.status} = 'pending'`),
+    index("idx_webhook_retry_queue_webhook").on(table.webhookId),
+    index("idx_webhook_retry_queue_org").on(table.organizationId, table.status),
+  ]
+);
+
+export const webhookDeliveryLogRelations = relations(webhookDeliveryLog, ({ one }) => ({
+  webhook: one(webhooks, {
+    fields: [webhookDeliveryLog.webhookId],
+    references: [webhooks.id],
+  }),
+  organization: one(organizations, {
+    fields: [webhookDeliveryLog.organizationId],
+    references: [organizations.id],
+  }),
+}));
+
+export const webhookRetryQueueRelations = relations(webhookRetryQueue, ({ one }) => ({
+  webhook: one(webhooks, {
+    fields: [webhookRetryQueue.webhookId],
+    references: [webhooks.id],
+  }),
+  organization: one(organizations, {
+    fields: [webhookRetryQueue.organizationId],
+    references: [organizations.id],
+  }),
+}));
+
+export const insertWebhookDeliveryLogSchema = createInsertSchema(webhookDeliveryLog).omit({
+  id: true,
+  deliveredAt: true,
+  createdAt: true,
+});
+
+export const insertWebhookRetryQueueSchema = createInsertSchema(webhookRetryQueue).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type WebhookDeliveryLog = typeof webhookDeliveryLog.$inferSelect;
+export type InsertWebhookDeliveryLog = z.infer<typeof insertWebhookDeliveryLogSchema>;
+export type WebhookRetryQueue = typeof webhookRetryQueue.$inferSelect;
+export type InsertWebhookRetryQueue = z.infer<typeof insertWebhookRetryQueueSchema>;
+
