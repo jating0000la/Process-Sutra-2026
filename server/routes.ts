@@ -42,6 +42,34 @@ const superAdminLimiter = rateLimit({
   skipFailedRequests: false,
 });
 
+// Rate limiter for data export endpoints - prevent data exfiltration
+const exportLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,   // 15 minute window
+  max: 10,                     // 10 exports per 15 minutes
+  message: "Too many export requests. Please wait before trying again.",
+  standardHeaders: true,       // Return rate limit info in headers
+  legacyHeaders: false,
+  skipSuccessfulRequests: false,
+  skipFailedRequests: false,
+});
+
+// Flow rule operation rate limiters
+const flowRuleLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,   // 15 minutes
+  max: 50,                     // 50 flow rule operations per 15 min
+  message: "Too many flow rule operations. Please try again later.",
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const bulkFlowRuleLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,   // 1 hour
+  max: 5,                      // 5 bulk imports per hour
+  message: "Too many bulk imports. Please try again later.",
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 export async function registerRoutes(app: Express): Promise<Server> {
   console.log('[routes] registerRoutes invoked - NODE_ENV=', process.env.NODE_ENV);
   // Auth middleware
@@ -175,7 +203,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/flow-rules", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+  app.post("/api/flow-rules", flowRuleLimiter, isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
       const currentUser = req.currentUser;
       const dataWithOrganization = {
@@ -183,7 +211,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         organizationId: currentUser.organizationId
       };
       const validatedData = insertFlowRuleSchema.parse(dataWithOrganization);
+      
+      // Get existing rules for cycle detection
+      const existingRules = await storage.getFlowRulesByOrganization(
+        currentUser.organizationId, 
+        validatedData.system
+      );
+      
+      // Check if adding this rule creates a cycle (log warning but allow it)
+      const { detectCycle } = await import('./cycleDetector');
+      const cycleResult = detectCycle(existingRules as any[], {
+        currentTask: validatedData.currentTask || "",
+        nextTask: validatedData.nextTask,
+        status: validatedData.status || ""
+      });
+      
+      if (cycleResult.hasCycle) {
+        console.warn(`[WARNING] Circular dependency detected: ${cycleResult.message}`);
+        console.warn(`[WARNING] Cycle path: ${cycleResult.cycle?.join(' → ')}`);
+        // Allow the rule creation but log the warning
+        // Circular dependencies might be intentional for certain workflows
+      }
+      
       const flowRule = await storage.createFlowRule(validatedData);
+      console.log(`[AUDIT] Flow rule created by ${currentUser.email} at ${new Date().toISOString()}`);
+      console.log(`[AUDIT] Rule details: system="${flowRule.system}", task="${flowRule.nextTask}", doer="${flowRule.doer}"`);
       res.status(201).json(flowRule);
     } catch (error) {
       console.error("Error creating flow rule:", error);
@@ -191,13 +243,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/flow-rules/bulk", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+  app.post("/api/flow-rules/bulk", bulkFlowRuleLimiter, isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
       const currentUser = req.currentUser;
       const { rules } = req.body;
       
       if (!Array.isArray(rules)) {
         return res.status(400).json({ message: "Rules must be an array" });
+      }
+
+      if (rules.length === 0) {
+        return res.status(400).json({ message: "Rules array cannot be empty" });
+      }
+
+      const MAX_BULK_RULES = 100;
+      if (rules.length > MAX_BULK_RULES) {
+        return res.status(400).json({ 
+          message: `Bulk import limited to ${MAX_BULK_RULES} rules. You provided ${rules.length}. Please split into smaller batches.` 
+        });
       }
 
       const createdRules = [];
@@ -216,6 +279,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
+      console.log(`[AUDIT] Bulk flow rules created by ${currentUser.email} at ${new Date().toISOString()}`);
+      console.log(`[AUDIT] Created ${createdRules.length} out of ${rules.length} rules`);
+      
       res.status(201).json({ 
         message: `Successfully created ${createdRules.length} flow rules`,
         rules: createdRules 
@@ -226,11 +292,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/flow-rules/:id", isAuthenticated, requireAdmin, async (req, res) => {
+  app.put("/api/flow-rules/:id", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
       const { id } = req.params;
+      const user = req.currentUser;
+
+      // Get rule and verify organization ownership
+      const rule = await storage.getFlowRuleById(id);
+      if (!rule) {
+        return res.status(404).json({ message: "Flow rule not found" });
+      }
+
+      if (rule.organizationId !== user.organizationId) {
+        console.log(`[SECURITY] User ${user.email} attempted to update flow rule ${id} from another organization`);
+        return res.status(403).json({ message: "Access denied to this flow rule" });
+      }
+
       const validatedData = insertFlowRuleSchema.partial().parse(req.body);
       const flowRule = await storage.updateFlowRule(id, validatedData);
+      console.log(`[AUDIT] Flow rule ${id} updated by ${user.email} at ${new Date().toISOString()}`);
+      console.log(`[AUDIT] Updated fields:`, Object.keys(validatedData));
       res.json(flowRule);
     } catch (error) {
       console.error("Error updating flow rule:", error);
@@ -238,10 +319,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/flow-rules/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/flow-rules/:id", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
       const { id } = req.params;
+      const user = req.currentUser;
+
+      // Get rule and verify organization ownership
+      const rule = await storage.getFlowRuleById(id);
+      if (!rule) {
+        return res.status(404).json({ message: "Flow rule not found" });
+      }
+
+      if (rule.organizationId !== user.organizationId) {
+        console.log(`[SECURITY] User ${user.email} attempted to delete flow rule ${id} from another organization`);
+        return res.status(403).json({ message: "Access denied to this flow rule" });
+      }
+
       await storage.deleteFlowRule(id);
+      console.log(`[AUDIT] Flow rule ${id} deleted by ${user.email} at ${new Date().toISOString()}`);
+      console.log(`[AUDIT] Deleted rule: system="${rule.system}", task="${rule.nextTask}", doer="${rule.doer}"`);
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting flow rule:", error);
@@ -1537,6 +1633,373 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     } catch (error) {
       console.error("Error fetching flow data:", error);
       res.status(500).json({ message: "Failed to fetch flow data" });
+    }
+  });
+
+  // Helper function to convert array of objects to CSV
+  function convertToCSV(data: any[], category: string): string {
+    if (!data || data.length === 0) return 'No data available';
+    
+    // Escape CSV values properly and prevent CSV injection
+    const escapeCSV = (value: any): string => {
+      if (value === null || value === undefined) return '';
+      
+      // Convert to string
+      let str = '';
+      if (typeof value === 'object') {
+        str = JSON.stringify(value);
+      } else {
+        str = String(value);
+      }
+      
+      // SECURITY: Prevent CSV injection by prefixing dangerous characters
+      // This prevents formula execution in Excel/Google Sheets
+      if (str.startsWith('=') || str.startsWith('+') || 
+          str.startsWith('-') || str.startsWith('@') ||
+          str.startsWith('\t') || str.startsWith('\r')) {
+        str = "'" + str; // Prefix with single quote to treat as text
+      }
+      
+      // Always wrap in quotes if contains comma, newline, or quote
+      if (str.includes(',') || str.includes('\n') || str.includes('\r') || str.includes('"')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+    
+    let headers: string[] = [];
+    let rows: string[][] = [];
+    
+    switch (category) {
+      case 'tasks':
+        // Get all unique keys from all tasks
+        const taskKeys = new Set<string>();
+        data.forEach((task: any) => {
+          Object.keys(task).forEach(key => taskKeys.add(key));
+        });
+        headers = Array.from(taskKeys).sort();
+        
+        // Create a row for each task
+        rows = data.map((task: any) => {
+          return headers.map(header => escapeCSV(task[header]));
+        });
+        break;
+        
+      case 'flows':
+        // Create summary format for flows
+        headers = ['flowId', 'system', 'orderNumber', 'flowDescription', 'flowInitiatedBy', 'flowInitiatedAt', 'totalTasks', 'completedTasks', 'pendingTasks', 'inProgressTasks', 'tasksList'];
+        
+        rows = data.map((flow: any) => {
+          const tasks = flow.tasks || [];
+          return [
+            escapeCSV(flow.flowId),
+            escapeCSV(flow.system),
+            escapeCSV(flow.orderNumber),
+            escapeCSV(flow.flowDescription),
+            escapeCSV(flow.flowInitiatedBy),
+            escapeCSV(flow.flowInitiatedAt),
+            escapeCSV(tasks.length),
+            escapeCSV(tasks.filter((t: any) => t.status === 'completed').length),
+            escapeCSV(tasks.filter((t: any) => t.status === 'pending').length),
+            escapeCSV(tasks.filter((t: any) => t.status === 'in_progress').length),
+            escapeCSV(tasks.map((t: any) => t.taskName).join('; '))
+          ];
+        });
+        break;
+        
+      case 'users':
+        // Get all unique keys from all users
+        const userKeys = new Set<string>();
+        data.forEach((user: any) => {
+          Object.keys(user).forEach(key => userKeys.add(key));
+        });
+        headers = Array.from(userKeys).sort();
+        
+        rows = data.map((user: any) => {
+          return headers.map(header => escapeCSV(user[header]));
+        });
+        break;
+        
+      case 'forms':
+        // For forms, create base columns + all form data fields
+        const baseColumns = ['responseId', 'formId', 'flowId', 'taskId', 'submittedBy', 'timestamp', 'organizationId'];
+        const formFieldKeys = new Set<string>();
+        
+        // Collect all unique form field keys
+        data.forEach((response: any) => {
+          if (response.formData && typeof response.formData === 'object') {
+            Object.keys(response.formData).forEach(key => formFieldKeys.add(`field_${key}`));
+          }
+        });
+        
+        headers = [...baseColumns, ...Array.from(formFieldKeys).sort()];
+        
+        rows = data.map((response: any) => {
+          const row: string[] = [];
+          
+          // Base columns
+          row.push(escapeCSV(response.responseId || response._id));
+          row.push(escapeCSV(response.formId));
+          row.push(escapeCSV(response.flowId));
+          row.push(escapeCSV(response.taskId));
+          row.push(escapeCSV(response.submittedBy));
+          row.push(escapeCSV(response.timestamp || response.createdAt));
+          row.push(escapeCSV(response.organizationId));
+          
+          // Form data fields
+          Array.from(formFieldKeys).sort().forEach(fieldKey => {
+            const actualKey = fieldKey.replace('field_', '');
+            const value = response.formData?.[actualKey];
+            row.push(escapeCSV(value));
+          });
+          
+          return row;
+        });
+        break;
+    }
+    
+    // Build CSV string - header row + data rows
+    const csvLines: string[] = [];
+    csvLines.push(headers.join(','));
+    rows.forEach(row => {
+      csvLines.push(row.join(','));
+    });
+    
+    return csvLines.join('\n');
+  }
+
+  // Data Management: Export endpoints by category (Organization-specific, Admin only)
+  app.get("/api/export/:category", exportLimiter, isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+    try {
+      const { category } = req.params;
+      const { format = 'csv' } = req.query; // Default to CSV, support 'json' or 'csv'
+      const user = req.currentUser;
+      const timestamp = new Date().toISOString().split('T')[0];
+      
+      // Sanitize inputs to prevent injection
+      const sanitizedCategory = category.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const sanitizedFormat = format === 'json' ? 'json' : 'csv';
+      
+      // Audit logging
+      console.log(`[AUDIT] Export - User: ${user.email}, Category: ${category}, Organization: ${user.organizationId}, Time: ${new Date().toISOString()}`);
+      
+      let rawData: any[] = [];
+      let csvData: string = '';
+      let filename = `${sanitizedCategory}_export_${timestamp}.${sanitizedFormat}`;
+      
+      // Memory safety limits
+      const MAX_EXPORT_RECORDS = 50000; // Maximum records per export
+      
+      switch (category) {
+        case 'flows':
+          // Export all tasks grouped by flow
+          const allTasks = await storage.getTasksByOrganization(user.organizationId);
+          
+          if (allTasks.length > MAX_EXPORT_RECORDS) {
+            return res.status(413).json({ 
+              message: `Export too large (${allTasks.length} records). Maximum ${MAX_EXPORT_RECORDS} records allowed. Please contact support for large exports.`,
+              recordCount: allTasks.length,
+              maxAllowed: MAX_EXPORT_RECORDS
+            });
+          }
+          
+          const flowGroups = allTasks.reduce((acc: any, task: any) => {
+            if (!acc[task.flowId]) {
+              acc[task.flowId] = {
+                flowId: task.flowId,
+                system: task.system,
+                orderNumber: task.orderNumber,
+                flowDescription: task.flowDescription,
+                flowInitiatedBy: task.flowInitiatedBy,
+                flowInitiatedAt: task.flowInitiatedAt,
+                tasks: []
+              };
+            }
+            acc[task.flowId].tasks.push(task);
+            return acc;
+          }, {});
+          rawData = Object.values(flowGroups);
+          break;
+          
+        case 'forms':
+          // Export all form submissions from MongoDB
+          const formResponses = await storage.getMongoFormResponsesByOrgAndForm({
+            orgId: user.organizationId,
+            page: 1,
+            pageSize: 5000, // Reduced from 10000 to prevent memory issues
+          });
+          rawData = formResponses.data || [];
+          
+          if (rawData.length >= 5000) {
+            console.warn(`[AUDIT] Large form export - User: ${user.email}, Records: ${rawData.length} (may be truncated)`);
+          }
+          break;
+          
+        case 'tasks':
+          // Export all tasks
+          const tasks = await storage.getTasksByOrganization(user.organizationId);
+          
+          if (tasks.length > MAX_EXPORT_RECORDS) {
+            return res.status(413).json({ 
+              message: `Export too large (${tasks.length} records). Maximum ${MAX_EXPORT_RECORDS} records allowed. Please contact support for large exports.`,
+              recordCount: tasks.length,
+              maxAllowed: MAX_EXPORT_RECORDS
+            });
+          }
+          
+          rawData = tasks;
+          break;
+          
+        case 'users':
+          // Export user information (without sensitive data)
+          const users = await storage.getUsersByOrganization(user.organizationId);
+          rawData = users.map((u: any) => ({
+            id: u.id,
+            username: u.username,
+            email: u.email,
+            firstName: u.firstName,
+            lastName: u.lastName,
+            role: u.role,
+            status: u.status,
+            createdAt: u.createdAt
+          }));
+          break;
+          
+        default:
+          return res.status(400).json({ message: "Invalid category. Use: flows, forms, tasks, or users" });
+      }
+      
+      if (format === 'csv') {
+        // Generate CSV
+        csvData = convertToCSV(rawData, category);
+        
+        // Audit log success
+        console.log(`[AUDIT] Export Success - User: ${user.email}, Category: ${category}, Records: ${rawData.length}, Format: CSV, Size: ${csvData.length} bytes`);
+        
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(csvData);
+      } else {
+        // Return JSON (legacy support)
+        const jsonData = {
+          exportDate: new Date().toISOString(),
+          organizationId: user.organizationId,
+          category,
+          total: rawData.length,
+          data: rawData
+        };
+        
+        // Audit log success
+        console.log(`[AUDIT] Export Success - User: ${user.email}, Category: ${category}, Records: ${rawData.length}, Format: JSON`);
+        
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.json(jsonData);
+      }
+      
+    } catch (error) {
+      // Audit log failure
+      console.error(`[AUDIT] Export Failed - User: ${req.currentUser?.email}, Category: ${req.params.category}, Error:`, error);
+      
+      // Provide specific error messages
+      if (error instanceof Error) {
+        if (error.message.includes('ECONNREFUSED')) {
+          return res.status(503).json({ message: "Database connection failed. Please try again later." });
+        }
+        if (error.message.includes('timeout')) {
+          return res.status(504).json({ message: "Export timed out. Please try exporting a smaller dataset." });
+        }
+        if (error.message.includes('MongoDB')) {
+          return res.status(503).json({ message: "Form database unavailable. Please try again later." });
+        }
+      }
+      
+      console.error("Error exporting data:", error);
+      res.status(500).json({ 
+        message: "Failed to export data. Please try again or contact support if the issue persists.",
+        category: req.params.category
+      });
+    }
+  });
+
+  // Data Management: Delete endpoints by category (Organization-specific, Admin only)
+  app.delete("/api/delete/:category", exportLimiter, isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+    try {
+      const { category } = req.params;
+      const user = req.currentUser;
+      let deletedCount = 0;
+      let message = '';
+      
+      // Audit logging - BEFORE deletion
+      console.log(`[AUDIT] Delete Request - User: ${user.email}, Category: ${category}, Organization: ${user.organizationId}, Time: ${new Date().toISOString()}`);
+      
+      switch (category) {
+        case 'flows':
+          // Delete all tasks (which represent flows) using direct database delete
+          const { tasks: tasksTable } = await import('@shared/schema');
+          const { eq } = await import('drizzle-orm');
+          const result = await db.delete(tasksTable).where(eq(tasksTable.organizationId, user.organizationId));
+          deletedCount = result.rowCount || 0;
+          message = `Successfully deleted ${deletedCount} tasks across all flows`;
+          break;
+          
+        case 'forms':
+          // Delete all form submissions from MongoDB
+          try {
+            const { MongoClient } = await import('mongodb');
+            const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/processSutra';
+            const client = new MongoClient(mongoUri);
+            await client.connect();
+            const database = client.db();
+            const col = database.collection('formResponses');
+            
+            const deleteResult = await col.deleteMany({ organizationId: user.organizationId });
+            deletedCount = deleteResult.deletedCount || 0;
+            await client.close();
+            message = `Successfully deleted ${deletedCount} form submissions`;
+          } catch (mongoError) {
+            console.error("MongoDB deletion error:", mongoError);
+            throw new Error("Failed to delete form submissions from MongoDB");
+          }
+          break;
+          
+        case 'tasks':
+          // Delete all tasks using direct database delete
+          const { tasks: tasksTableForTasks } = await import('@shared/schema');
+          const { eq: eqForTasks } = await import('drizzle-orm');
+          const taskResult = await db.delete(tasksTableForTasks).where(eqForTasks(tasksTableForTasks.organizationId, user.organizationId));
+          deletedCount = taskResult.rowCount || 0;
+          message = `Successfully deleted ${deletedCount} tasks`;
+          break;
+          
+        case 'users':
+          return res.status(400).json({ 
+            message: "User data cannot be bulk deleted. Please delete users individually from User Management." 
+          });
+          
+        default:
+          return res.status(400).json({ message: "Invalid category. Use: flows, forms, or tasks" });
+      }
+      
+      // Audit logging - AFTER successful deletion
+      console.log(`[AUDIT] Delete Success - User: ${user.email}, Category: ${category}, Deleted: ${deletedCount} records, Organization: ${user.organizationId}`);
+      
+      res.json({
+        success: true,
+        category,
+        deletedCount,
+        message,
+        deletedAt: new Date().toISOString(),
+        deletedBy: user.email
+      });
+      
+    } catch (error) {
+      // Audit log failure
+      console.error(`[AUDIT] Delete Failed - User: ${req.currentUser?.email}, Category: ${req.params.category}, Error:`, error);
+      console.error("Error deleting data:", error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : "Failed to delete data" 
+      });
     }
   });
 

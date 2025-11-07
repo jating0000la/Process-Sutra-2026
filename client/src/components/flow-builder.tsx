@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, Play, CheckCircle, Clock, AlertTriangle } from "lucide-react";
+import { ArrowRight, Play, CheckCircle, Clock, AlertTriangle, RefreshCw } from "lucide-react";
 
 interface FlowRule {
   id: string;
@@ -26,6 +26,8 @@ interface FlowNode {
   connections: string[];
   status?: string;
   completionRate?: number;
+  isPartOfCycle?: boolean;
+  repeatCount?: number;
 }
 
 interface FlowBuilderProps {
@@ -37,6 +39,59 @@ interface FlowBuilderProps {
 export default function FlowBuilder({ flowRules, system, onNodeClick }: FlowBuilderProps) {
   const [selectedNode, setSelectedNode] = useState<FlowNode | null>(null);
 
+  // Detect circular dependencies and build flow path with repeated tasks
+  const buildFlowPathWithCycles = useCallback((startTask: string, systemRules: FlowRule[]): { 
+    path: Array<{ taskName: string; repeatNumber: number }>;
+    hasCycles: boolean;
+  } => {
+    const path: Array<{ taskName: string; repeatNumber: number }> = [];
+    const taskOccurrences = new Map<string, number>();
+    const visited = new Set<string>();
+    let hasCycles = false;
+    const maxDepth = 100; // Prevent infinite loops
+    let depth = 0;
+    
+    function traverse(taskName: string, status?: string) {
+      if (!taskName || taskName === "" || depth >= maxDepth) return;
+      depth++;
+      
+      // Track occurrence count for this task
+      const currentCount = (taskOccurrences.get(taskName) || 0) + 1;
+      taskOccurrences.set(taskName, currentCount);
+      
+      // If we've seen this task before, it's part of a cycle
+      if (visited.has(taskName)) {
+        hasCycles = true;
+        path.push({ taskName, repeatNumber: currentCount });
+        depth--;
+        return;
+      }
+      
+      visited.add(taskName);
+      path.push({ taskName, repeatNumber: currentCount });
+      
+      // Find next tasks based on current task and status
+      const nextRules = systemRules.filter(r => {
+        if (r.currentTask !== taskName) return false;
+        if (status && r.status !== status) return false;
+        return true;
+      });
+      
+      // Traverse all possible next steps
+      nextRules.forEach(rule => {
+        if (rule.nextTask) {
+          traverse(rule.nextTask, undefined);
+        }
+      });
+      
+      visited.delete(taskName);
+      depth--;
+    }
+    
+    traverse(startTask);
+    return { path, hasCycles };
+  }, []);
+
   // Convert flow rules to nodes for visualization
   const generateFlowNodes = useCallback((): FlowNode[] => {
     const nodes: FlowNode[] = [];
@@ -46,6 +101,16 @@ export default function FlowBuilder({ flowRules, system, onNodeClick }: FlowBuil
 
     // Find start node
     const startRule = systemRules.find(rule => rule.currentTask === "");
+    let flowPath: Array<{ taskName: string; repeatNumber: number }> = [];
+    let hasCycles = false;
+    
+    if (startRule && startRule.nextTask) {
+      // Build flow path and detect circular dependencies
+      const result = buildFlowPathWithCycles(startRule.nextTask, systemRules);
+      flowPath = result.path;
+      hasCycles = result.hasCycles;
+    }
+    
     if (startRule) {
       nodes.push({
         id: "start",
@@ -58,26 +123,43 @@ export default function FlowBuilder({ flowRules, system, onNodeClick }: FlowBuil
       });
     }
 
-    // Create task nodes
+    // Create task nodes with repeat numbers for circular dependencies
     const tasks = new Set<string>();
     systemRules.forEach(rule => {
       if (rule.nextTask) tasks.add(rule.nextTask);
       if (rule.currentTask) tasks.add(rule.currentTask);
     });
 
+    // Create a map to track how many times each task appears in the flow
+    const taskRepeatMap = new Map<string, number>();
+    flowPath.forEach(item => {
+      taskRepeatMap.set(item.taskName, Math.max(taskRepeatMap.get(item.taskName) || 0, item.repeatNumber));
+    });
+
     let yPosition = 200;
     const tasksArray = Array.from(tasks);
+    
     tasksArray.forEach((taskName, index) => {
       const rule = systemRules.find(r => r.currentTask === taskName);
+      const maxRepeatCount = taskRepeatMap.get(taskName) || 1;
+      const isPartOfCycle = maxRepeatCount > 1;
+      
+      // Add repeat number if there's a circular dependency
+      const displayName = isPartOfCycle 
+        ? `${taskName} (repeat ${maxRepeatCount})` 
+        : taskName;
+      
       nodes.push({
         id: taskName,
-        name: taskName,
+        name: displayName,
         type: "task",
         x: 300 + (index % 3) * 200,
         y: yPosition + Math.floor(index / 3) * 150,
         connections: rule ? [rule.nextTask].filter(Boolean) : [],
         status: Math.random() > 0.7 ? "completed" : Math.random() > 0.4 ? "in_progress" : "pending",
         completionRate: Math.floor(Math.random() * 40) + 60, // 60-100%
+        isPartOfCycle,
+        repeatCount: maxRepeatCount,
       });
     });
 
@@ -107,7 +189,7 @@ export default function FlowBuilder({ flowRules, system, onNodeClick }: FlowBuil
     }
 
     return nodes;
-  }, [flowRules, system]);
+  }, [flowRules, system, buildFlowPathWithCycles]);
 
   const nodes = generateFlowNodes();
 
@@ -235,7 +317,12 @@ export default function FlowBuilder({ flowRules, system, onNodeClick }: FlowBuil
             >
               <div className="flex items-center space-x-2 mb-2">
                 {getStatusIcon(node)}
-                <span className="text-sm font-medium truncate">{node.name}</span>
+                <span className="text-sm font-medium truncate flex-1">{node.name}</span>
+                {node.isPartOfCycle && (
+                  <div title="Circular dependency detected">
+                    <RefreshCw className="w-3 h-3 text-orange-600 flex-shrink-0" />
+                  </div>
+                )}
               </div>
               
               {node.completionRate !== undefined && (
@@ -267,6 +354,14 @@ export default function FlowBuilder({ flowRules, system, onNodeClick }: FlowBuil
             <h4 className="font-medium text-blue-900 mb-2">
               {selectedNode.name} Details
             </h4>
+            {selectedNode.isPartOfCycle && (
+              <div className="mb-3 p-2 bg-orange-100 border border-orange-300 rounded-md flex items-center gap-2">
+                <RefreshCw className="w-4 h-4 text-orange-700" />
+                <span className="text-sm text-orange-800 font-medium">
+                  This task is part of a circular dependency (appears {selectedNode.repeatCount} times in flow)
+                </span>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <span className="text-blue-700">Type:</span>

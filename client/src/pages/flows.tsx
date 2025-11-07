@@ -131,12 +131,14 @@ export default function Flows() {
       setIsRuleDialogOpen(false);
       ruleForm.reset();
     },
-    onError: (error) => {
+    onError: (error: any) => {
+      const errorMessage = error?.message || error?.response?.data?.message || "Failed to create flow rule";
       toast({
         title: "Error",
-        description: "Failed to create flow rule",
+        description: errorMessage,
         variant: "destructive",
       });
+      console.error("Create rule error:", error);
     },
   });
 
@@ -154,12 +156,14 @@ export default function Flows() {
       setEditingRule(null);
       ruleForm.reset();
     },
-    onError: (error) => {
+    onError: (error: any) => {
+      const errorMessage = error?.message || error?.response?.data?.message || "Failed to update flow rule";
       toast({
         title: "Error",
-        description: "Failed to update flow rule",
+        description: errorMessage,
         variant: "destructive",
       });
+      console.error("Update rule error:", error);
     },
   });
 
