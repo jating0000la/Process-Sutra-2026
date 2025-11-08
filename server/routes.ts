@@ -6,6 +6,7 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./firebaseAuth";
 import { db } from "./db";
 import rateLimit from 'express-rate-limit';
+import NodeCache from 'node-cache';
 import {
   insertFlowRuleSchema,
   insertTaskSchema,
@@ -20,6 +21,13 @@ import { calculateTAT, TATConfig } from "./tatCalculator";
 import uploadsRouter from './uploads.js';
 import * as crypto from 'crypto';
 
+// Analytics cache - 5 minute TTL to reduce database load
+const analyticsCache = new NodeCache({ 
+  stdTTL: 300,           // 5 minutes cache
+  checkperiod: 60,       // Check for expired keys every 60 seconds
+  useClones: false       // Better performance by not cloning objects
+});
+
 // Rate limiter for form submissions
 const formSubmissionLimiter = rateLimit({
   windowMs: 60 * 1000,        // 1 minute window
@@ -29,6 +37,15 @@ const formSubmissionLimiter = rateLimit({
   legacyHeaders: false,
   // Don't use custom keyGenerator - let express-rate-limit handle IP addresses properly
   // This automatically handles IPv4 and IPv6 addresses correctly
+});
+
+// Rate limiter for analytics endpoints - prevents resource exhaustion
+const analyticsLimiter = rateLimit({
+  windowMs: 60 * 1000,        // 1 minute window
+  max: 30,                    // 30 requests per minute per user
+  message: "Too many analytics requests. Please wait before requesting more data.",
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 // Rate limiter for super admin endpoints - more restrictive to prevent abuse
@@ -2208,9 +2225,16 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
   });
 
   // Analytics API (Organization-specific for admins, user-specific for regular users)
-  app.get("/api/analytics/metrics", isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.get("/api/analytics/metrics", analyticsLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const user = req.currentUser;
+      const cacheKey = `metrics-${user.role}-${user.role === 'admin' ? user.organizationId : user.email}`;
+      
+      // Check cache first
+      const cached = analyticsCache.get(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
       
       let metrics;
       if (user.role === 'admin') {
@@ -2221,6 +2245,8 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
         metrics = await storage.getUserTaskMetrics(user.email);
       }
       
+      // Cache the result
+      analyticsCache.set(cacheKey, metrics);
       res.json(metrics);
     } catch (error) {
       console.error("Error fetching metrics:", error);
@@ -2228,9 +2254,16 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     }
   });
 
-  app.get("/api/analytics/flow-performance", isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.get("/api/analytics/flow-performance", analyticsLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const user = req.currentUser;
+      const cacheKey = `flow-performance-${user.role}-${user.role === 'admin' ? user.organizationId : user.email}`;
+      
+      // Check cache first
+      const cached = analyticsCache.get(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
       
       let flowPerformance;
       if (user.role === 'admin') {
@@ -2241,6 +2274,8 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
         flowPerformance = await storage.getUserFlowPerformance(user.email);
       }
       
+      // Cache the result
+      analyticsCache.set(cacheKey, flowPerformance);
       res.json(flowPerformance);
     } catch (error) {
       console.error("Error fetching flow performance:", error);
@@ -2249,10 +2284,21 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
   });
 
   // Weekly scoring for users
-  app.get("/api/analytics/weekly-scoring", isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.get("/api/analytics/weekly-scoring", analyticsLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const user = req.currentUser;
+      const cacheKey = `weekly-scoring-${user.email}`;
+      
+      // Check cache first
+      const cached = analyticsCache.get(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
+      
       const weeklyScoring = await storage.getUserWeeklyScoring(user.email);
+      
+      // Cache the result
+      analyticsCache.set(cacheKey, weeklyScoring);
       res.json(weeklyScoring);
     } catch (error) {
       console.error("Error fetching weekly scoring:", error);
@@ -2260,8 +2306,48 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     }
   });
 
+  // OPTIMIZED: Aggregated analytics overview - combines metrics, flow performance, and weekly scoring
+  app.get("/api/analytics/overview", analyticsLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      const cacheKey = `overview-${user.role}-${user.role === 'admin' ? user.organizationId : user.email}`;
+      
+      // Check cache first
+      const cached = analyticsCache.get(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
+      
+      // Fetch all data in parallel
+      const [metrics, flowPerformance, weeklyScoring, systems] = await Promise.all([
+        user.role === 'admin' 
+          ? storage.getOrganizationTaskMetrics(user.organizationId)
+          : storage.getUserTaskMetrics(user.email),
+        user.role === 'admin'
+          ? storage.getOrganizationFlowPerformance(user.organizationId)
+          : storage.getUserFlowPerformance(user.email),
+        storage.getUserWeeklyScoring(user.email),
+        storage.getOrganizationSystems(user.organizationId)
+      ]);
+      
+      const overview = {
+        metrics,
+        flowPerformance,
+        weeklyScoring,
+        systems
+      };
+      
+      // Cache the aggregated result
+      analyticsCache.set(cacheKey, overview);
+      res.json(overview);
+    } catch (error) {
+      console.error("Error fetching analytics overview:", error);
+      res.status(500).json({ message: "Failed to fetch analytics overview" });
+    }
+  });
+
   // Reporting: filters and report
-  app.get("/api/analytics/report/systems", isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.get("/api/analytics/report/systems", analyticsLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const user = req.currentUser;
       const systems = await storage.getOrganizationSystems(user.organizationId);
@@ -2272,7 +2358,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     }
   });
 
-  app.get("/api/analytics/report/processes", isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.get("/api/analytics/report/processes", analyticsLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const user = req.currentUser;
       const { system } = req.query;
@@ -2285,7 +2371,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     }
   });
 
-  app.get("/api/analytics/report", isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.get("/api/analytics/report", analyticsLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const user = req.currentUser;
       const { system, taskName, startDate, endDate } = req.query as Record<string, string>;
@@ -2298,7 +2384,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
   });
 
   // Admin-only: Organization doers performance with filtering
-  app.get("/api/analytics/doers-performance", isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.get("/api/analytics/doers-performance", analyticsLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const user = req.currentUser;
       
@@ -2323,7 +2409,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
   });
 
   // Admin-only: Detailed weekly performance for a specific doer
-  app.get("/api/analytics/doer-weekly/:doerEmail", isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.get("/api/analytics/doer-weekly/:doerEmail", analyticsLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const user = req.currentUser;
       

@@ -81,6 +81,8 @@ export default function Analytics() {
   }>({
     queryKey: ["/api/analytics/metrics"],
     enabled: !!user,
+    staleTime: 5 * 60 * 1000, // 5 minutes - analytics data doesn't change frequently
+    gcTime: 10 * 60 * 1000, // 10 minutes (was cacheTime in v4)
   });
 
   const { data: flowPerformance, isLoading: flowLoading } = useQuery<Array<{
@@ -90,18 +92,24 @@ export default function Analytics() {
   }>>({
     queryKey: ["/api/analytics/flow-performance"],
     enabled: !!user,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
   });
 
   // Weekly scoring for users
   const { data: weeklyScoring, isLoading: weeklyLoading } = useQuery<any[]>({
     queryKey: ["/api/analytics/weekly-scoring"],
     enabled: !!user,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
   });
 
   // Reporting queries
   const { data: systems } = useQuery<string[]>({
     queryKey: ["/api/analytics/report/systems"],
     enabled: !!user,
+    staleTime: 10 * 60 * 1000, // 10 minutes - systems list changes rarely
+    gcTime: 15 * 60 * 1000, // 15 minutes
   });
 
   const { data: processes, refetch: refetchProcesses } = useQuery<string[]>({
@@ -113,6 +121,8 @@ export default function Analytics() {
       return res.json();
     },
     enabled: !!user && !!reportFilters.system,
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    gcTime: 15 * 60 * 1000, // 15 minutes
   });
 
   const { data: report, isLoading: reportLoading, refetch: refetchReport } = useQuery<{
@@ -135,6 +145,8 @@ export default function Analytics() {
       return res.json();
     },
     enabled: !!user,
+    staleTime: 3 * 60 * 1000, // 3 minutes - reports are more dynamic
+    gcTime: 10 * 60 * 1000, // 10 minutes
   });
 
   // Admin-only: All doers performance with filtering
@@ -150,10 +162,75 @@ export default function Analytics() {
       return response.json();
     },
     enabled: !!user && (user as any)?.role === 'admin',
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
   });
 
   const handleFilterChange = (key: string, value: string) => {
     setDoerFilters(prev => ({ ...prev, [key]: value }));
+  };
+
+  // Export analytics data to CSV
+  const exportToCSV = (data: any[], filename: string, headers: string[]) => {
+    if (!data || data.length === 0) {
+      toast({
+        title: "No Data",
+        description: "No data available to export",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Create CSV content
+    const csvRows = [
+      headers.join(','),
+      ...data.map(row => 
+        headers.map(header => {
+          const value = row[header] ?? '';
+          // Escape values that contain commas or quotes
+          return typeof value === 'string' && (value.includes(',') || value.includes('"'))
+            ? `"${value.replace(/"/g, '""')}"`
+            : value;
+        }).join(',')
+      )
+    ];
+    
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${filename}-${format(new Date(), 'yyyy-MM-dd')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({
+      title: "Export Successful",
+      description: `Downloaded ${data.length} records to ${filename}.csv`
+    });
+  };
+
+  // Export doers performance data
+  const exportDoersPerformance = () => {
+    if (!doersPerformance) return;
+    exportToCSV(
+      doersPerformance,
+      'doers-performance',
+      ['doerEmail', 'doerName', 'totalTasks', 'completedTasks', 'onTimeRate', 'avgCompletionDays', 'lastTaskDate']
+    );
+  };
+
+  // Export weekly scoring data
+  const exportWeeklyScoring = () => {
+    if (!weeklyScoring) return;
+    exportToCSV(
+      weeklyScoring,
+      'weekly-scoring',
+      ['weekStart', 'weekEnd', 'totalTasks', 'completedTasks', 'onTimeRate', 'avgCompletionDays']
+    );
   };
 
   const taskDistributionData = [
@@ -347,13 +424,27 @@ export default function Analytics() {
             <TabsContent value="weekly" className="space-y-6">
               <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
                 <CardHeader className="border-b border-gray-100 bg-gradient-to-r from-emerald-50 to-teal-50">
-                  <CardTitle className="flex items-center gap-2 text-gray-800">
-                    <div className="p-2 bg-emerald-100 rounded-lg">
-                      <Calendar className="h-5 w-5 text-emerald-600" />
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2 text-gray-800">
+                        <div className="p-2 bg-emerald-100 rounded-lg">
+                          <Calendar className="h-5 w-5 text-emerald-600" />
+                        </div>
+                        My Weekly Performance
+                      </CardTitle>
+                      <CardDescription className="mt-1">Track your weekly productivity and completion rates</CardDescription>
                     </div>
-                    My Weekly Performance
-                  </CardTitle>
-                  <CardDescription>Track your weekly productivity and completion rates</CardDescription>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="bg-white hover:bg-gray-50 border-gray-300 shadow-sm"
+                      onClick={exportWeeklyScoring}
+                      disabled={!weeklyScoring || weeklyScoring.length === 0}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export Data
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent className="pt-6">
                   {weeklyLoading ? (
@@ -481,7 +572,13 @@ export default function Analytics() {
                         </CardTitle>
                         <CardDescription className="mt-1">Monitor team member performance and productivity</CardDescription>
                       </div>
-                      <Button variant="outline" size="sm" className="bg-white hover:bg-gray-50 border-gray-300 shadow-sm">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="bg-white hover:bg-gray-50 border-gray-300 shadow-sm"
+                        onClick={exportDoersPerformance}
+                        disabled={!doersPerformance || doersPerformance.length === 0}
+                      >
                         <Download className="h-4 w-4 mr-2" />
                         Export Data
                       </Button>

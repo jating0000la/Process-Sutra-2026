@@ -210,6 +210,19 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  // Helper function to sanitize input for ILIKE queries to prevent SQL injection
+  private sanitizeForLike(input: string): string {
+    // Escape special LIKE wildcards and backslashes
+    return input.replace(/[%_\\]/g, '\\$&');
+  }
+
+  // Helper function to validate and parse date strings
+  private parseDate(dateStr: string): Date | null {
+    if (!dateStr) return null;
+    const date = new Date(dateStr);
+    return isNaN(date.getTime()) ? null : date;
+  }
+
   // Organization operations
   async getOrganization(id: string): Promise<Organization | undefined> {
     const [organization] = await db.select().from(organizations).where(eq(organizations.id, id));
@@ -1258,8 +1271,20 @@ export class DatabaseStorage implements IStorage {
     const conds: any[] = [eq(tasks.organizationId, organizationId)];
     if (filters.system) conds.push(eq(tasks.system, filters.system));
     if (filters.taskName) conds.push(eq(tasks.taskName, filters.taskName));
-    if (filters.startDate) conds.push(sql`${tasks.plannedTime} >= ${new Date(filters.startDate)}`);
-    if (filters.endDate) conds.push(sql`${tasks.plannedTime} <= ${new Date(filters.endDate)}`);
+    
+    // Validate and parse dates before using in query
+    if (filters.startDate) {
+      const startDate = this.parseDate(filters.startDate);
+      if (startDate) {
+        conds.push(sql`${tasks.plannedTime} >= ${startDate}`);
+      }
+    }
+    if (filters.endDate) {
+      const endDate = this.parseDate(filters.endDate);
+      if (endDate) {
+        conds.push(sql`${tasks.plannedTime} <= ${endDate}`);
+      }
+    }
 
     const whereExpr = and(...conds);
 
@@ -1402,17 +1427,28 @@ export class DatabaseStorage implements IStorage {
   }[]> {
     let whereConditions = sql`1=1`;
     
+    // Validate and sanitize date inputs
     if (filters.startDate) {
-      whereConditions = sql`${whereConditions} AND planned_time >= ${filters.startDate}`;
+      const startDate = this.parseDate(filters.startDate);
+      if (startDate) {
+        whereConditions = sql`${whereConditions} AND planned_time >= ${startDate}`;
+      }
     }
     if (filters.endDate) {
-      whereConditions = sql`${whereConditions} AND planned_time <= ${filters.endDate}`;
+      const endDate = this.parseDate(filters.endDate);
+      if (endDate) {
+        whereConditions = sql`${whereConditions} AND planned_time <= ${endDate}`;
+      }
     }
+    
+    // Sanitize ILIKE patterns to prevent SQL injection
     if (filters.doerEmail) {
-      whereConditions = sql`${whereConditions} AND doer_email ILIKE ${`%${filters.doerEmail}%`}`;
+      const sanitizedEmail = this.sanitizeForLike(filters.doerEmail);
+      whereConditions = sql`${whereConditions} AND doer_email ILIKE ${'%' + sanitizedEmail + '%'}`;
     }
     if (filters.doerName) {
-      whereConditions = sql`${whereConditions} AND doer_email ILIKE ${`%${filters.doerName}%`}`;
+      const sanitizedName = this.sanitizeForLike(filters.doerName);
+      whereConditions = sql`${whereConditions} AND doer_email ILIKE ${'%' + sanitizedName + '%'}`;
     }
 
     const results = await db.execute(sql`
@@ -1458,17 +1494,28 @@ export class DatabaseStorage implements IStorage {
   }[]> {
     let whereConditions = sql`organization_id = ${filters.organizationId}`;
     
+    // Validate and sanitize date inputs
     if (filters.startDate) {
-      whereConditions = sql`${whereConditions} AND planned_time >= ${filters.startDate}`;
+      const startDate = this.parseDate(filters.startDate);
+      if (startDate) {
+        whereConditions = sql`${whereConditions} AND planned_time >= ${startDate}`;
+      }
     }
     if (filters.endDate) {
-      whereConditions = sql`${whereConditions} AND planned_time <= ${filters.endDate}`;
+      const endDate = this.parseDate(filters.endDate);
+      if (endDate) {
+        whereConditions = sql`${whereConditions} AND planned_time <= ${endDate}`;
+      }
     }
+    
+    // Sanitize ILIKE patterns to prevent SQL injection
     if (filters.doerEmail) {
-      whereConditions = sql`${whereConditions} AND doer_email ILIKE ${`%${filters.doerEmail}%`}`;
+      const sanitizedEmail = this.sanitizeForLike(filters.doerEmail);
+      whereConditions = sql`${whereConditions} AND doer_email ILIKE ${'%' + sanitizedEmail + '%'}`;
     }
     if (filters.doerName) {
-      whereConditions = sql`${whereConditions} AND doer_email ILIKE ${`%${filters.doerName}%`}`;
+      const sanitizedName = this.sanitizeForLike(filters.doerName);
+      whereConditions = sql`${whereConditions} AND doer_email ILIKE ${'%' + sanitizedName + '%'}`;
     }
 
     const results = await db.execute(sql`
