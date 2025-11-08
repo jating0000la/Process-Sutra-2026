@@ -708,7 +708,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createFormResponse(response: InsertFormResponse): Promise<FormResponse> {
-    const [newResponse] = await db.insert(formResponses).values(response).returning();
+    // Enrich form data with column headers before saving
+    const enrichedFormData = await this.enrichFormDataWithColumnHeaders(
+      response.formData,
+      response.formId,
+      response.organizationId
+    );
+
+    const responseWithHeaders = {
+      ...response,
+      formData: enrichedFormData
+    };
+
+    const [newResponse] = await db.insert(formResponses).values(responseWithHeaders).returning();
 
     // Also store in MongoDB (best-effort; non-blocking on failure)
     try {
@@ -746,6 +758,89 @@ export class DatabaseStorage implements IStorage {
       console.error('Mongo insert (formResponses) failed:', e);
     }
     return newResponse;
+  }
+
+  /**
+   * Enriches form data with table column headers/titles
+   * Converts column IDs like "col_1762506182400" to readable names
+   */
+  async enrichFormDataWithColumnHeaders(formData: any, formId: string, organizationId: string): Promise<any> {
+    try {
+      // Get the form template to retrieve table column metadata
+      const [template] = await db
+        .select()
+        .from(formTemplates)
+        .where(
+          and(
+            eq(formTemplates.formId, formId),
+            eq(formTemplates.organizationId, organizationId)
+          )
+        )
+        .limit(1);
+
+      if (!template || !template.questions) {
+        return formData; // Return original if template not found
+      }
+
+      // Create a map of column IDs to their labels
+      const columnHeaderMap = new Map<string, string>();
+      
+      (template.questions as any[]).forEach((question: any) => {
+        if (question.type === 'table' && question.tableColumns) {
+          question.tableColumns.forEach((col: any) => {
+            if (col.id && col.label) {
+              columnHeaderMap.set(col.id, col.label);
+            }
+          });
+        }
+      });
+
+      // Enrich the form data
+      const enrichedFormData = { ...formData };
+
+      Object.keys(enrichedFormData).forEach((key) => {
+        const field = enrichedFormData[key];
+        
+        // Check if this field has a table answer (array of row objects)
+        if (field && typeof field === 'object' && field.answer && Array.isArray(field.answer)) {
+          // Add column headers metadata to the field
+          const enrichedRows = field.answer.map((row: any) => {
+            const enrichedRow: any = { ...row };
+            
+            // Add a special _columnHeaders property with readable names
+            if (!enrichedRow._columnHeaders) {
+              enrichedRow._columnHeaders = {};
+              Object.keys(row).forEach((colId) => {
+                const header = columnHeaderMap.get(colId);
+                if (header) {
+                  enrichedRow._columnHeaders[colId] = header;
+                }
+              });
+            }
+            
+            return enrichedRow;
+          });
+
+          // Store both original and enriched data
+          enrichedFormData[key] = {
+            ...field,
+            answer: enrichedRows,
+            // Add column metadata at field level too
+            _tableMetadata: {
+              columns: Array.from(columnHeaderMap.entries()).map(([id, label]) => ({
+                id,
+                label
+              }))
+            }
+          };
+        }
+      });
+
+      return enrichedFormData;
+    } catch (error) {
+      console.error('Error enriching form data with column headers:', error);
+      return formData; // Return original on error
+    }
   }
 
   async getFormResponsesByFlowId(flowId: string): Promise<FormResponse[]> {

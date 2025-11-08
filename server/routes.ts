@@ -1270,12 +1270,8 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       const { flowId } = req.params;
       const user = req.currentUser;
       
-      console.log(`[DEBUG] Fetching form responses for flowId: ${flowId}, orgId: ${user.organizationId}`);
-      
       // Use MongoDB instead of PostgreSQL for fetching previous form responses
       const responses = await storage.getMongoFormResponsesByFlowId(user.organizationId, flowId);
-
-      console.log(`[DEBUG] MongoDB returned ${responses.length} responses:`, responses);
 
       res.json(responses);
     } catch (error) {

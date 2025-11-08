@@ -13,6 +13,8 @@ import {
   ChevronRight,
   Clock,
   Database,
+  HelpCircle,
+  Sparkles,
 } from "lucide-react";
 
 interface SettingCard {

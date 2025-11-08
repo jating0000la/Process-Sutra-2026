@@ -71,7 +71,7 @@ interface FlowChartEdge {
 
 export default function VisualFlowBuilder() {
   const { toast } = useToast();
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading, handleTokenExpired } = useAuth();
   const [selectedSystem, setSelectedSystem] = useState<string>("");
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [selectedNode, setSelectedNode] = useState<FlowChartNode | null>(null);
@@ -108,17 +108,9 @@ export default function VisualFlowBuilder() {
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      toast({
-        title: "Unauthorized",
-        description: "You are logged out. Logging in again...",
-        variant: "destructive",
-      });
-      setTimeout(() => {
-        window.location.href = "/api/login";
-      }, 500);
-      return;
+      handleTokenExpired();
     }
-  }, [isAuthenticated, isLoading, toast]);
+  }, [isAuthenticated, isLoading, handleTokenExpired]);
 
   // Admin-only access check
   if (isAuthenticated && user?.role !== 'admin') {
@@ -205,8 +197,14 @@ export default function VisualFlowBuilder() {
       setIsEditRuleDialogOpen(false);
       setEditingRule(null);
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to update flow rule", variant: "destructive" });
+    onError: (error: any) => {
+      console.error("Update flow rule error:", error);
+      const errorMessage = error?.message || "Failed to update flow rule";
+      toast({ 
+        title: "Error", 
+        description: errorMessage, 
+        variant: "destructive" 
+      });
     },
   });
 
@@ -562,9 +560,35 @@ export default function VisualFlowBuilder() {
 
   const handleSaveEditRule = () => {
     if (!editingRule) return;
+    
+    // Validate required fields
+    if (!editingRule.nextTask || !editingRule.doer || !editingRule.email) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields (Next Task, Doer, Email)",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Only send the fields that should be updated
+    const updateData = {
+      system: editingRule.system,
+      currentTask: editingRule.currentTask,
+      status: editingRule.status,
+      nextTask: editingRule.nextTask,
+      tat: editingRule.tat,
+      tatType: editingRule.tatType,
+      doer: editingRule.doer,
+      email: editingRule.email,
+      formId: editingRule.formId || undefined,
+      transferable: editingRule.transferable || false,
+      transferToEmails: editingRule.transferToEmails || undefined,
+    };
+    
     updateRuleMutation.mutate({
       id: editingRule.id,
-      data: editingRule,
+      data: updateData,
     });
   };
 
@@ -803,23 +827,53 @@ export default function VisualFlowBuilder() {
                           <defs>
                             <marker
                               id="arrowhead"
-                              markerWidth="12"
-                              markerHeight="12"
-                              refX="10"
-                              refY="6"
+                              markerWidth="10"
+                              markerHeight="10"
+                              refX="9"
+                              refY="5"
                               orient="auto"
                             >
-                              <polygon points="0 0, 12 6, 0 12" fill="#6b7280" />
+                              <polygon points="0 0, 10 5, 0 10" fill="#6b7280" />
                             </marker>
                             <marker
                               id="arrowhead-selected"
-                              markerWidth="12"
-                              markerHeight="12"
-                              refX="10"
-                              refY="6"
+                              markerWidth="10"
+                              markerHeight="10"
+                              refX="9"
+                              refY="5"
                               orient="auto"
                             >
-                              <polygon points="0 0, 12 6, 0 12" fill="#3b82f6" />
+                              <polygon points="0 0, 10 5, 0 10" fill="#3b82f6" />
+                            </marker>
+                            <marker
+                              id="arrowhead-green"
+                              markerWidth="10"
+                              markerHeight="10"
+                              refX="9"
+                              refY="5"
+                              orient="auto"
+                            >
+                              <polygon points="0 0, 10 5, 0 10" fill="#10b981" />
+                            </marker>
+                            <marker
+                              id="arrowhead-red"
+                              markerWidth="10"
+                              markerHeight="10"
+                              refX="9"
+                              refY="5"
+                              orient="auto"
+                            >
+                              <polygon points="0 0, 10 5, 0 10" fill="#ef4444" />
+                            </marker>
+                            <marker
+                              id="arrowhead-orange"
+                              markerWidth="10"
+                              markerHeight="10"
+                              refX="9"
+                              refY="5"
+                              orient="auto"
+                            >
+                              <polygon points="0 0, 10 5, 0 10" fill="#f59e0b" />
                             </marker>
                           </defs>
                           
@@ -836,32 +890,66 @@ export default function VisualFlowBuilder() {
                             
                             const statusLower = edge.label?.toLowerCase() || "";
                             let strokeColor = "#6b7280";
+                            let markerEnd = "url(#arrowhead)";
                             
                             if (isSelected) {
                               strokeColor = "#3b82f6";
+                              markerEnd = "url(#arrowhead-selected)";
                             } else if (isDecision) {
                               if (statusLower.includes("yes") || statusLower.includes("approved") || 
                                   statusLower.includes("done") || statusLower.includes("success")) {
                                 strokeColor = "#10b981";
+                                markerEnd = "url(#arrowhead-green)";
                               } else if (statusLower.includes("no") || statusLower.includes("decline")) {
                                 strokeColor = "#ef4444";
+                                markerEnd = "url(#arrowhead-red)";
                               } else {
                                 strokeColor = "#f59e0b";
+                                markerEnd = "url(#arrowhead-orange)";
                               }
                             }
 
-                            const x1 = fromNode.x + 110 + 100;
-                            const y1 = fromNode.y + 100 + 100;
-                            const x2 = toNode.x + 110 + 100;
-                            const y2 = toNode.y + 100;
+                            // Calculate start and end points
+                            // Node dimensions: width 220px, positioned at node.x + 100, node.y + 100
+                            const nodeWidth = 220;
+                            const nodeMinHeight = 100;
+                            
+                            // Start point: bottom center of from node
+                            const x1 = fromNode.x + 100 + nodeWidth / 2; // Center X
+                            const y1 = fromNode.y + 100 + nodeMinHeight; // Bottom Y (assuming min height for now)
+                            
+                            // End point: top center of to node
+                            const x2 = toNode.x + 100 + nodeWidth / 2;   // Center X
+                            const y2 = toNode.y + 100;                   // Top Y
+
+                            // Create smoother curved path
+                            const dx = x2 - x1;
+                            const dy = y2 - y1;
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+                            
+                            // Adjust curve based on horizontal and vertical distance
+                            const horizontalOffset = Math.abs(dx) > 50 ? Math.abs(dx) * 0.3 : 0;
+                            const verticalOffset = Math.max(distance * 0.4, 50);
+                            
+                            const controlY1 = y1 + verticalOffset;
+                            const controlY2 = y2 - verticalOffset;
+                            
+                            // If nodes are horizontally far apart, add horizontal control
+                            let pathD;
+                            if (Math.abs(dx) > 100) {
+                              // S-curve for horizontal separation
+                              const controlX1 = x1 + dx * 0.2;
+                              const controlX2 = x2 - dx * 0.2;
+                              pathD = `M ${x1} ${y1} C ${controlX1} ${controlY1}, ${controlX2} ${controlY2}, ${x2} ${y2}`;
+                            } else {
+                              // Simple vertical curve
+                              pathD = `M ${x1} ${y1} C ${x1} ${controlY1}, ${x2} ${controlY2}, ${x2} ${y2}`;
+                            }
 
                             const midY = (y1 + y2) / 2;
-                            const controlY1 = y1 + (y2 - y1) * 0.3;
-                            const controlY2 = y2 - (y2 - y1) * 0.3;
-
                             const labelLength = edge.label?.length || 0;
-                            const labelWidth = Math.max(labelLength * 8 + 16, 50);
-                            const labelHeight = 24;
+                            const labelWidth = Math.max(labelLength * 8 + 20, 60);
+                            const labelHeight = 28;
 
                             return (
                               <g 
@@ -873,12 +961,13 @@ export default function VisualFlowBuilder() {
                                 }}
                               >
                                 <path
-                                  d={`M ${x1} ${y1} C ${x1} ${controlY1}, ${x2} ${controlY2}, ${x2} ${y2}`}
+                                  d={pathD}
                                   stroke={strokeColor}
-                                  strokeWidth={isSelected ? 3 : 2.5}
+                                  strokeWidth={isSelected ? 3 : 2}
                                   fill="none"
-                                  markerEnd={isSelected ? "url(#arrowhead-selected)" : "url(#arrowhead)"}
-                                  opacity={isSelected ? 1 : 0.9}
+                                  markerEnd={markerEnd}
+                                  opacity={isSelected ? 1 : 0.85}
+                                  strokeLinecap="round"
                                 />
                                 {edge.label && edge.label.trim() !== "" && (
                                   <g>
@@ -889,17 +978,17 @@ export default function VisualFlowBuilder() {
                                       height={labelHeight}
                                       fill="white"
                                       stroke={strokeColor}
-                                      strokeWidth={isSelected ? 3 : 2}
-                                      rx="6"
-                                      filter="drop-shadow(0 2px 4px rgba(0,0,0,0.1))"
+                                      strokeWidth={isSelected ? 2.5 : 1.5}
+                                      rx="8"
+                                      filter="drop-shadow(0 2px 6px rgba(0,0,0,0.15))"
                                     />
                                     <text
                                       x={(x1 + x2) / 2}
                                       y={midY + 5}
                                       textAnchor="middle"
                                       style={{ 
-                                        fontSize: "12px", 
-                                        fontWeight: 700,
+                                        fontSize: "13px", 
+                                        fontWeight: 600,
                                         fill: strokeColor,
                                         pointerEvents: "none"
                                       }}
@@ -1014,10 +1103,22 @@ export default function VisualFlowBuilder() {
                           <Button 
                             className="w-full" 
                             onClick={handleAddFromNode}
-                            disabled={selectedNode.type === "end"}
                           >
                             <Plus className="w-4 h-4 mr-2" />
                             Add Next Step
+                          </Button>
+                          
+                          {/* Show general Add Rule button as alternative */}
+                          <Button 
+                            className="w-full" 
+                            variant="outline"
+                            onClick={() => {
+                              setNewRule({ ...newRule, currentTask: "" });
+                              setIsAddRuleDialogOpen(true);
+                            }}
+                          >
+                            <Plus className="w-4 h-4 mr-2" />
+                            Add New Rule
                           </Button>
                         </div>
                       </div>

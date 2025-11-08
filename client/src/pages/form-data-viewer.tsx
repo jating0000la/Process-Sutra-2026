@@ -134,10 +134,21 @@ export default function FormDataViewer() {
         tableField.answer.forEach((tableRow: any) => {
           const rowData = { ...baseRow, ...formFields };
           
-          // Add table row data
+          // Add table row data with proper column headers
           Object.entries(tableRow).forEach(([colKey, colValue]) => {
-            // Use column key as header for now, will be mapped later
-            rowData[colKey] = colValue;
+            // Skip metadata fields
+            if (colKey.startsWith('_')) return;
+            
+            // Use column header from _columnHeaders, _tableMetadata, or the key itself
+            let columnHeader = colKey;
+            if (tableRow._columnHeaders && tableRow._columnHeaders[colKey]) {
+              columnHeader = tableRow._columnHeaders[colKey];
+            } else if (tableField._tableMetadata?.columns) {
+              const metaCol = tableField._tableMetadata.columns.find((c: any) => c.id === colKey);
+              if (metaCol) columnHeader = metaCol.label;
+            }
+            
+            rowData[columnHeader] = colValue;
           });
           
           rows.push(rowData);

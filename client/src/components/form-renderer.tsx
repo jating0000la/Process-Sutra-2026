@@ -154,12 +154,30 @@ export default function FormRenderer({
           })();
           
           if (isValidValue) {
-            prefillData[question.id] = value;
+            // Clean table data by removing metadata fields
+            let cleanedValue = value;
+            if (question.type === 'table' && Array.isArray(value)) {
+              cleanedValue = value.map((row: any) => {
+                if (typeof row === 'object' && row !== null) {
+                  const cleanRow: Record<string, any> = {};
+                  Object.entries(row).forEach(([key, val]) => {
+                    // Skip metadata fields that start with _
+                    if (!key.startsWith('_')) {
+                      cleanRow[key] = val;
+                    }
+                  });
+                  return cleanRow;
+                }
+                return row;
+              });
+            }
+            
+            prefillData[question.id] = cleanedValue;
             console.log('FormRenderer: Auto-prefill match found', {
               questionId: question.id,
               questionLabel: question.label,
               questionType: question.type,
-              prefillValue: value,
+              prefillValue: cleanedValue,
               sourceResponse: response.formId
             });
           }
@@ -197,7 +215,17 @@ export default function FormRenderer({
     const [tableRows, setTableRows] = useState<Record<string, string>[]>(() => {
       // Ensure we always have an array
       if (Array.isArray(field.value)) {
-        return field.value;
+        // Filter out metadata fields when initializing from prefilled data
+        return field.value.map((row: any) => {
+          const cleanRow: Record<string, string> = {};
+          Object.entries(row).forEach(([key, value]) => {
+            // Skip metadata fields that start with _
+            if (!key.startsWith('_')) {
+              cleanRow[key] = value as string;
+            }
+          });
+          return cleanRow;
+        });
       }
       return [];
     });
@@ -205,7 +233,18 @@ export default function FormRenderer({
     // Sync with field value changes (for pre-populated forms)
     useEffect(() => {
       if (Array.isArray(field.value)) {
-        setTableRows(field.value);
+        // Clean metadata fields from rows
+        const cleanedRows = field.value.map((row: any) => {
+          const cleanRow: Record<string, string> = {};
+          Object.entries(row).forEach(([key, value]) => {
+            // Skip metadata fields that start with _
+            if (!key.startsWith('_')) {
+              cleanRow[key] = value as string;
+            }
+          });
+          return cleanRow;
+        });
+        setTableRows(cleanedRows);
       } else if (field.value === null || field.value === undefined) {
         setTableRows([]);
       }

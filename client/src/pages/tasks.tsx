@@ -178,19 +178,30 @@ export default function Tasks() {
             case 'table':
               // Handle table data
               if (Array.isArray(formValue.answer) && formValue.answer.length > 0 && typeof formValue.answer[0] === 'object') {
-                let columns = Object.keys(formValue.answer[0]).map(key => ({
-                  id: key,
-                  label: key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()
-                }));
+                // First, check if we have _columnHeaders in the response
+                const firstRow = formValue.answer[0];
+                const hasColumnHeaders = firstRow._columnHeaders;
+                const tableMetadata = firstRow._tableMetadata;
                 
-                if (questionDefinition.tableColumns) {
-                  const templateColumns = questionDefinition.tableColumns;
-                  const dataColumnKeys = Object.keys(formValue.answer[0]);
-                  columns = dataColumnKeys.map((dataKey, index) => ({
-                    id: dataKey,
-                    label: templateColumns[index]?.label || dataKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()
-                  }));
-                }
+                // Get all column IDs (excluding metadata fields)
+                const dataColumnKeys = Object.keys(firstRow).filter(key => !key.startsWith('_'));
+                
+                let columns = dataColumnKeys.map(key => {
+                  // Use _columnHeaders if available, otherwise use _tableMetadata, otherwise format the key
+                  let label = key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
+                  
+                  if (hasColumnHeaders && firstRow._columnHeaders[key]) {
+                    label = firstRow._columnHeaders[key];
+                  } else if (tableMetadata?.columns) {
+                    const metaCol = tableMetadata.columns.find((c: any) => c.id === key);
+                    if (metaCol) label = metaCol.label;
+                  } else if (questionDefinition?.tableColumns) {
+                    const templateCol = questionDefinition.tableColumns.find((c: any) => c.id === key);
+                    if (templateCol) label = templateCol.label;
+                  }
+                  
+                  return { id: key, label };
+                });
                 
                 let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full border border-gray-300 text-xs">';
                 tableHtml += '<thead class="bg-gray-50"><tr>';
@@ -261,10 +272,26 @@ export default function Tasks() {
           }
         } else if (Array.isArray(formValue.answer) && formValue.answer.length > 0 && typeof formValue.answer[0] === 'object') {
           // Fallback table handling for cases without question definition
-          let columns = Object.keys(formValue.answer[0]).map(key => ({
-            id: key,
-            label: key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()
-          }));
+          const firstRow = formValue.answer[0];
+          const hasColumnHeaders = firstRow._columnHeaders;
+          const tableMetadata = firstRow._tableMetadata;
+          
+          // Get all column IDs (excluding metadata fields)
+          const dataColumnKeys = Object.keys(firstRow).filter(key => !key.startsWith('_'));
+          
+          let columns = dataColumnKeys.map(key => {
+            // Use _columnHeaders if available, otherwise use _tableMetadata, otherwise format the key
+            let label = key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
+            
+            if (hasColumnHeaders && firstRow._columnHeaders[key]) {
+              label = firstRow._columnHeaders[key];
+            } else if (tableMetadata?.columns) {
+              const metaCol = tableMetadata.columns.find((c: any) => c.id === key);
+              if (metaCol) label = metaCol.label;
+            }
+            
+            return { id: key, label };
+          });
           
           let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full border border-gray-300 text-xs">';
           tableHtml += '<thead class="bg-gray-50"><tr>';

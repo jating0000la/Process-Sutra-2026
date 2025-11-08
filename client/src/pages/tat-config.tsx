@@ -48,22 +48,14 @@ const WEEK_DAYS = [
 
 export default function TATConfig() {
   const { toast } = useToast();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, handleTokenExpired } = useAuth();
 
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      toast({
-        title: "Unauthorized",
-        description: "You are logged out. Logging in again...",
-        variant: "destructive",
-      });
-      setTimeout(() => {
-        window.location.href = "/api/login";
-      }, 500);
-      return;
+      handleTokenExpired();
     }
-  }, [isAuthenticated, isLoading, toast]);
+  }, [isAuthenticated, isLoading, handleTokenExpired]);
 
   const { data: config, isLoading: isConfigLoading } = useQuery<TATConfig>({
     queryKey: ["/api/tat-config"],
@@ -107,14 +99,7 @@ export default function TATConfig() {
     },
     onError: (error) => {
       if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
+        handleTokenExpired();
         return;
       }
       toast({

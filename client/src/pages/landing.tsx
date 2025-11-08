@@ -34,7 +34,7 @@ export default function Landing() {
               Streamline your workflows with configurable task flows, dynamic forms, and powerful analytics.
             </p>
             <Button
-              onClick={() => (window.location.href = "/api/login")}
+              onClick={() => (window.location.href = "/")}
               className="w-full"
             >
               Sign In to Continue

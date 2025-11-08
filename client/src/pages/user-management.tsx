@@ -741,7 +741,7 @@ import { format } from "date-fns";
 import type { User, UserLoginLog, UserDevice, PasswordChangeHistory } from "@shared/schema";
 import Header from "@/components/header";
 import Sidebar from "@/components/sidebar";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth as useAuthContext } from "@/contexts/AuthContext";
 import { useEffect } from "react";
 
 export default function UserManagement() {
@@ -751,22 +751,14 @@ export default function UserManagement() {
   const [editFormData, setEditFormData] = useState<Partial<User>>({});
   const [newUserData, setNewUserData] = useState<Partial<User>>({});
   const { toast } = useToast();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user: authUser, loading, handleTokenExpired } = useAuthContext();
 
   // Redirect to login if not authenticated
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      toast({
-        title: "Unauthorized",
-        description: "You are logged out. Logging in again...",
-        variant: "destructive",
-      });
-      setTimeout(() => {
-        window.location.href = "/api/login";
-      }, 500);
-      return;
+    if (!loading && !authUser) {
+      handleTokenExpired();
     }
-  }, [isAuthenticated, isLoading, toast]);
+  }, [authUser, loading, handleTokenExpired]);
 
   // Fetch users
   const { data: users = [], isLoading: usersLoading } = useQuery<User[]>({
@@ -973,7 +965,7 @@ export default function UserManagement() {
   };
 
   // Loading state with proper layout
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="flex h-screen bg-neutral">
         <Sidebar />

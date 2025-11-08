@@ -313,45 +313,103 @@ const flatFormResponse = (() => {
                       return (
                         <div key={`${key}-${index}`} className="border-b border-gray-100 dark:border-gray-700 pb-3 last:border-b-0">
                           <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
-                            {String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                            {labelFromValue ?? String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
                           </div>
                           {renderTableObject(processedValue)}
                         </div>
                       );
                     }
-                    if (Array.isArray(processedValue) && processedValue.every(isTableRowObject)) {
-                      const allCols = Array.from(new Set(processedValue.flatMap((row: any) => Object.keys(row).filter(k => !k.toLowerCase().includes('questionid')))));
-                      return (
-                        <div key={`${key}-${index}`} className="border-b border-gray-100 dark:border-gray-700 pb-3 last:border-b-0">
-                          <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
-                            {String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                          </div>
-                          <div className="overflow-x-auto">
-                            <table className="min-w-full border border-gray-200 dark:border-gray-700 rounded-lg">
-                              <thead className="bg-gray-50 dark:bg-gray-800">
-                                <tr>
-                                  {allCols.map((col) => (
-                                    <th key={col} className="px-3 py-2 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
-                                      {String(col).replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase()).replace(/_/g, ' ')}
-                                    </th>
+                    
+                    // Handle table data with _tableMetadata and _columnHeaders
+                    if (Array.isArray(processedValue) && processedValue.length > 0) {
+                      // Check if we have _tableMetadata from the response
+                      const tableMetadata = (value as any)?._tableMetadata;
+                      const hasColumnHeaders = processedValue[0]?._columnHeaders;
+                      
+                      if (hasColumnHeaders || tableMetadata) {
+                        // Use column metadata to get proper headers
+                        const columns = tableMetadata?.columns || [];
+                        const columnMap = new Map(columns.map((col: any) => [col.id, col.label]));
+                        
+                        // Get all column IDs from the first row, excluding metadata fields
+                        const allCols = Object.keys(processedValue[0]).filter(k => 
+                          !k.startsWith('_') && !k.toLowerCase().includes('questionid')
+                        );
+                        
+                        return (
+                          <div key={`${key}-${index}`} className="border-b border-gray-100 dark:border-gray-700 pb-3 last:border-b-0">
+                            <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+                              {labelFromValue ?? String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full border border-gray-200 dark:border-gray-700 rounded-lg">
+                                <thead className="bg-gray-50 dark:bg-gray-800">
+                                  <tr>
+                                    {allCols.map((col) => {
+                                      // Use column header from _columnHeaders or _tableMetadata
+                                      const header = processedValue[0]._columnHeaders?.[col] || 
+                                                    columnMap.get(col) || 
+                                                    String(col).replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase()).replace(/_/g, ' ');
+                                      return (
+                                        <th key={col} className="px-3 py-2 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
+                                          {header}
+                                        </th>
+                                      );
+                                    })}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {processedValue.map((row: any, rIdx: number) => (
+                                    <tr key={rIdx} className={rIdx % 2 === 0 ? "bg-white dark:bg-gray-900" : "bg-gray-50 dark:bg-gray-800"}>
+                                      {allCols.map((col) => (
+                                        <td key={col} className="px-3 py-2 text-sm text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700">
+                                          {String(row[col] ?? '')}
+                                        </td>
+                                      ))}
+                                    </tr>
                                   ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {processedValue.map((row: any, rIdx: number) => (
-                                  <tr key={rIdx} className="bg-white dark:bg-gray-900">
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        );
+                      }
+                      
+                      // Fallback for arrays of table rows without metadata
+                      if (processedValue.every(isTableRowObject)) {
+                        const allCols = Array.from(new Set(processedValue.flatMap((row: any) => Object.keys(row).filter(k => !k.toLowerCase().includes('questionid')))));
+                        return (
+                          <div key={`${key}-${index}`} className="border-b border-gray-100 dark:border-gray-700 pb-3 last:border-b-0">
+                            <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+                              {labelFromValue ?? String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full border border-gray-200 dark:border-gray-700 rounded-lg">
+                                <thead className="bg-gray-50 dark:bg-gray-800">
+                                  <tr>
                                     {allCols.map((col) => (
-                                      <td key={col} className="px-3 py-2 text-sm text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700">
-                                        {String(row[col] ?? '')}
-                                      </td>
+                                      <th key={col} className="px-3 py-2 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
+                                        {String(col).replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase()).replace(/_/g, ' ')}
+                                      </th>
                                     ))}
                                   </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                                </thead>
+                                <tbody>
+                                  {processedValue.map((row: any, rIdx: number) => (
+                                    <tr key={rIdx} className="bg-white dark:bg-gray-900">
+                                      {allCols.map((col) => (
+                                        <td key={col} className="px-3 py-2 text-sm text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700">
+                                          {String(row[col] ?? '')}
+                                        </td>
+                                      ))}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
                           </div>
-                        </div>
-                      );
+                        );
+                      }
                     }
                     
                     const displayValue = convertToSafeDisplay(processedValue);

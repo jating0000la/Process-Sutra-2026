@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { trackLogin } from "@/lib/deviceFingerprint";
-import { auth } from "@/lib/firebase";
+import { auth, logOut } from "@/lib/firebase";
+import { queryClient } from "@/lib/queryClient";
 
 export function useAuth() {
   const { data: user, isLoading, refetch } = useQuery({
@@ -80,9 +81,33 @@ export function useAuth() {
     }
   }, [user, isLoading]);
 
+  // Handle token expiration
+  const handleTokenExpired = async () => {
+    console.log('🔐 Token expired, clearing authentication state...');
+    
+    // Clear authentication state
+    queryClient.clear();
+    
+    // Clear any Firebase auth state
+    try {
+      await logOut();
+    } catch (error) {
+      console.error('Error clearing Firebase auth:', error);
+    }
+
+    // Force redirect to login page
+    setTimeout(() => {
+      const currentPath = window.location.pathname;
+      if (currentPath !== '/' && currentPath !== '/api/login') {
+        window.location.replace('/');
+      }
+    }, 100);
+  };
+
   return {
     user,
     isLoading,
     isAuthenticated: !!user,
+    handleTokenExpired,
   };
 }
