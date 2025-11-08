@@ -117,6 +117,9 @@ export default function Header({ title, description, actions }: HeaderProps) {
         </div>
       </header>
 
+      {/* Spacer for fixed header - prevents content from being hidden */}
+      <div className="h-16" aria-hidden="true" />
+      
       {/* Page Header */}
       <div className="bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60 border-b border-gray-200 px-6 py-4 sticky top-16 z-30">
         <div className="flex items-center justify-between">
