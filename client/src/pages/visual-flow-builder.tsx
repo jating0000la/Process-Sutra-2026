@@ -532,6 +532,26 @@ export default function VisualFlowBuilder() {
     }
   };
 
+  const handleUpdateNode = () => {
+    if (selectedNode && selectedNode.id !== "start") {
+      // Find the rule that creates this node (where nextTask matches this node's id)
+      const nodeRule = flowRules.find(rule => 
+        rule.system === selectedSystem && rule.nextTask === selectedNode.id
+      );
+      
+      if (nodeRule) {
+        setEditingRule(nodeRule);
+        setIsEditRuleDialogOpen(true);
+      } else {
+        toast({
+          title: "Cannot Edit",
+          description: "Unable to find the rule for this node. Start nodes cannot be edited.",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
   const handleEditEdge = () => {
     if (editingRule) {
       setIsEditRuleDialogOpen(true);
@@ -1100,8 +1120,20 @@ export default function VisualFlowBuilder() {
                         )}
 
                         <div className="space-y-2 pt-4 border-t">
+                          {selectedNode.type !== "start" && (
+                            <Button 
+                              className="w-full" 
+                              variant="default"
+                              onClick={handleUpdateNode}
+                            >
+                              <Edit className="w-4 h-4 mr-2" />
+                              Update Step
+                            </Button>
+                          )}
+                          
                           <Button 
                             className="w-full" 
+                            variant={selectedNode.type === "start" ? "default" : "outline"}
                             onClick={handleAddFromNode}
                           >
                             <Plus className="w-4 h-4 mr-2" />
