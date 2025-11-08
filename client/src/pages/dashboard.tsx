@@ -37,11 +37,13 @@ export default function Dashboard() {
   }>({
     queryKey: ["/api/analytics/metrics"],
     enabled: !!user,
+    staleTime: 60000, // 1 minute - analytics don't need real-time precision
   });
 
   const { data: tasks, isLoading: tasksLoading } = useQuery<any[]>({
     queryKey: ["/api/tasks"],
     enabled: !!user,
+    staleTime: 30000, // 30 seconds - shares cache with tasks page
   });
 
   const { data: flowPerformance } = useQuery<Array<{
@@ -51,6 +53,7 @@ export default function Dashboard() {
   }>>({
     queryKey: ["/api/analytics/flow-performance"],
     enabled: !!user,
+    staleTime: 60000, // 1 minute
   });
 
   // Mock chart data for completion trends

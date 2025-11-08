@@ -146,12 +146,14 @@ export default function VisualFlowBuilder() {
   const { data: flowRules = [], isLoading: rulesLoading } = useQuery<FlowRule[]>({
     queryKey: ["/api/flow-rules"],
     enabled: isAuthenticated,
+    staleTime: 60000, // 1 minute - flow rules change less frequently
   });
 
   // Fetch users for dropdown
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ["/api/users"],
     enabled: isAuthenticated,
+    staleTime: 120000, // 2 minutes - user list changes infrequently
   });
 
   // Get unique systems

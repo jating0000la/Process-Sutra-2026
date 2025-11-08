@@ -60,6 +60,7 @@ export default function TATConfig() {
   const { data: config, isLoading: isConfigLoading } = useQuery<TATConfig>({
     queryKey: ["/api/tat-config"],
     retry: false,
+    staleTime: 300000, // 5 minutes - TAT config rarely changes
   });
 
   const form = useForm<z.infer<typeof tatConfigSchema>>({

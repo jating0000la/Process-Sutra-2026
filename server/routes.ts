@@ -471,8 +471,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // Create ALL next tasks using enhanced TAT calculation
         for (const nextRule of nextRules) {
+          // Check if this next task has multiple parallel prerequisite tasks
+          // (i.e., multiple rules from different currentTasks pointing to the same nextTask)
+          const parallelPrerequisites = flowRules.filter(
+            rule => rule.nextTask === nextRule.nextTask && rule.status === completionStatus
+          );
+
+          // If there are multiple parallel prerequisites, check if ALL of them are completed
+          if (parallelPrerequisites.length > 1) {
+            // Get all tasks in this flow with the prerequisite task names
+            const allFlowTasks = await storage.getTasksByFlowId(task.flowId);
+            
+            // Check if all parallel prerequisite tasks are completed
+            const allPrerequisitesCompleted = parallelPrerequisites.every(prereqRule => {
+              // Find the task for this prerequisite
+              const prereqTask = allFlowTasks.find(
+                t => t.taskName === prereqRule.currentTask && t.status === "completed"
+              );
+              return prereqTask !== undefined;
+            });
+
+            // If not all prerequisites are completed, skip creating this next task for now
+            if (!allPrerequisitesCompleted) {
+              console.log(`⏸️ Waiting for parallel tasks to complete before creating: ${nextRule.nextTask}`);
+              continue; // Skip this next task creation
+            }
+
+            // Check if this next task already exists (to avoid duplicates)
+            const existingNextTask = allFlowTasks.find(
+              t => t.taskName === nextRule.nextTask && t.status !== "cancelled"
+            );
+            
+            if (existingNextTask) {
+              console.log(`✅ Next task already exists (parallel merge): ${nextRule.nextTask}`);
+              continue; // Skip creating duplicate
+            }
+          }
+
           const plannedTime = calculateTAT(new Date(), nextRule.tat, nextRule.tatType, config);
 
+          console.log(`✨ Creating next task: ${nextRule.nextTask} (prerequisites met)`);
           await storage.createTask({
             system: task.system,
             flowId: task.flowId,

@@ -86,8 +86,8 @@ export default function Tasks() {
       return fetch(url).then(res => res.json());
     },
     enabled: !!user, // Only run query if user is authenticated
-    staleTime: 0, // Always refetch to avoid cache issues
-    gcTime: 0, // Don't cache results
+    staleTime: 30000, // 30 seconds - reasonable cache time for task data
+    gcTime: 5 * 60 * 1000, // 5 minutes - keep in memory for better performance
   });
 
   // Add debugging to see what tasks are being returned
@@ -103,18 +103,21 @@ export default function Tasks() {
   const { data: formTemplates } = useQuery({
     queryKey: ["/api/form-templates"],
     enabled: !!user,
+    staleTime: 120000, // 2 minutes - templates change infrequently
   });
 
   // Fetch form responses for flow data viewer
   const { data: formResponses } = useQuery({
     queryKey: ["/api/form-responses"],
     enabled: !!user,
+    staleTime: 60000, // 1 minute
   });
 
   // Fetch flow rules to check transferability and get completion statuses
   const { data: flowRules } = useQuery({
     queryKey: ["/api/flow-rules"],
     enabled: !!user,
+    staleTime: 60000, // 1 minute - flow rules change less frequently
   });
 
   // Get available completion statuses for a specific task

@@ -72,12 +72,14 @@ export default function Flows() {
   const { data: flowRules, isLoading: rulesLoading } = useQuery({
     queryKey: ["/api/flow-rules"],
     enabled: !!user,
+    staleTime: 60000, // 1 minute - flow rules change less frequently
   });
 
   // Fetch users for dropdown
   const { data: users = [] } = useQuery({
     queryKey: ["/api/users"],
     enabled: !!user,
+    staleTime: 120000, // 2 minutes - user list changes infrequently
   });
 
   // Get unique systems and tasks from existing rules for dropdowns

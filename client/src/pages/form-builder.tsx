@@ -94,6 +94,7 @@ export default function FormBuilder() {
   const { data: formTemplates, isLoading: templatesLoading } = useQuery<any[]>({
     queryKey: ["/api/form-templates"],
     enabled: !!user,
+    staleTime: 120000, // 2 minutes - templates change infrequently
   });
 
   const form = useForm({

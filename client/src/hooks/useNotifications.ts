@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useNotificationContext } from "@/contexts/NotificationContext";
+import { useQueryClient } from "@tanstack/react-query";
 
 export function useNotifications() {
   const { isAuthenticated } = useAuth();
   const { toast } = useToast();
   const { addNotification } = useNotificationContext();
+  const queryClient = useQueryClient();
   const sourceRef = useRef<EventSource | null>(null);
   const reconnectAttemptRef = useRef<number>(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -65,6 +67,10 @@ export function useNotifications() {
             description: `${data.system} • ${data.orderNumber}`,
             type: 'info',
           });
+
+          // Invalidate cached queries to refresh data
+          queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/analytics/metrics"] });
         } catch (error) {
           console.error('[Notifications] Error handling flow-started:', error, ev.data);
         }
@@ -86,6 +92,10 @@ export function useNotifications() {
             description: `${data.taskName} • ${data.reason || 'Cancelled by admin'}`,
             type: 'error',
           });
+
+          // Invalidate cached queries to refresh data
+          queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/flows"] });
         } catch (error) {
           console.error('[Notifications] Error handling task-cancelled:', error, ev.data);
         }
@@ -106,6 +116,10 @@ export function useNotifications() {
             description: `${data.taskName} • ${data.reason || 'Resumed by admin'}`,
             type: 'success',
           });
+
+          // Invalidate cached queries to refresh data
+          queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/flows"] });
         } catch (error) {
           console.error('[Notifications] Error handling task-resumed:', error, ev.data);
         }
