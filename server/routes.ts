@@ -494,24 +494,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
             rule => rule.nextTask === nextRule.nextTask && rule.status === completionStatus
           );
 
-          // If there are multiple parallel prerequisites, check if ALL of them are completed
+          // If there are multiple parallel prerequisites, check merge condition
           if (parallelPrerequisites.length > 1) {
             // Get all tasks in this flow with the prerequisite task names
             const allFlowTasks = await storage.getTasksByFlowId(task.flowId);
             
-            // Check if all parallel prerequisite tasks are completed
-            const allPrerequisitesCompleted = parallelPrerequisites.every(prereqRule => {
-              // Find the task for this prerequisite
-              const prereqTask = allFlowTasks.find(
-                t => t.taskName === prereqRule.currentTask && t.status === "completed"
-              );
-              return prereqTask !== undefined;
-            });
+            // Get the merge condition from the rule (default to "all" if not specified)
+            const mergeCondition = nextRule.mergeCondition || "all";
+            
+            if (mergeCondition === "all") {
+              // ALL STEPS COMPLETE: Check if all parallel prerequisite tasks are completed
+              const allPrerequisitesCompleted = parallelPrerequisites.every(prereqRule => {
+                // Find the task for this prerequisite
+                const prereqTask = allFlowTasks.find(
+                  t => t.taskName === prereqRule.currentTask && t.status === "completed"
+                );
+                return prereqTask !== undefined;
+              });
 
-            // If not all prerequisites are completed, skip creating this next task for now
-            if (!allPrerequisitesCompleted) {
-              console.log(`⏸️ Waiting for parallel tasks to complete before creating: ${nextRule.nextTask}`);
-              continue; // Skip this next task creation
+              // If not all prerequisites are completed, skip creating this next task for now
+              if (!allPrerequisitesCompleted) {
+                console.log(`⏸️ [All Steps Complete] Waiting for all parallel tasks to complete before creating: ${nextRule.nextTask}`);
+                continue; // Skip this next task creation
+              }
+            } else if (mergeCondition === "any") {
+              // ANY STEP COMPLETE: At least one prerequisite is complete (current task just completed)
+              // This means we proceed immediately when any parallel step completes
+              console.log(`✅ [Any Step Complete] Proceeding with next task after single parallel completion: ${nextRule.nextTask}`);
             }
 
             // Check if this next task already exists (to avoid duplicates)

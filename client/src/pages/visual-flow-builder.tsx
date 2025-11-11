@@ -44,6 +44,7 @@ interface FlowRule {
   formId?: string;
   transferable?: boolean;
   transferToEmails?: string;
+  mergeCondition?: "all" | "any";
 }
 
 interface FlowChartNode {
@@ -60,6 +61,7 @@ interface FlowChartNode {
   tatType?: string;
   formId?: string;
   status?: string;
+  mergeCondition?: "all" | "any";
 }
 
 interface FlowChartEdge {
@@ -94,15 +96,26 @@ export default function VisualFlowBuilder() {
   });
   
   // Form state for new rule
-  const [newRule, setNewRule] = useState({
+  const [newRule, setNewRule] = useState<{
+    currentTask: string;
+    status: string;
+    nextTask: string;
+    tat: number;
+    tatType: "daytat" | "hourtat" | "beforetat" | "specifytat";
+    doer: string;
+    email: string;
+    formId: string;
+    mergeCondition: "all" | "any";
+  }>({
     currentTask: "",
     status: "",
     nextTask: "",
     tat: 1,
-    tatType: "daytat" as const,
+    tatType: "daytat",
     doer: "",
     email: "",
     formId: "",
+    mergeCondition: "all",
   });
 
   // Redirect to login if not authenticated
@@ -258,6 +271,7 @@ export default function VisualFlowBuilder() {
       doer: "",
       email: "",
       formId: "",
+      mergeCondition: "all",
     });
   };
 
@@ -306,6 +320,7 @@ export default function VisualFlowBuilder() {
           tat: rule.tat,
           tatType: rule.tatType,
           formId: rule.formId,
+          mergeCondition: rule.mergeCondition,
         });
       } else {
         const existingNode = taskMap.get(nextId)!;
@@ -314,6 +329,7 @@ export default function VisualFlowBuilder() {
           existingNode.tat = rule.tat;
           existingNode.tatType = rule.tatType;
           existingNode.formId = rule.formId;
+          existingNode.mergeCondition = rule.mergeCondition;
         }
       }
     });
@@ -606,6 +622,7 @@ export default function VisualFlowBuilder() {
       formId: editingRule.formId || undefined,
       transferable: editingRule.transferable || false,
       transferToEmails: editingRule.transferToEmails || undefined,
+      mergeCondition: editingRule.mergeCondition || "all",
     };
     
     updateRuleMutation.mutate({
@@ -1083,6 +1100,17 @@ export default function VisualFlowBuilder() {
                                       </Badge>
                                     </div>
                                   )}
+                                  {node.parentIds.length > 1 && node.mergeCondition && (
+                                    <div className="flex items-center justify-between text-xs mt-1">
+                                      <span>Merge</span>
+                                      <Badge 
+                                        variant={node.mergeCondition === "any" ? "default" : "secondary"} 
+                                        className={`h-5 text-xs ${node.mergeCondition === "any" ? "bg-orange-500 hover:bg-orange-600" : ""}`}
+                                      >
+                                        {node.mergeCondition === "any" ? "⚡ Any" : "✓ All"}
+                                      </Badge>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -1410,6 +1438,28 @@ export default function VisualFlowBuilder() {
                   💡 Type complete Form ID - builder will auto-open after you finish typing
                 </p>
               </div>
+              <div>
+                <Label>Merge Condition (For Parallel Steps)</Label>
+                <Select 
+                  value={newRule.mergeCondition} 
+                  onValueChange={(val: "all" | "any") => setNewRule({ ...newRule, mergeCondition: val })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">
+                      All Steps Complete - Next step starts only after ALL parallel steps are completed
+                    </SelectItem>
+                    <SelectItem value="any">
+                      Any Step Complete - Next step starts as soon as ANY parallel step is completed
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500 mt-1">
+                  💡 Controls when next task starts at merge points
+                </p>
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsAddRuleDialogOpen(false)}>
@@ -1549,6 +1599,28 @@ export default function VisualFlowBuilder() {
                     value={editingRule.formId || ""}
                     onChange={(e) => setEditingRule({ ...editingRule, formId: e.target.value })}
                   />
+                </div>
+                <div>
+                  <Label>Merge Condition (For Parallel Steps)</Label>
+                  <Select 
+                    value={editingRule.mergeCondition || "all"} 
+                    onValueChange={(val: "all" | "any") => setEditingRule({ ...editingRule, mergeCondition: val })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">
+                        All Steps Complete - Next step starts only after ALL parallel steps are completed
+                      </SelectItem>
+                      <SelectItem value="any">
+                        Any Step Complete - Next step starts as soon as ANY parallel step is completed
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    💡 Controls when next task starts at merge points
+                  </p>
                 </div>
               </div>
             )}

@@ -180,6 +180,7 @@ export const flowRules = pgTable(
     formId: varchar("form_id"), // Associated form template
     transferable: boolean("transferable").default(false), // Can task be transferred to others
     transferToEmails: text("transfer_to_emails"), // Comma-separated list of emails for transfer options
+    mergeCondition: varchar("merge_condition").default("all"), // "all" = all parallel steps complete, "any" = any parallel step complete
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
   },
@@ -416,6 +417,10 @@ export const insertFlowRuleSchema = createInsertSchema(flowRules).omit({
   transferToEmails: z.string()
     .max(500, "Transfer emails too long")
     .refine(val => !val || !/<[^>]*>/g.test(val), "HTML tags not allowed in emails")
+    .optional(),
+  
+  mergeCondition: z.enum(["all", "any"])
+    .default("all")
     .optional(),
 });
 
@@ -716,4 +721,3 @@ export type WebhookDeliveryLog = typeof webhookDeliveryLog.$inferSelect;
 export type InsertWebhookDeliveryLog = z.infer<typeof insertWebhookDeliveryLogSchema>;
 export type WebhookRetryQueue = typeof webhookRetryQueue.$inferSelect;
 export type InsertWebhookRetryQueue = z.infer<typeof insertWebhookRetryQueueSchema>;
-

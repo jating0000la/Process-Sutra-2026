@@ -84,6 +84,12 @@ export default function FormRenderer({
         return;
       }
 
+      console.log('FormRenderer: Processing response formData:', {
+        taskName: response.taskName,
+        formId: response.formId,
+        formDataKeys: Object.keys(response.formData)
+      });
+
       // For each question in current template, search for matching label in previous responses
       template.questions.forEach((question) => {
         // Skip if we already found a value for this question
@@ -97,18 +103,26 @@ export default function FormRenderer({
         Object.entries(response.formData).forEach(([key, fieldData]) => {
           if (value !== undefined) return; // Skip if already found
           
-          // Try to match by question label (case-insensitive for better matching)
-          // This allows the same question to be prefilled across different forms
+          // Normalize for better matching
           const normalizedKey = key.toLowerCase().trim();
           const normalizedQuestionLabel = question.label.toLowerCase().trim();
           
-          // Check if the key matches the question label
+          console.log('FormRenderer: Comparing', {
+            key,
+            normalizedKey,
+            questionLabel: question.label,
+            normalizedQuestionLabel,
+            fieldData
+          });
+          
+          // Check if the key matches the question label (direct match)
           if (normalizedKey === normalizedQuestionLabel) {
             // Extract the value based on data structure
             if (typeof fieldData === 'object' && fieldData !== null) {
               // Check for enhanced structure: { questionId, questionTitle, answer }
               if ('answer' in fieldData) {
                 value = fieldData.answer;
+                console.log('FormRenderer: Found answer in enhanced structure:', value);
               } 
               // Check if it's a file object
               else if ('type' in fieldData && fieldData.type === 'file') {
@@ -131,8 +145,16 @@ export default function FormRenderer({
           else if (key === question.id) {
             if (typeof fieldData === 'object' && fieldData !== null && 'answer' in fieldData) {
               value = fieldData.answer;
+              console.log('FormRenderer: Found answer by ID match:', value);
             } else {
               value = fieldData;
+            }
+          }
+          // Try matching if the fieldData has questionId property that matches
+          else if (typeof fieldData === 'object' && fieldData !== null && 'questionId' in fieldData) {
+            if ((fieldData as any).questionId === question.id) {
+              value = (fieldData as any).answer;
+              console.log('FormRenderer: Found answer by questionId property match:', value);
             }
           }
         });

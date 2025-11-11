@@ -30,6 +30,7 @@ const flowRuleSchema = z.object({
   formId: z.string().optional(),
   transferable: z.boolean().default(false),
   transferToEmails: z.string().optional(),
+  mergeCondition: z.enum(["all", "any"]).default("all").optional(),
 }).refine((data) => {
   // For non-Specify TAT types, minimum is 1
   if (data.tatType !== "specifytat" && data.tat < 1) {
@@ -107,6 +108,7 @@ export default function Flows() {
       formId: "",
       transferable: false,
       transferToEmails: "",
+      mergeCondition: "all" as const,
     },
   });
 
@@ -227,6 +229,7 @@ export default function Flows() {
       formId: rule.formId || "",
       transferable: rule.transferable || false,
       transferToEmails: rule.transferToEmails || "",
+      mergeCondition: rule.mergeCondition || "all",
     });
     setIsRuleDialogOpen(true);
   };
@@ -1591,6 +1594,36 @@ export default function Flows() {
                             <FormControl>
                               <Input {...field} placeholder="e.g., f001" />
                             </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      {/* Merge Condition for Parallel Flows */}
+                      <FormField
+                        control={ruleForm.control}
+                        name="mergeCondition"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Merge Condition (For Parallel Steps)</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value || "all"}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Choose when next step should start" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="all">
+                                  All Steps Complete - Next step starts only after ALL parallel steps are completed
+                                </SelectItem>
+                                <SelectItem value="any">
+                                  Any Step Complete - Next step starts as soon as ANY parallel step is completed
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <div className="text-xs text-gray-500 mt-1">
+                              💡 Use this when multiple parallel tasks converge into a single next task. "All Steps Complete" waits for all paths, "Any Step Complete" proceeds with the first completed path.
+                            </div>
                             <FormMessage />
                           </FormItem>
                         )}
