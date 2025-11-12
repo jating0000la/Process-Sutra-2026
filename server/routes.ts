@@ -14,12 +14,15 @@ import {
   insertFormResponseSchema,
   insertOrganizationSchema,
   users,
+  tasks,
 } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { randomBytes } from "crypto";
 import { calculateTAT, TATConfig } from "./tatCalculator";
 import uploadsRouter from './uploads.js';
 import * as crypto from 'crypto';
+import { sanitizeFlowRule, sanitizeFlowRules } from './inputSanitizer';
 
 // Analytics cache - 5 minute TTL to reduce database load
 const analyticsCache = new NodeCache({ 
@@ -223,8 +226,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/flow-rules", flowRuleLimiter, isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
       const currentUser = req.currentUser;
+      
+      // CRITICAL FIX: Sanitize input to prevent XSS
+      const sanitizedInput = sanitizeFlowRule(req.body);
+      
       const dataWithOrganization = {
-        ...req.body,
+        ...sanitizedInput,
         organizationId: currentUser.organizationId
       };
       const validatedData = insertFlowRuleSchema.parse(dataWithOrganization);
@@ -256,6 +263,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(flowRule);
     } catch (error) {
       console.error("Error creating flow rule:", error);
+      
+      // CRITICAL FIX: Return detailed validation errors to client
+      if (error && typeof error === 'object' && 'issues' in error) {
+        // Zod validation error
+        return res.status(400).json({ 
+          message: "Validation failed", 
+          errors: (error as any).issues.map((issue: any) => ({
+            path: issue.path.join('.'),
+            message: issue.message
+          }))
+        });
+      }
+      
+      if (error instanceof Error) {
+        return res.status(400).json({ 
+          message: "Invalid flow rule data",
+          details: error.message 
+        });
+      }
+      
       res.status(400).json({ message: "Invalid flow rule data" });
     }
   });
@@ -280,8 +307,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // CRITICAL FIX: Sanitize all rules before processing
+      const sanitizedRules = sanitizeFlowRules(rules);
+
       const createdRules = [];
-      for (const ruleData of rules) {
+      const failedRules: any[] = [];
+      
+      for (let i = 0; i < sanitizedRules.length; i++) {
+        const ruleData = sanitizedRules[i];
         try {
           const dataWithOrganization = {
             ...ruleData,
@@ -291,20 +324,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const rule = await storage.createFlowRule(validatedData);
           createdRules.push(rule);
         } catch (error) {
-          console.error("Error validating rule:", ruleData, error);
-          // Continue with other rules if one fails
+          console.error(`Error validating rule at index ${i}:`, ruleData, error);
+          
+          // CRITICAL FIX: Track failed rules with reasons
+          let errorMessage = "Unknown error";
+          if (error && typeof error === 'object' && 'issues' in error) {
+            errorMessage = (error as any).issues.map((issue: any) => 
+              `${issue.path.join('.')}: ${issue.message}`
+            ).join(', ');
+          } else if (error instanceof Error) {
+            errorMessage = error.message;
+          }
+          
+          failedRules.push({
+            index: i,
+            rule: ruleData,
+            error: errorMessage
+          });
         }
       }
       
       console.log(`[AUDIT] Bulk flow rules created by ${currentUser.email} at ${new Date().toISOString()}`);
       console.log(`[AUDIT] Created ${createdRules.length} out of ${rules.length} rules`);
+      if (failedRules.length > 0) {
+        console.log(`[AUDIT] ${failedRules.length} rules failed validation`);
+      }
       
       res.status(201).json({ 
         message: `Successfully created ${createdRules.length} flow rules`,
-        rules: createdRules 
+        total: rules.length,
+        created: createdRules.length,
+        failed: failedRules.length,
+        rules: createdRules,
+        failedRules: failedRules.length > 0 ? failedRules : undefined
       });
     } catch (error) {
       console.error("Error creating bulk flow rules:", error);
+      
+      if (error instanceof Error) {
+        return res.status(500).json({ 
+          message: "Failed to create bulk flow rules",
+          details: error.message 
+        });
+      }
+      
       res.status(500).json({ message: "Failed to create bulk flow rules" });
     }
   });
@@ -439,6 +502,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Verify task belongs to user's organization
       if (task.organizationId !== user.organizationId) {
+        console.log(`[SECURITY] User ${user.email} attempted to complete task ${id} from another organization`);
         return res.status(403).json({ message: "Access denied to this task" });
       }
 
@@ -459,12 +523,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Mark current task as completed
-      const completedTask = await storage.updateTask(id, {
-        status: "completed",
-        actualCompletionTime: new Date(),
-      });
-
       // Find ALL next tasks in workflow based on completion status - organization-specific
       const flowRules = await storage.getFlowRulesByOrganization(user.organizationId, task.system);
       const nextRules = flowRules.filter(
@@ -475,97 +533,139 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const previousFormResponses = await storage.getMongoFormResponsesByFlowId(user.organizationId, task.flowId);
       const flowInitialData = previousFormResponses.length > 0 ? previousFormResponses[0].formData : null;
 
-      if (nextRules.length > 0) {
-        // Get TAT configuration for enhanced calculations
-        const tatConfiguration = await storage.getTATConfig(user.organizationId);
-        const config: TATConfig = tatConfiguration || { 
-          officeStartHour: 9, 
-          officeEndHour: 17, // Configurable per organization (5 PM default)
-          timezone: "Asia/Kolkata",
-          skipWeekends: true,
-          weekendDays: "0,6" // Sunday and Saturday
-        };
-        
-        // Create ALL next tasks using enhanced TAT calculation
-        for (const nextRule of nextRules) {
-          // Check if this next task has multiple parallel prerequisite tasks
-          // Find ALL rules that point to this same nextTask (regardless of status)
-          const parallelPrerequisites = flowRules.filter(
-            rule => rule.nextTask === nextRule.nextTask
-          );
+      // CRITICAL FIX: Wrap task completion and next task creation in a transaction
+      const completedTask = await db.transaction(async (trx) => {
+        // Mark current task as completed (within transaction)
+        const updated = await trx
+          .update(tasks)
+          .set({
+            status: "completed",
+            actualCompletionTime: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(tasks.id, id))
+          .returning();
 
-          // If there are multiple parallel prerequisites, check merge condition
-          if (parallelPrerequisites.length > 1) {
-            // Get all tasks in this flow with the prerequisite task names
-            const allFlowTasks = await storage.getTasksByFlowId(task.flowId);
-            
-            // Determine the merge condition: if ANY rule specifies "all", use "all" (most restrictive)
-            // Only use "any" if ALL incoming rules specify "any"
-            const hasAllCondition = parallelPrerequisites.some(
-              rule => (rule.mergeCondition || "all") === "all"
-            );
-            const mergeCondition = hasAllCondition ? "all" : "any";
-            
-            if (mergeCondition === "all") {
-              // ALL STEPS COMPLETE: Check if all parallel prerequisite tasks are completed
-              const allPrerequisitesCompleted = parallelPrerequisites.every(prereqRule => {
-                // Find the task for this prerequisite that matches the expected status
-                const prereqTask = allFlowTasks.find(
-                  t => t.taskName === prereqRule.currentTask && 
-                       t.status === "completed"
-                );
-                return prereqTask !== undefined;
-              });
-
-              // If not all prerequisites are completed, skip creating this next task for now
-              if (!allPrerequisitesCompleted) {
-                console.log(`⏸️ [All Steps Complete] Waiting for all parallel tasks to complete before creating: ${nextRule.nextTask}`);
-                console.log(`   Prerequisites: ${parallelPrerequisites.map(r => r.currentTask).join(", ")}`);
-                continue; // Skip this next task creation
-              }
-              console.log(`✅ [All Steps Complete] All prerequisites completed for: ${nextRule.nextTask}`);
-            } else if (mergeCondition === "any") {
-              // ANY STEP COMPLETE: At least one prerequisite is complete (current task just completed)
-              // This means we proceed immediately when any parallel step completes
-              console.log(`✅ [Any Step Complete] Proceeding with next task after single parallel completion: ${nextRule.nextTask}`);
-            }
-
-            // Check if this next task already exists (to avoid duplicates)
-            const existingNextTask = allFlowTasks.find(
-              t => t.taskName === nextRule.nextTask && t.status !== "cancelled"
-            );
-            
-            if (existingNextTask) {
-              console.log(`✅ Next task already exists (parallel merge): ${nextRule.nextTask}`);
-              continue; // Skip creating duplicate
-            }
-          }
-
-          const plannedTime = calculateTAT(new Date(), nextRule.tat, nextRule.tatType, config);
-
-          console.log(`✨ Creating next task: ${nextRule.nextTask} (prerequisites met)`);
-          await storage.createTask({
-            system: task.system,
-            flowId: task.flowId,
-            orderNumber: task.orderNumber,
-            taskName: nextRule.nextTask,
-            plannedTime,
-            doerEmail: nextRule.email,
-            status: "pending",
-            formId: nextRule.formId,
-            organizationId: user.organizationId, // Include organization ID for new tasks
-            // Include flow context and previous form data
-            flowInitiatedBy: task.flowInitiatedBy,
-            flowInitiatedAt: task.flowInitiatedAt,
-            flowDescription: task.flowDescription,
-            flowInitialFormData: task.flowInitialFormData || (flowInitialData as any),
-          });
+        if (!updated || updated.length === 0) {
+          throw new Error("Failed to update task status");
         }
-      }
+
+        const completedTask = updated[0];
+
+        // Create next tasks if rules exist
+        if (nextRules.length > 0) {
+          // Get TAT configuration for enhanced calculations
+          const tatConfiguration = await storage.getTATConfig(user.organizationId);
+          const config: TATConfig = tatConfiguration || { 
+            officeStartHour: 9, 
+            officeEndHour: 17,
+            timezone: "Asia/Kolkata",
+            skipWeekends: true,
+            weekendDays: "0,6"
+          };
+          
+          // Create ALL next tasks using enhanced TAT calculation
+          for (const nextRule of nextRules) {
+            // Check if this next task has multiple parallel prerequisite tasks
+            const parallelPrerequisites = flowRules.filter(
+              rule => rule.nextTask === nextRule.nextTask
+            );
+
+            // If there are multiple parallel prerequisites, check merge condition
+            if (parallelPrerequisites.length > 1) {
+              // Get all tasks in this flow (within transaction)
+              const allFlowTasks = await trx
+                .select()
+                .from(tasks)
+                .where(eq(tasks.flowId, task.flowId));
+              
+              // Determine the merge condition
+              const hasAllCondition = parallelPrerequisites.some(
+                rule => (rule.mergeCondition || "all") === "all"
+              );
+              const mergeCondition = hasAllCondition ? "all" : "any";
+              
+              if (mergeCondition === "all") {
+                // Check if all parallel prerequisite tasks are completed
+                const allPrerequisitesCompleted = parallelPrerequisites.every(prereqRule => {
+                  const prereqTask = allFlowTasks.find(
+                    t => t.taskName === prereqRule.currentTask && 
+                         t.status === "completed"
+                  );
+                  return prereqTask !== undefined;
+                });
+
+                if (!allPrerequisitesCompleted) {
+                  console.log(`⏸️ [All Steps Complete] Waiting for parallel tasks: ${nextRule.nextTask}`);
+                  continue;
+                }
+                console.log(`✅ [All Steps Complete] All prerequisites met: ${nextRule.nextTask}`);
+              } else {
+                console.log(`✅ [Any Step Complete] Proceeding with: ${nextRule.nextTask}`);
+              }
+
+              // Check if next task already exists (prevent duplicates)
+              const existingNextTask = allFlowTasks.find(
+                t => t.taskName === nextRule.nextTask && t.status !== "cancelled"
+              );
+              
+              if (existingNextTask) {
+                console.log(`✅ Next task already exists: ${nextRule.nextTask}`);
+                continue;
+              }
+            }
+
+            const plannedTime = calculateTAT(new Date(), nextRule.tat, nextRule.tatType, config);
+
+            console.log(`✨ Creating next task: ${nextRule.nextTask}`);
+            
+            // Create task within transaction with unique constraint handling
+            await trx
+              .insert(tasks)
+              .values({
+                system: task.system,
+                flowId: task.flowId,
+                orderNumber: task.orderNumber,
+                taskName: nextRule.nextTask,
+                plannedTime,
+                doerEmail: nextRule.email,
+                status: "pending",
+                formId: nextRule.formId,
+                organizationId: user.organizationId,
+                flowInitiatedBy: task.flowInitiatedBy,
+                flowInitiatedAt: task.flowInitiatedAt,
+                flowDescription: task.flowDescription,
+                flowInitialFormData: task.flowInitialFormData || (flowInitialData as any),
+              })
+              .onConflictDoNothing(); // Prevent race condition duplicates
+          }
+        }
+
+        return completedTask;
+      });
+
+      // Log audit trail for task completion
+      console.log(`[AUDIT] Task completed: ${task.taskName} (ID: ${id}) by ${user.email} at ${new Date().toISOString()}`);
+      console.log(`[AUDIT] Flow: ${task.system}, Order: ${task.orderNumber}, Status: ${completionStatus}`);
 
       res.json(completedTask);
     } catch (error) {
       console.error("Error completing task:", error);
+      
+      // Better error messages for clients
+      if (error instanceof Error) {
+        if (error.message.includes("constraint")) {
+          return res.status(409).json({ 
+            message: "Task completion conflict. Please refresh and try again.",
+            details: "Another user may have completed this task simultaneously."
+          });
+        }
+        return res.status(500).json({ 
+          message: "Failed to complete task",
+          details: error.message 
+        });
+      }
+      
       res.status(500).json({ message: "Failed to complete task" });
     }
   });
