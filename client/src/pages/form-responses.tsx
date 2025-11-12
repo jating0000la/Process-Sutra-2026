@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useToast } from "@/hooks/use-toast";
 import { Calendar, Search, Filter, Download, Eye, FileText, ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 
@@ -36,6 +37,7 @@ interface FormTemplate {
 }
 
 export default function FormResponses() {
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [orderNumberFilter, setOrderNumberFilter] = useState("");
   const [selectedFormId, setSelectedFormId] = useState<string>("all");
@@ -117,32 +119,96 @@ export default function FormResponses() {
   // Reset to first page when filters change
   const resetPage = () => setCurrentPage(1);
 
-  // Export filtered data as CSV
+  // Export filtered data as CSV with flattened formData columns
   const exportToCSV = () => {
-    const headers = ["Response ID", "Flow ID", "Order Number", "System", "Task Name", "Form ID", "Submitted By", "Timestamp", "Form Data"];
-    const csvData = filteredResponses.map((response: FormResponse) => [
-      response.responseId,
-      response.flowId,
-      response.orderNumber || "",
-      response.system || "",
-      response.taskName,
-      response.formId,
-      response.submittedBy,
-      format(new Date(response.timestamp), "yyyy-MM-dd HH:mm:ss"),
-      JSON.stringify(response.formData)
-    ]);
+    if (filteredResponses.length === 0) {
+      toast({
+        title: "No data to export",
+        description: "There are no form responses matching your filters.",
+        variant: "destructive"
+      });
+      return;
+    }
 
+    // First pass: collect all unique form data field names
+    const formDataFields = new Set<string>();
+    filteredResponses.forEach((response: FormResponse) => {
+      if (response.formData && typeof response.formData === 'object') {
+        Object.keys(response.formData).forEach(key => {
+          // Skip nested objects/arrays for now (they'll be JSON stringified)
+          formDataFields.add(key);
+        });
+      }
+    });
+
+    // Build headers: fixed columns + dynamic form data columns
+    const fixedHeaders = [
+      "Response ID", 
+      "Flow ID", 
+      "Order Number", 
+      "System", 
+      "Task Name", 
+      "Form ID", 
+      "Submitted By", 
+      "Timestamp"
+    ];
+    const dynamicHeaders = Array.from(formDataFields).sort();
+    const headers = [...fixedHeaders, ...dynamicHeaders];
+
+    // Build CSV rows
+    const csvData = filteredResponses.map((response: FormResponse) => {
+      const fixedColumns = [
+        response.responseId,
+        response.flowId,
+        response.orderNumber || "",
+        response.system || "",
+        response.taskName,
+        response.formId,
+        response.submittedBy,
+        format(new Date(response.timestamp), "yyyy-MM-dd HH:mm:ss")
+      ];
+
+      // Extract form data values
+      const dynamicColumns = dynamicHeaders.map(fieldName => {
+        const value = response.formData?.[fieldName];
+        
+        // Handle different value types
+        if (value === null || value === undefined) {
+          return "";
+        } else if (typeof value === 'object') {
+          // Arrays and objects - JSON stringify
+          return JSON.stringify(value);
+        } else {
+          // Simple values
+          return String(value);
+        }
+      });
+
+      return [...fixedColumns, ...dynamicColumns];
+    });
+
+    // Generate CSV content
     const csvContent = [headers, ...csvData]
-      .map(row => row.map((cell: any) => `"${cell}"`).join(","))
+      .map(row => row.map((cell: any) => {
+        // Escape quotes and wrap in quotes
+        const cellStr = String(cell || "");
+        return `"${cellStr.replace(/"/g, '""')}"`;
+      }).join(","))
       .join("\n");
 
-    const blob = new Blob([csvContent], { type: "text/csv" });
+    // Download CSV
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `form-responses-${format(new Date(), "yyyy-MM-dd")}.csv`;
+    a.download = `form-responses-${format(new Date(), "yyyy-MM-dd-HHmmss")}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+
+    toast({
+      title: "Export successful",
+      description: `Exported ${filteredResponses.length} form responses to CSV.`,
+    });
   };
 
   const renderFormData = (formData: Record<string, any>) => {

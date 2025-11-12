@@ -58,22 +58,28 @@ export default function FormRenderer({
   // Fetch previous form responses from the same flow for auto-prefill
   const { data: flowResponses, error: prefillError, isLoading: prefillLoading } = useQuery({
     queryKey: ["/api/flows", flowId, "responses"],
+    queryFn: async () => {
+      const response = await fetch(`/api/flows/${flowId}/responses`, {
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch flow responses: ${response.status}`);
+      }
+      return response.json();
+    },
     enabled: !!flowId,
     retry: 2,  // Retry twice before failing
+    staleTime: 30000, // Cache for 30 seconds
   });
 
   // Create auto-prefill data by matching field labels from previous responses
   const autoPrefillData = useMemo(() => {
     if (!flowResponses || !Array.isArray(flowResponses)) {
-      console.log('FormRenderer: No flow responses available for auto-prefill', { flowResponses, flowId });
       return {};
     }
-
-    console.log('FormRenderer: Processing flow responses for auto-prefill', {
-      flowId,
-      responseCount: flowResponses.length,
-      responses: flowResponses
-    });
 
     const prefillData: Record<string, any> = {};
 
@@ -83,12 +89,6 @@ export default function FormRenderer({
       if (!response.formData || typeof response.formData !== 'object') {
         return;
       }
-
-      console.log('FormRenderer: Processing response formData:', {
-        taskName: response.taskName,
-        formId: response.formId,
-        formDataKeys: Object.keys(response.formData)
-      });
 
       // For each question in current template, search for matching label in previous responses
       template.questions.forEach((question) => {
@@ -107,14 +107,6 @@ export default function FormRenderer({
           const normalizedKey = key.toLowerCase().trim();
           const normalizedQuestionLabel = question.label.toLowerCase().trim();
           
-          console.log('FormRenderer: Comparing', {
-            key,
-            normalizedKey,
-            questionLabel: question.label,
-            normalizedQuestionLabel,
-            fieldData
-          });
-          
           // Check if the key matches the question label (direct match)
           if (normalizedKey === normalizedQuestionLabel) {
             // Extract the value based on data structure
@@ -122,7 +114,6 @@ export default function FormRenderer({
               // Check for enhanced structure: { questionId, questionTitle, answer }
               if ('answer' in fieldData) {
                 value = fieldData.answer;
-                console.log('FormRenderer: Found answer in enhanced structure:', value);
               } 
               // Check if it's a file object
               else if ('type' in fieldData && fieldData.type === 'file') {
@@ -145,7 +136,6 @@ export default function FormRenderer({
           else if (key === question.id) {
             if (typeof fieldData === 'object' && fieldData !== null && 'answer' in fieldData) {
               value = fieldData.answer;
-              console.log('FormRenderer: Found answer by ID match:', value);
             } else {
               value = fieldData;
             }
@@ -154,7 +144,6 @@ export default function FormRenderer({
           else if (typeof fieldData === 'object' && fieldData !== null && 'questionId' in fieldData) {
             if ((fieldData as any).questionId === question.id) {
               value = (fieldData as any).answer;
-              console.log('FormRenderer: Found answer by questionId property match:', value);
             }
           }
         });
@@ -195,25 +184,36 @@ export default function FormRenderer({
             }
             
             prefillData[question.id] = cleanedValue;
-            console.log('FormRenderer: Auto-prefill match found', {
-              questionId: question.id,
-              questionLabel: question.label,
-              questionType: question.type,
-              prefillValue: cleanedValue,
-              sourceResponse: response.formId
-            });
           }
         }
       });
     });
 
-    console.log('FormRenderer: Final auto-prefill data', prefillData);
     return prefillData;
   }, [flowResponses, template.questions, flowId]);
+
+  // Debug: Log prefill data for troubleshooting
+  useEffect(() => {
+    if (flowId && flowResponses) {
+      console.log('[FormRenderer] Flow responses fetched:', flowResponses);
+      console.log('[FormRenderer] Auto-prefill data generated:', autoPrefillData);
+      console.log('[FormRenderer] Number of fields prefilled:', Object.keys(autoPrefillData).length);
+      
+      // Show success toast if fields were prefilled
+      if (Object.keys(autoPrefillData).length > 0) {
+        toast({
+          title: "Form auto-filled",
+          description: `${Object.keys(autoPrefillData).length} field(s) filled from previous responses.`,
+          variant: "default",
+        });
+      }
+    }
+  }, [flowId, flowResponses, autoPrefillData]);
 
   // Show user feedback if auto-prefill fails
   useEffect(() => {
     if (prefillError && flowId) {
+      console.error('[FormRenderer] Prefill error:', prefillError);
       toast({
         title: "Auto-fill unavailable",
         description: "Could not load previous form data. You can still fill the form manually.",
@@ -229,7 +229,7 @@ export default function FormRenderer({
   };
   
   // Table Input Component
-  const TableInput = ({ question, field, readonly }: { 
+  const TableInput = ({ question, field, readonly }: {
     question: FormQuestion; 
     field: any; 
     readonly?: boolean;
@@ -508,8 +508,6 @@ export default function FormRenderer({
   // Update form when auto-prefill data becomes available
   useEffect(() => {
     if (!isFormInitialized && Object.keys(autoPrefillData).length > 0) {
-      console.log('FormRenderer: Updating form with auto-prefill data', autoPrefillData);
-      
       // Set individual field values instead of resetting entire form
       // This approach maintains field editability better
       template.questions.forEach((question) => {
@@ -524,12 +522,10 @@ export default function FormRenderer({
             shouldTouch: false,
             shouldValidate: false 
           });
-          console.log(`FormRenderer: Setting ${question.id} to prefilled value:`, prefillValue);
         }
       });
       
       setIsFormInitialized(true);
-      console.log('FormRenderer: Auto-prefill complete, fields should be editable');
     }
   }, [autoPrefillData, initialData, template.questions, form, isFormInitialized]);
 

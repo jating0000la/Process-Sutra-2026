@@ -203,24 +203,40 @@ export default function FlowDataViewer({
       const parsedFormResponse = parseIfJsonString(formResponse);
 
       // ─── FLATTEN ANSWER OBJECTS ────────────────────────────────────────────────
-const flatFormResponse = (() => {
-  // If it’s not a simple object, just use it as-is
-  if (typeof parsedFormResponse !== 'object' 
-      || parsedFormResponse === null 
-      || Array.isArray(parsedFormResponse)) {
-    return parsedFormResponse;
-  }
+      // Handle both new canonical format (flat with readable names) and legacy format
+      const flatFormResponse = (() => {
+        // If it's not a simple object, just use it as-is
+        if (typeof parsedFormResponse !== 'object' 
+            || parsedFormResponse === null 
+            || Array.isArray(parsedFormResponse)) {
+          return parsedFormResponse;
+        }
 
-  // Otherwise, unwrap any { answer } fields
-  return Object.entries(parsedFormResponse).reduce((acc, [key, value]) => {
-    if (value && typeof value === 'object' && 'answer' in value) {
-      acc[key] = parseIfJsonString((value as any).answer);
-    } else {
-      acc[key] = parseIfJsonString(value);
-    }
-    return acc;
-  }, {} as Record<string, any>);
-})();
+        // Check if this is already in canonical format (flat with readable names)
+        const hasLegacyFormat = Object.values(parsedFormResponse).some(
+          value => value && typeof value === 'object' && 'answer' in value
+        );
+
+        if (!hasLegacyFormat) {
+          // Already in new canonical format - just parse any JSON strings
+          return Object.entries(parsedFormResponse).reduce((acc, [key, value]) => {
+            acc[key] = parseIfJsonString(value);
+            return acc;
+          }, {} as Record<string, any>);
+        }
+
+        // Legacy format - unwrap any { answer, questionTitle, questionId } fields
+        return Object.entries(parsedFormResponse).reduce((acc, [key, value]) => {
+          if (value && typeof value === 'object' && 'answer' in value) {
+            // Use questionTitle if available, otherwise use the key
+            const fieldName = (value as any).questionTitle || key;
+            acc[fieldName] = parseIfJsonString((value as any).answer);
+          } else {
+            acc[key] = parseIfJsonString(value);
+          }
+          return acc;
+        }, {} as Record<string, any>);
+      })();
 
       
       // Helpers to detect arrays of table-like row objects

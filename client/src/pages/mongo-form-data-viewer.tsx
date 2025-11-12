@@ -208,52 +208,60 @@ export default function MongoFormDataViewer() {
         System: response.system || "N/A",
       };
 
-      // Parse form data structure: {questionId: {answer, questionId, questionTitle}}
+      // New canonical format: formData is already flat with readable field names
+      // e.g., { "Customer Name": "John", "Email": "john@example.com", "Order Items": [...] }
       const formFields: Record<string, any> = {};
-      let tableField: any = null;
+      let tableFields: Array<{ key: string; value: any[] }> = [];
       
-      Object.values(response.formData || {}).forEach((field: any) => {
-        if (field && field.questionTitle && field.answer !== undefined) {
-          if (Array.isArray(field.answer) && field.answer.length > 0) {
-            tableField = field;
+      Object.entries(response.formData || {}).forEach(([fieldName, fieldValue]) => {
+        // Check if this is table data (array of objects)
+        if (Array.isArray(fieldValue) && fieldValue.length > 0 && typeof fieldValue[0] === 'object') {
+          // This is a table field - store it separately to expand into multiple rows
+          tableFields.push({ key: fieldName, value: fieldValue });
+        } 
+        // Also handle legacy enhanced format for backward compatibility
+        else if (fieldValue && typeof fieldValue === 'object' && 'answer' in fieldValue) {
+          // Legacy format: { questionTitle, questionId, answer }
+          const answer = fieldValue.answer;
+          if (Array.isArray(answer) && answer.length > 0 && typeof answer[0] === 'object') {
+            tableFields.push({ key: fieldValue.questionTitle || fieldName, value: answer });
           } else {
-            formFields[field.questionTitle] = field.answer;
+            formFields[fieldValue.questionTitle || fieldName] = answer;
           }
+        }
+        else {
+          // Simple field - store directly
+          formFields[fieldName] = fieldValue;
         }
       });
 
-      if (tableField && Array.isArray(tableField.answer)) {
-        // Handle table data - create multiple rows
-        tableField.answer.forEach((tableRow: any) => {
+      if (tableFields.length > 0) {
+        // Handle table data - create multiple rows (one per table row)
+        // Use the first table field for expanding (typically there's only one table per form)
+        const mainTableField = tableFields[0];
+        
+        mainTableField.value.forEach((tableRow: any) => {
           const rowData = { ...baseRow, ...formFields };
           
-          // Add table row data with proper column headers
+          // Add table row data with readable column names (already transformed server-side)
           Object.entries(tableRow).forEach(([colKey, colValue]) => {
             // Skip metadata fields
             if (colKey.startsWith('_')) return;
             
-            // Use column header from _columnHeaders, _tableMetadata, or the key itself
-            let columnHeader = colKey;
-            if (tableRow._columnHeaders && tableRow._columnHeaders[colKey]) {
-              columnHeader = tableRow._columnHeaders[colKey];
-            } else if (tableField._tableMetadata?.columns) {
-              const metaCol = tableField._tableMetadata.columns.find((c: any) => c.id === colKey);
-              if (metaCol) columnHeader = metaCol.label;
-            }
-            
-            rowData[columnHeader] = colValue;
+            // Column names are already readable from server transformation
+            rowData[colKey] = colValue;
           });
           
           rows.push(rowData);
         });
       } else {
-        // Single row
+        // No table data - single row with form fields
         rows.push({ ...baseRow, ...formFields });
       }
     });
 
     return rows;
-  }, [filteredResponses]);
+  }, [filteredResponses, tatConfig]);
 
   // Get dynamic columns
   const dynamicColumns = useMemo(() => {

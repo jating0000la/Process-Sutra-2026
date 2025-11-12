@@ -46,6 +46,15 @@ import {
   type InsertWebhookRetryQueue,
   type WebhookRetryQueue,
 } from "@shared/schema";
+import { transformFormDataToReadableNames } from "./formDataTransformer";
+import NodeCache from 'node-cache';
+
+// Form template cache - 10 minute TTL to reduce database load
+const formTemplateCache = new NodeCache({
+  stdTTL: 600,           // 10 minutes cache
+  checkperiod: 120,      // Check for expired keys every 2 minutes
+  useClones: false       // Better performance
+});
 
 export interface IStorage {
   // Organization operations
@@ -641,23 +650,64 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getFormTemplateByFormId(formId: string): Promise<FormTemplate | undefined> {
+    // Check cache first
+    const cacheKey = `template:formId:${formId}`;
+    const cached = formTemplateCache.get<FormTemplate>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    // Fetch from database
     const [template] = await db
       .select()
       .from(formTemplates)
       .where(eq(formTemplates.formId, formId));
+    
+    // Cache if found
+    if (template) {
+      formTemplateCache.set(cacheKey, template);
+    }
+    
     return template;
   }
 
   async getFormTemplateById(id: string): Promise<FormTemplate | undefined> {
+    // Check cache first
+    const cacheKey = `template:id:${id}`;
+    const cached = formTemplateCache.get<FormTemplate>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    // Fetch from database
     const [template] = await db
       .select()
       .from(formTemplates)
       .where(eq(formTemplates.id, id));
+    
+    // Cache if found
+    if (template) {
+      formTemplateCache.set(cacheKey, template);
+      // Also cache by formId for cross-key access
+      if (template.formId) {
+        formTemplateCache.set(`template:formId:${template.formId}`, template);
+      }
+    }
+    
     return template;
   }
 
   async createFormTemplate(template: InsertFormTemplate): Promise<FormTemplate> {
     const [newTemplate] = await db.insert(formTemplates).values(template).returning();
+    
+    // Cache the new template
+    if (newTemplate.id) {
+      formTemplateCache.set(`template:id:${newTemplate.id}`, newTemplate);
+    }
+    if (newTemplate.formId) {
+      formTemplateCache.set(`template:formId:${newTemplate.formId}`, newTemplate);
+    }
+    
     return newTemplate;
   }
 
@@ -667,11 +717,34 @@ export class DatabaseStorage implements IStorage {
       .set({ ...template, updatedAt: new Date() })
       .where(eq(formTemplates.id, id))
       .returning();
+    
+    // Invalidate and update cache
+    if (updatedTemplate) {
+      formTemplateCache.del(`template:id:${id}`);
+      if (updatedTemplate.formId) {
+        formTemplateCache.del(`template:formId:${updatedTemplate.formId}`);
+      }
+      // Set fresh cache
+      formTemplateCache.set(`template:id:${updatedTemplate.id}`, updatedTemplate);
+      if (updatedTemplate.formId) {
+        formTemplateCache.set(`template:formId:${updatedTemplate.formId}`, updatedTemplate);
+      }
+    }
+    
     return updatedTemplate;
   }
 
   async deleteFormTemplate(id: string): Promise<void> {
+    // Get template before deletion to invalidate all cache keys
+    const template = await this.getFormTemplateById(id);
+    
     await db.delete(formTemplates).where(eq(formTemplates.id, id));
+    
+    // Invalidate cache
+    formTemplateCache.del(`template:id:${id}`);
+    if (template?.formId) {
+      formTemplateCache.del(`template:formId:${template.formId}`);
+    }
   }
 
   // Form Response operations
@@ -721,65 +794,37 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createFormResponse(response: InsertFormResponse): Promise<FormResponse> {
-    // Enrich form data with column headers before saving
-    const enrichedFormData = await this.enrichFormDataWithColumnHeaders(
+    // Transform form data to canonical format with readable field names
+    const transformedFormData = await this.transformFormDataForStorage(
       response.formData,
       response.formId,
       response.organizationId
     );
 
-    const responseWithHeaders = {
+    const responseWithTransformedData = {
       ...response,
-      formData: enrichedFormData
+      formData: transformedFormData
     };
 
-    const [newResponse] = await db.insert(formResponses).values(responseWithHeaders).returning();
+    const [newResponse] = await db.insert(formResponses).values(responseWithTransformedData).returning();
 
-    // Also store in MongoDB (best-effort; non-blocking on failure)
-    try {
-      const { getFormResponsesCollection } = await import('./mongo/client.js');
-      // Fetch related task details to enrich the document
-      const [taskDetails] = await db
-        .select({
-          orderNumber: tasks.orderNumber,
-          system: tasks.system,
-          flowDescription: tasks.flowDescription,
-          flowInitiatedBy: tasks.flowInitiatedBy,
-          flowInitiatedAt: tasks.flowInitiatedAt,
-        })
-        .from(tasks)
-        .where(eq(tasks.id, newResponse.taskId))
-        .limit(1);
+    // Also store in MongoDB with retry logic for consistency
+    await this.storeFormResponseInMongo(newResponse);
 
-      const col = await getFormResponsesCollection();
-      await col.insertOne({
-        orgId: (newResponse as any).organizationId,
-        flowId: newResponse.flowId,
-        taskId: newResponse.taskId,
-        taskName: newResponse.taskName,
-        formId: newResponse.formId,
-        submittedBy: newResponse.submittedBy,
-        orderNumber: (taskDetails?.orderNumber ?? undefined) as any,
-        system: taskDetails?.system ?? undefined,
-        flowDescription: taskDetails?.flowDescription ?? undefined,
-        flowInitiatedBy: taskDetails?.flowInitiatedBy ?? undefined,
-        flowInitiatedAt: (taskDetails?.flowInitiatedAt ?? undefined) as any,
-        formData: (newResponse as any).formData,
-        createdAt: new Date((newResponse as any).timestamp),
-      });
-    } catch (e) {
-      console.error('Mongo insert (formResponses) failed:', e);
-    }
     return newResponse;
   }
 
   /**
-   * Enriches form data with table column headers/titles
-   * Converts column IDs like "col_1762506182400" to readable names
+   * Transform form data to canonical format using the centralized transformer
+   * Replaces the old enrichFormDataWithColumnHeaders method
    */
-  async enrichFormDataWithColumnHeaders(formData: any, formId: string, organizationId: string): Promise<any> {
+  private async transformFormDataForStorage(
+    formData: any,
+    formId: string,
+    organizationId: string
+  ): Promise<any> {
     try {
-      // Get the form template to retrieve table column metadata
+      // Get the form template
       const [template] = await db
         .select()
         .from(formTemplates)
@@ -792,68 +837,91 @@ export class DatabaseStorage implements IStorage {
         .limit(1);
 
       if (!template || !template.questions) {
+        console.warn(`Form template not found for formId: ${formId}`);
         return formData; // Return original if template not found
       }
 
-      // Create a map of column IDs to their labels
-      const columnHeaderMap = new Map<string, string>();
-      
-      (template.questions as any[]).forEach((question: any) => {
-        if (question.type === 'table' && question.tableColumns) {
-          question.tableColumns.forEach((col: any) => {
-            if (col.id && col.label) {
-              columnHeaderMap.set(col.id, col.label);
-            }
-          });
-        }
-      });
+      // Parse questions if needed
+      const questions = typeof template.questions === 'string'
+        ? JSON.parse(template.questions)
+        : template.questions;
 
-      // Enrich the form data
-      const enrichedFormData = { ...formData };
-
-      Object.keys(enrichedFormData).forEach((key) => {
-        const field = enrichedFormData[key];
-        
-        // Check if this field has a table answer (array of row objects)
-        if (field && typeof field === 'object' && field.answer && Array.isArray(field.answer)) {
-          // Add column headers metadata to the field
-          const enrichedRows = field.answer.map((row: any) => {
-            const enrichedRow: any = { ...row };
-            
-            // Add a special _columnHeaders property with readable names
-            if (!enrichedRow._columnHeaders) {
-              enrichedRow._columnHeaders = {};
-              Object.keys(row).forEach((colId) => {
-                const header = columnHeaderMap.get(colId);
-                if (header) {
-                  enrichedRow._columnHeaders[colId] = header;
-                }
-              });
-            }
-            
-            return enrichedRow;
-          });
-
-          // Store both original and enriched data
-          enrichedFormData[key] = {
-            ...field,
-            answer: enrichedRows,
-            // Add column metadata at field level too
-            _tableMetadata: {
-              columns: Array.from(columnHeaderMap.entries()).map(([id, label]) => ({
-                id,
-                label
-              }))
-            }
-          };
-        }
-      });
-
-      return enrichedFormData;
+      // Use centralized transformer
+      const result = transformFormDataToReadableNames(formData, questions);
+      return result.transformed;
     } catch (error) {
-      console.error('Error enriching form data with column headers:', error);
+      console.error('Error transforming form data:', error);
       return formData; // Return original on error
     }
+  }
+
+  /**
+   * Store form response in MongoDB with retry logic
+   * Ensures data consistency between PostgreSQL and MongoDB
+   */
+  private async storeFormResponseInMongo(
+    response: FormResponse,
+    retries: number = 3
+  ): Promise<void> {
+    let lastError: any;
+
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const { getFormResponsesCollection } = await import('./mongo/client.js');
+        
+        // Fetch related task details to enrich the document
+        const [taskDetails] = await db
+          .select({
+            orderNumber: tasks.orderNumber,
+            system: tasks.system,
+            flowDescription: tasks.flowDescription,
+            flowInitiatedBy: tasks.flowInitiatedBy,
+            flowInitiatedAt: tasks.flowInitiatedAt,
+          })
+          .from(tasks)
+          .where(eq(tasks.id, response.taskId))
+          .limit(1);
+
+        const col = await getFormResponsesCollection();
+        await col.insertOne({
+          orgId: (response as any).organizationId,
+          flowId: response.flowId,
+          taskId: response.taskId,
+          taskName: response.taskName,
+          formId: response.formId,
+          submittedBy: response.submittedBy,
+          orderNumber: (taskDetails?.orderNumber ?? undefined) as any,
+          system: taskDetails?.system ?? undefined,
+          flowDescription: taskDetails?.flowDescription ?? undefined,
+          flowInitiatedBy: taskDetails?.flowInitiatedBy ?? undefined,
+          flowInitiatedAt: (taskDetails?.flowInitiatedAt ?? undefined) as any,
+          formData: (response as any).formData,
+          createdAt: new Date((response as any).timestamp),
+        });
+        
+        // Success - exit retry loop
+        return;
+      } catch (e) {
+        lastError = e;
+        console.error(`MongoDB insert attempt ${attempt + 1}/${retries} failed:`, e);
+        
+        // Wait before retrying (exponential backoff)
+        if (attempt < retries - 1) {
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 100));
+        }
+      }
+    }
+
+    // All retries failed - log critical error
+    console.error('CRITICAL: MongoDB form response insert failed after all retries:', {
+      responseId: response.responseId,
+      flowId: response.flowId,
+      taskId: response.taskId,
+      error: lastError
+    });
+    
+    // Consider: Queue for later sync, send alert, etc.
+    // For now, we don't throw to avoid blocking the main flow
   }
 
   async getFormResponsesByFlowId(flowId: string): Promise<FormResponse[]> {

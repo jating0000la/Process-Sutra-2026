@@ -608,51 +608,14 @@ export default function Tasks() {
 
   const handleFormSubmit = async (formData: Record<string, any>) => {
     try {
-      // SECURITY: Don't log sensitive form data in production
-      if (process.env.NODE_ENV === 'development') {
-        console.log("Submitting form for task:", selectedTask?.id);
-      }
-      
-      // Create enhanced form data with question titles
-      let enhancedFormData = { ...formData };
-      
-      if (formTemplate?.questions) {
-        // Parse questions if it's a JSON string
-        const questions = typeof formTemplate.questions === 'string' 
-          ? JSON.parse(formTemplate.questions) 
-          : formTemplate.questions;
-        
-        if (Array.isArray(questions)) {
-          // Create a mapping of question ID to question text
-          const questionMap: Record<string, string> = {};
-          questions.forEach((question: any) => {
-            if (question.id && question.label) {
-              questionMap[question.id] = question.label;
-            }
-          });
-          
-          // Transform form data to include question titles
-          const enhancedData: Record<string, any> = {};
-          Object.entries(formData).forEach(([key, value]) => {
-            const questionTitle = questionMap[key] || key;
-            enhancedData[questionTitle] = {
-              questionId: key,
-              questionTitle: questionTitle,
-              answer: value
-            };
-          });
-          
-          enhancedFormData = enhancedData;
-        }
-      }
-      
+      // Server handles transformation to readable names, so send raw data
       await apiRequest("POST", "/api/form-responses", {
         responseId: `resp_${Date.now()}`, // Generate unique ID
         flowId: selectedTask?.flowId,
         taskId: selectedTask?.id,
         taskName: selectedTask?.taskName,
         formId: formTemplate?.formId,
-        formData: enhancedFormData,
+        formData: formData, // Send as-is, server will transform
       });
       
       toast({

@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useToast } from "@/hooks/use-toast";
 import { Search, Download, ChevronLeft, ChevronRight, Calendar } from "lucide-react";
 import { format } from "date-fns";
 import Header from "@/components/header";
@@ -31,6 +32,7 @@ interface FormResponse {
 }
 
 export default function FormDataViewer() {
+  const { toast } = useToast();
   const [selectedFormId, setSelectedFormId] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
   const [orderNumberFilter, setOrderNumberFilter] = useState("");
@@ -115,46 +117,54 @@ export default function FormDataViewer() {
         FlowDescription: response.flowDescription || "N/A",
       };
 
-      // Parse form data structure: {questionId: {answer, questionId, questionTitle}}
+      // New canonical format: formData is already flat with readable field names
+      // e.g., { "Customer Name": "John", "Email": "john@example.com", "Order Items": [...] }
       const formFields: Record<string, any> = {};
-      let tableField: any = null;
+      let tableFields: Array<{ key: string; value: any[] }> = [];
       
-      Object.values(response.formData || {}).forEach((field: any) => {
-        if (field && field.questionTitle && field.answer !== undefined) {
-          if (Array.isArray(field.answer) && field.answer.length > 0) {
-            tableField = field;
+      Object.entries(response.formData || {}).forEach(([fieldName, fieldValue]) => {
+        // Check if this is table data (array of objects)
+        if (Array.isArray(fieldValue) && fieldValue.length > 0 && typeof fieldValue[0] === 'object') {
+          // This is a table field - store it separately to expand into multiple rows
+          tableFields.push({ key: fieldName, value: fieldValue });
+        } 
+        // Also handle legacy enhanced format for backward compatibility
+        else if (fieldValue && typeof fieldValue === 'object' && 'answer' in fieldValue) {
+          // Legacy format: { questionTitle, questionId, answer }
+          const answer = fieldValue.answer;
+          if (Array.isArray(answer) && answer.length > 0 && typeof answer[0] === 'object') {
+            tableFields.push({ key: fieldValue.questionTitle || fieldName, value: answer });
           } else {
-            formFields[field.questionTitle] = field.answer;
+            formFields[fieldValue.questionTitle || fieldName] = answer;
           }
+        }
+        else {
+          // Simple field - store directly
+          formFields[fieldName] = fieldValue;
         }
       });
 
-      if (tableField && Array.isArray(tableField.answer)) {
-        // Handle table data - create multiple rows
-        tableField.answer.forEach((tableRow: any) => {
+      if (tableFields.length > 0) {
+        // Handle table data - create multiple rows (one per table row)
+        // Use the first table field for expanding (typically there's only one table per form)
+        const mainTableField = tableFields[0];
+        
+        mainTableField.value.forEach((tableRow: any) => {
           const rowData = { ...baseRow, ...formFields };
           
-          // Add table row data with proper column headers
+          // Add table row data with readable column names (already transformed server-side)
           Object.entries(tableRow).forEach(([colKey, colValue]) => {
             // Skip metadata fields
             if (colKey.startsWith('_')) return;
             
-            // Use column header from _columnHeaders, _tableMetadata, or the key itself
-            let columnHeader = colKey;
-            if (tableRow._columnHeaders && tableRow._columnHeaders[colKey]) {
-              columnHeader = tableRow._columnHeaders[colKey];
-            } else if (tableField._tableMetadata?.columns) {
-              const metaCol = tableField._tableMetadata.columns.find((c: any) => c.id === colKey);
-              if (metaCol) columnHeader = metaCol.label;
-            }
-            
-            rowData[columnHeader] = colValue;
+            // Column names are already readable from server transformation
+            rowData[colKey] = colValue;
           });
           
           rows.push(rowData);
         });
       } else {
-        // Single row
+        // No table data - single row with form fields
         rows.push({ ...baseRow, ...formFields });
       }
     });
@@ -229,30 +239,58 @@ export default function FormDataViewer() {
 
   // Export to CSV
   const exportToCSV = () => {
-    if (!selectedForm || filteredData.length === 0) return;
+    if (!selectedForm || filteredData.length === 0) {
+      toast({
+        title: "No data to export",
+        description: "Please select a form and ensure there is data to export.",
+        variant: "destructive"
+      });
+      return;
+    }
 
-    const headers = ["Timestamp", "ID", "FlowID", "Order Number", "System", "Flow Description", ...dynamicColumns.map(getColumnTitle)];
+    const headers = [
+      "Timestamp", 
+      "ID", 
+      "FlowID", 
+      "Order Number", 
+      "System", 
+      "Flow Description", 
+      ...dynamicColumns.map(getColumnTitle)
+    ];
+
     const csvData = filteredData.map(row => [
       format(new Date(row.Timestamp), "yyyy-MM-dd HH:mm:ss"),
       row.ID,
       row.FlowID,
-      row.OrderNumber,
-      row.System,
-      row.FlowDescription,
-      ...dynamicColumns.map(col => formatValue(row[col]))
+      row.OrderNumber || "",
+      row.System || "",
+      row.FlowDescription || "",
+      ...dynamicColumns.map(col => {
+        const value = formatValue(row[col]);
+        // Ensure proper escaping for CSV
+        return value;
+      })
     ]);
 
     const csvContent = [headers, ...csvData]
-      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .map(row => row.map(cell => {
+        const cellStr = String(cell || "");
+        return `"${cellStr.replace(/"/g, '""')}"`;
+      }).join(","))
       .join("\n");
 
-    const blob = new Blob([csvContent], { type: "text/csv" });
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${selectedForm.title}-${format(new Date(), "yyyy-MM-dd")}.csv`;
+    a.download = `${selectedForm.title}-${format(new Date(), "yyyy-MM-dd-HHmmss")}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+
+    toast({
+      title: "Export successful",
+      description: `Exported ${filteredData.length} responses to CSV.`,
+    });
   };
 
   return (

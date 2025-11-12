@@ -489,9 +489,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Create ALL next tasks using enhanced TAT calculation
         for (const nextRule of nextRules) {
           // Check if this next task has multiple parallel prerequisite tasks
-          // (i.e., multiple rules from different currentTasks pointing to the same nextTask)
+          // Find ALL rules that point to this same nextTask (regardless of status)
           const parallelPrerequisites = flowRules.filter(
-            rule => rule.nextTask === nextRule.nextTask && rule.status === completionStatus
+            rule => rule.nextTask === nextRule.nextTask
           );
 
           // If there are multiple parallel prerequisites, check merge condition
@@ -499,15 +499,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Get all tasks in this flow with the prerequisite task names
             const allFlowTasks = await storage.getTasksByFlowId(task.flowId);
             
-            // Get the merge condition from the rule (default to "all" if not specified)
-            const mergeCondition = nextRule.mergeCondition || "all";
+            // Determine the merge condition: if ANY rule specifies "all", use "all" (most restrictive)
+            // Only use "any" if ALL incoming rules specify "any"
+            const hasAllCondition = parallelPrerequisites.some(
+              rule => (rule.mergeCondition || "all") === "all"
+            );
+            const mergeCondition = hasAllCondition ? "all" : "any";
             
             if (mergeCondition === "all") {
               // ALL STEPS COMPLETE: Check if all parallel prerequisite tasks are completed
               const allPrerequisitesCompleted = parallelPrerequisites.every(prereqRule => {
-                // Find the task for this prerequisite
+                // Find the task for this prerequisite that matches the expected status
                 const prereqTask = allFlowTasks.find(
-                  t => t.taskName === prereqRule.currentTask && t.status === "completed"
+                  t => t.taskName === prereqRule.currentTask && 
+                       t.status === "completed"
                 );
                 return prereqTask !== undefined;
               });
@@ -515,8 +520,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
               // If not all prerequisites are completed, skip creating this next task for now
               if (!allPrerequisitesCompleted) {
                 console.log(`⏸️ [All Steps Complete] Waiting for all parallel tasks to complete before creating: ${nextRule.nextTask}`);
+                console.log(`   Prerequisites: ${parallelPrerequisites.map(r => r.currentTask).join(", ")}`);
                 continue; // Skip this next task creation
               }
+              console.log(`✅ [All Steps Complete] All prerequisites completed for: ${nextRule.nextTask}`);
             } else if (mergeCondition === "any") {
               // ANY STEP COMPLETE: At least one prerequisite is complete (current task just completed)
               // This means we proceed immediately when any parallel step completes
