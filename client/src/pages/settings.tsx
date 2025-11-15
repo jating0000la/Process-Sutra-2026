@@ -96,7 +96,7 @@ const settingsSections: { title: string; items: SettingCard[] }[] = [
         description: "View usage statistics and analytics",
         href: "/usage",
         icon: TrendingUp,
-        badge: "Coming Soon",
+        badge: "New",
       },
       {
         name: "Payments",
@@ -140,6 +140,7 @@ export default function Settings() {
               {section.items.map((item) => {
                 const IconComponent = item.icon;
                 const isComingSoon = item.badge === "Coming Soon";
+                const isNew = item.badge === "New";
                 
                 const cardContent = (
                   <div
@@ -160,7 +161,11 @@ export default function Settings() {
                               {item.name}
                             </h3>
                             {item.badge && (
-                              <span className="bg-orange-100 text-orange-700 text-xs px-2 py-1 rounded-full font-medium">
+                              <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                                isNew 
+                                  ? "bg-green-100 text-green-700" 
+                                  : "bg-orange-100 text-orange-700"
+                              }`}>
                                 {item.badge}
                               </span>
                             )}

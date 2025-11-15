@@ -2608,6 +2608,260 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     }
   });
 
+  // Usage Statistics API
+  app.get("/api/usage/summary", analyticsLimiter, isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      const organizationId = user.organizationId;
+      const dateRange = req.query.dateRange || 'month';
+      
+      // Calculate date ranges
+      const now = new Date();
+      const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+      
+      // Fetch all data
+      const [allTasks, allFormResponses, allUsers, org] = await Promise.all([
+        storage.getTasksByOrganization(organizationId),
+        storage.getFormResponsesByOrganization(organizationId),
+        storage.getUsersByOrganization(organizationId),
+        storage.getOrganization(organizationId)
+      ]);
+      
+      // Get storage data from MongoDB
+      let totalFileUploads = 0;
+      let totalBytes = 0;
+      let filesByType: Record<string, number> = {};
+      
+      try {
+        const { getFileCount } = await import('./mongo/gridfs');
+        const { getMongoClient } = await import('./mongo/client');
+        totalFileUploads = await getFileCount(organizationId);
+        
+        const client = await getMongoClient();
+        const dbName = process.env.MONGODB_DB as string;
+        const db = client.db(dbName);
+        const filesCollection = db.collection('uploads.files');
+        
+        const files = await filesCollection.find({ 'metadata.organizationId': organizationId }).toArray();
+        totalBytes = files.reduce((sum, file) => sum + (file.length || 0), 0);
+        
+        // Group by content type
+        files.forEach((file: any) => {
+          const type = file.contentType?.split('/')[0] || 'other';
+          filesByType[type] = (filesByType[type] || 0) + 1;
+        });
+      } catch (error) {
+        console.error("Error fetching storage data:", error);
+      }
+      
+      // Flow metrics
+      const flowIds = new Set(allTasks.map(t => t.flowId));
+      const totalFlows = flowIds.size;
+      const thisMonthTasks = allTasks.filter(t => new Date(t.createdAt) >= thisMonthStart);
+      const thisMonthFlowIds = new Set(thisMonthTasks.map(t => t.flowId));
+      const lastMonthTasks = allTasks.filter(t => new Date(t.createdAt) >= lastMonthStart && new Date(t.createdAt) <= lastMonthEnd);
+      const lastMonthFlowIds = new Set(lastMonthTasks.map(t => t.flowId));
+      
+      const activeFlows = new Set(allTasks.filter(t => t.status === 'pending').map(t => t.flowId)).size;
+      const completedFlows = new Set(allTasks.filter(t => t.status === 'completed').map(t => t.flowId)).size;
+      const cancelledFlows = new Set(allTasks.filter(t => t.status === 'cancelled').map(t => t.flowId)).size;
+      
+      const completedTasks = allTasks.filter(t => t.status === 'completed' && t.actualCompletionTime && t.createdAt);
+      const avgCompletionTime = completedTasks.length > 0
+        ? completedTasks.reduce((sum, t) => {
+            const diff = new Date(t.actualCompletionTime!).getTime() - new Date(t.createdAt).getTime();
+            return sum + diff / (1000 * 60 * 60 * 24); // Convert to days
+          }, 0) / completedTasks.length
+        : 0;
+      
+      const successRate = totalFlows > 0 ? ((completedFlows / totalFlows) * 100) : 0;
+      const flowTrend = lastMonthFlowIds.size > 0 
+        ? ((thisMonthFlowIds.size - lastMonthFlowIds.size) / lastMonthFlowIds.size * 100)
+        : 0;
+      
+      // Form metrics
+      const totalForms = allFormResponses.length;
+      const thisMonthForms = allFormResponses.filter(r => new Date(r.timestamp) >= thisMonthStart).length;
+      const lastMonthForms = allFormResponses.filter(r => new Date(r.timestamp) >= lastMonthStart && new Date(r.timestamp) <= lastMonthEnd).length;
+      const formTrend = lastMonthForms > 0 ? ((thisMonthForms - lastMonthForms) / lastMonthForms * 100) : 0;
+      
+      const formsByType: Record<string, number> = {};
+      allFormResponses.forEach(r => {
+        formsByType[r.formId] = (formsByType[r.formId] || 0) + 1;
+      });
+      
+      // User metrics
+      const activeUsers = allUsers.filter(u => u.status === 'active').length;
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      const activeToday = allUsers.filter(u => u.lastLoginAt && new Date(u.lastLoginAt) > tenMinutesAgo).length;
+      const avgTasksPerUser = allUsers.length > 0 ? thisMonthTasks.length / allUsers.length : 0;
+      
+      // Storage trend (comparing this month vs last month uploads)
+      const thisMonthStorage = totalFileUploads > 0 ? 100 : 0; // Placeholder - needs time-based tracking
+      const storageTrend = 15; // Placeholder
+      
+      // Cost calculation (example rates - adjust as needed)
+      const flowRate = 5; // ₹5 per flow
+      const userRate = 100; // ₹100 per active user
+      const formRate = 2; // ₹2 per form submission
+      
+      const flowCost = thisMonthFlowIds.size * flowRate;
+      const userCost = activeUsers * userRate;
+      const formCost = thisMonthForms * formRate;
+      const currentMonthCost = flowCost + userCost + formCost;
+      
+      const lastMonthCost = (lastMonthFlowIds.size * flowRate) + (activeUsers * userRate) + (lastMonthForms * formRate);
+      const costComparison = lastMonthCost > 0 ? ((currentMonthCost - lastMonthCost) / lastMonthCost * 100) : 0;
+      
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      const currentDay = now.getDate();
+      const projectedCost = (currentMonthCost / currentDay) * daysInMonth;
+      
+      // Performance metrics
+      const onTimeTasks = allTasks.filter(t => 
+        t.status === 'completed' && 
+        t.actualCompletionTime && 
+        t.plannedTime && 
+        new Date(t.actualCompletionTime) <= new Date(t.plannedTime)
+      ).length;
+      const tatCompliance = completedTasks.length > 0 ? (onTimeTasks / completedTasks.length * 100) : 0;
+      
+      res.json({
+        flows: {
+          total: totalFlows,
+          thisMonth: thisMonthFlowIds.size,
+          active: activeFlows,
+          completed: completedFlows,
+          cancelled: cancelledFlows,
+          successRate: Math.round(successRate * 10) / 10,
+          avgCompletionTime: Math.round(avgCompletionTime * 10) / 10,
+          trend: Math.round(flowTrend * 10) / 10
+        },
+        forms: {
+          total: totalForms,
+          thisMonth: thisMonthForms,
+          byFormType: formsByType,
+          avgSubmissionTime: 0, // Placeholder
+          trend: Math.round(formTrend * 10) / 10
+        },
+        storage: {
+          totalFiles: totalFileUploads,
+          totalBytes,
+          totalGB: totalBytes / (1024 * 1024 * 1024),
+          byFileType: filesByType,
+          avgFileSize: totalFileUploads > 0 ? totalBytes / totalFileUploads : 0,
+          trend: storageTrend
+        },
+        users: {
+          total: allUsers.length,
+          active: activeUsers,
+          activeToday,
+          avgTasksPerUser: Math.round(avgTasksPerUser * 10) / 10
+        },
+        cost: {
+          currentMonth: currentMonthCost,
+          flowCost,
+          userCost,
+          formCost,
+          projected: Math.round(projectedCost),
+          comparison: Math.round(costComparison * 10) / 10
+        },
+        performance: {
+          tatCompliance: Math.round(tatCompliance * 10) / 10,
+          onTimeRate: Math.round(tatCompliance * 10) / 10,
+          avgResponseTime: Math.round(avgCompletionTime * 10) / 10
+        },
+        quotas: {
+          maxUsers: org?.maxUsers || 0,
+          currentUsers: allUsers.length,
+          storageLimit: 100, // GB - from plan
+          storageUsed: totalBytes / (1024 * 1024 * 1024)
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching usage summary:", error);
+      res.status(500).json({ message: "Failed to fetch usage summary" });
+    }
+  });
+
+  app.get("/api/usage/trends", analyticsLimiter, isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      const organizationId = user.organizationId;
+      
+      const [allTasks, allFormResponses] = await Promise.all([
+        storage.getTasksByOrganization(organizationId),
+        storage.getFormResponsesByOrganization(organizationId)
+      ]);
+      
+      // Last 30 days daily data
+      const dailyData: Array<{ date: string; flows: number; forms: number; storage: number }> = [];
+      for (let i = 29; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        const dateStr = date.toISOString().split('T')[0];
+        
+        const dayStart = new Date(date.setHours(0, 0, 0, 0));
+        const dayEnd = new Date(date.setHours(23, 59, 59, 999));
+        
+        const dayTasks = allTasks.filter(t => {
+          const createdAt = new Date(t.createdAt);
+          return createdAt >= dayStart && createdAt <= dayEnd;
+        });
+        const dayFlows = new Set(dayTasks.map(t => t.flowId)).size;
+        
+        const dayForms = allFormResponses.filter(r => {
+          const timestamp = new Date(r.timestamp);
+          return timestamp >= dayStart && timestamp <= dayEnd;
+        }).length;
+        
+        dailyData.push({
+          date: format(dayStart, 'MMM dd'),
+          flows: dayFlows,
+          forms: dayForms,
+          storage: 0 // Placeholder
+        });
+      }
+      
+      // Flows by system
+      const systemCounts: Record<string, number> = {};
+      allTasks.forEach(t => {
+        if (t.system) {
+          systemCounts[t.system] = (systemCounts[t.system] || 0) + 1;
+        }
+      });
+      
+      const totalSystemTasks = Object.values(systemCounts).reduce((a, b) => a + b, 0);
+      const flowsBySystem = Object.entries(systemCounts).map(([system, count]) => ({
+        system,
+        count: new Set(allTasks.filter(t => t.system === system).map(t => t.flowId)).size,
+        percentage: Math.round((count / totalSystemTasks) * 100)
+      })).sort((a, b) => b.count - a.count);
+      
+      // Top forms
+      const formCounts: Record<string, number> = {};
+      allFormResponses.forEach(r => {
+        formCounts[r.formId] = (formCounts[r.formId] || 0) + 1;
+      });
+      
+      const topForms = Object.entries(formCounts)
+        .map(([formId, count]) => ({ formId, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10);
+      
+      res.json({
+        daily: dailyData,
+        flowsBySystem,
+        topForms
+      });
+    } catch (error) {
+      console.error("Error fetching usage trends:", error);
+      res.status(500).json({ message: "Failed to fetch usage trends" });
+    }
+  });
+
   // Organization-specific user routes
   app.get("/api/users", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
