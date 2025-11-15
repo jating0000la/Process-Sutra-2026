@@ -1286,6 +1286,7 @@ export default function VisualFlowBuilder() {
                     <Select 
                       value={newRule.currentTask || "__start__"} 
                       onValueChange={(val) => setNewRule({ ...newRule, currentTask: val === "__start__" ? "" : val })}
+                      disabled={!newRule.currentTask && availableTasks.length === 0}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select current task" />
@@ -1312,6 +1313,8 @@ export default function VisualFlowBuilder() {
                       value={newRule.currentTask}
                       onChange={(e) => setNewRule({ ...newRule, currentTask: e.target.value })}
                       placeholder="Leave empty for start task"
+                      disabled
+                      className="bg-gray-100 cursor-not-allowed"
                     />
                   )}
                   {newRule.currentTask === "__custom__" && (
@@ -1324,7 +1327,7 @@ export default function VisualFlowBuilder() {
                   )}
                   <p className="text-xs text-gray-500 mt-1">
                     {!newRule.currentTask || newRule.currentTask === "" 
-                      ? "This will be the start of your flow" 
+                      ? "🔒 Blocked for first task - This will be the start of your flow" 
                       : "Task that leads to next step"}
                   </p>
                 </div>
@@ -1335,6 +1338,8 @@ export default function VisualFlowBuilder() {
                     onChange={(e) => setNewRule({ ...newRule, status: e.target.value })}
                     placeholder="e.g., Done, Approved, Yes"
                     list="status-suggestions"
+                    disabled={!newRule.currentTask}
+                    className={!newRule.currentTask ? "bg-gray-100 cursor-not-allowed" : ""}
                   />
                   <datalist id="status-suggestions">
                     <option value="Done" />
@@ -1346,7 +1351,7 @@ export default function VisualFlowBuilder() {
                     <option value="Complete" />
                   </datalist>
                   <p className="text-xs text-gray-500 mt-1">
-                    Condition to trigger this path
+                    {!newRule.currentTask ? "🔒 Blocked for first task" : "Condition to trigger this path"}
                   </p>
                 </div>
               </div>
@@ -1420,7 +1425,7 @@ export default function VisualFlowBuilder() {
                     <SelectContent>
                       {(users as any[])?.map((user: any) => (
                         <SelectItem key={user.id} value={user.email}>
-                          {user.firstName} {user.lastName}
+                          {user.firstName} {user.lastName} ({user.email})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1586,7 +1591,7 @@ export default function VisualFlowBuilder() {
                       <SelectContent>
                         {(users as any[])?.map((user: any) => (
                           <SelectItem key={user.id} value={user.email}>
-                            {user.firstName} {user.lastName}
+                            {user.firstName} {user.lastName} ({user.email})
                           </SelectItem>
                         ))}
                       </SelectContent>
