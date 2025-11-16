@@ -734,7 +734,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Users, Settings, Activity, Shield, Smartphone, Clock, Eye, UserCheck, UserX, Edit2, Plus, Trash2 } from "lucide-react";
+import { Users, Settings, Activity, Shield, Smartphone, Clock, Eye, UserCheck, UserX, Edit2, Plus, Trash2, Mail, XCircle } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -748,8 +748,10 @@ export default function UserManagement() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [addUserDialogOpen, setAddUserDialogOpen] = useState(false);
+  const [inviteUserDialogOpen, setInviteUserDialogOpen] = useState(false);
   const [editFormData, setEditFormData] = useState<Partial<User>>({});
   const [newUserData, setNewUserData] = useState<Partial<User>>({});
+  const [inviteData, setInviteData] = useState({ email: '', firstName: '', lastName: '', role: 'user' });
   const { toast } = useToast();
   const { user: authUser, loading, handleTokenExpired } = useAuthContext();
 
@@ -773,6 +775,90 @@ export default function UserManagement() {
   // Fetch devices
   const { data: devices = [], isLoading: devicesLoading } = useQuery<UserDevice[]>({
     queryKey: ["/api/devices"],
+  });
+
+  // Fetch invitations
+  const { data: invitations = [], isLoading: invitationsLoading } = useQuery({
+    queryKey: ["/api/invitations"],
+    queryFn: async () => {
+      const response = await fetch("/api/invitations");
+      if (!response.ok) throw new Error("Failed to fetch invitations");
+      return response.json();
+    },
+  });
+
+  // Create invitation mutation
+  const createInvitationMutation = useMutation({
+    mutationFn: async (data: typeof inviteData) => {
+      const response = await apiRequest("POST", "/api/invitations", data);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to create invitation");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invitations"] });
+      toast({
+        title: "Invitation Sent! 📧",
+        description: "The user will receive an email to accept the invitation.",
+      });
+      setInviteUserDialogOpen(false);
+      setInviteData({ email: '', firstName: '', lastName: '', role: 'user' });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to send invitation",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Cancel invitation mutation
+  const cancelInvitationMutation = useMutation({
+    mutationFn: async (invitationId: string) => {
+      const response = await apiRequest("DELETE", `/api/invitations/${invitationId}`);
+      if (!response.ok) throw new Error("Failed to cancel invitation");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invitations"] });
+      toast({
+        title: "Invitation Cancelled",
+        description: "The invitation has been cancelled successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to cancel invitation",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Resend invitation mutation
+  const resendInvitationMutation = useMutation({
+    mutationFn: async (invitationId: string) => {
+      const response = await apiRequest("POST", `/api/invitations/${invitationId}/resend`, {});
+      if (!response.ok) throw new Error("Failed to resend invitation");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invitations"] });
+      toast({
+        title: "Invitation Resent! 📧",
+        description: "The invitation email has been sent again.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to resend invitation",
+        variant: "destructive",
+      });
+    },
   });
 
   // Update user mutation
@@ -932,6 +1018,28 @@ export default function UserManagement() {
     createUserMutation.mutate(newUserData);
   };
 
+  const handleInviteUser = () => {
+    if (!inviteData.email) {
+      toast({
+        title: "Validation Error",
+        description: "Email is required",
+        variant: "destructive",
+      });
+      return;
+    }
+    createInvitationMutation.mutate(inviteData);
+  };
+
+  const handleCancelInvitation = (invitationId: string) => {
+    if (window.confirm("Are you sure you want to cancel this invitation?")) {
+      cancelInvitationMutation.mutate(invitationId);
+    }
+  };
+
+  const handleResendInvitation = (invitationId: string) => {
+    resendInvitationMutation.mutate(invitationId);
+  };
+
   const handleAddUserClick = () => {
     setNewUserData({
       firstName: "",
@@ -949,6 +1057,11 @@ export default function UserManagement() {
       status: "active",
     });
     setAddUserDialogOpen(true);
+  };
+
+  const handleInviteUserClick = () => {
+    setInviteData({ email: '', firstName: '', lastName: '', role: 'user' });
+    setInviteUserDialogOpen(true);
   };
 
   const getStatusBadgeVariant = (status: string) => {
@@ -994,10 +1107,16 @@ export default function UserManagement() {
           title="User Management" 
           description="Manage organization users, roles, and access control"
           actions={
-            <Button onClick={handleAddUserClick}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add User
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={handleInviteUserClick} variant="default">
+                <Mail className="w-4 h-4 mr-2" />
+                Invite User
+              </Button>
+              <Button onClick={handleAddUserClick} variant="outline">
+                <Plus className="w-4 h-4 mr-2" />
+                Add User
+              </Button>
+            </div>
           }
         />
         
@@ -1009,6 +1128,15 @@ export default function UserManagement() {
           <TabsTrigger value="users" className="flex items-center gap-2">
             <Users className="w-4 h-4" />
             Users
+          </TabsTrigger>
+          <TabsTrigger value="invitations" className="flex items-center gap-2">
+            <Mail className="w-4 h-4" />
+            Invitations
+            {invitations.filter((inv: any) => inv.status === 'pending').length > 0 && (
+              <Badge variant="destructive" className="ml-1 px-1.5 py-0.5 text-xs">
+                {invitations.filter((inv: any) => inv.status === 'pending').length}
+              </Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="logs" className="flex items-center gap-2">
             <Activity className="w-4 h-4" />
@@ -1089,25 +1217,31 @@ export default function UserManagement() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Select
-                            value={user.status || 'active'}
-                            onValueChange={(value) => handleStatusChange(user.id, value)}
-                          >
-                            <SelectTrigger className="w-32">
-                              <SelectValue>
-                                <Badge variant={getStatusBadgeVariant(user.status || 'active')}>
-                                  {user.status || 'active'}
-                                </Badge>
-                              </SelectValue>
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="active">Active</SelectItem>
-                              <SelectItem value="inactive">Inactive</SelectItem>
-                              {user.role !== 'admin' && (
-                                <SelectItem value="suspended">Suspended</SelectItem>
-                              )}
-                            </SelectContent>
-                          </Select>
+                          {user.email === authUser?.email ? (
+                            <Badge variant={getStatusBadgeVariant(user.status || 'active')}>
+                              {user.status || 'active'}
+                            </Badge>
+                          ) : (
+                            <Select
+                              value={user.status || 'active'}
+                              onValueChange={(value) => handleStatusChange(user.id, value)}
+                            >
+                              <SelectTrigger className="w-32">
+                                <SelectValue>
+                                  <Badge variant={getStatusBadgeVariant(user.status || 'active')}>
+                                    {user.status || 'active'}
+                                  </Badge>
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="active">Active</SelectItem>
+                                <SelectItem value="inactive">Inactive</SelectItem>
+                                {user.role !== 'admin' && (
+                                  <SelectItem value="suspended">Suspended</SelectItem>
+                                )}
+                              </SelectContent>
+                            </Select>
+                          )}
                         </TableCell>
                         <TableCell>
                           {user.lastLoginAt
@@ -1134,6 +1268,116 @@ export default function UserManagement() {
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="invitations" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Mail className="w-5 h-5" />
+                    Pending Invitations
+                  </CardTitle>
+                  <CardDescription>
+                    Manage user invitations and invitation status
+                  </CardDescription>
+                </div>
+                <Button onClick={handleInviteUserClick} className="flex items-center gap-2">
+                  <Mail className="w-4 h-4" />
+                  Invite User
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {invitationsLoading ? (
+                <div className="text-center py-8">Loading invitations...</div>
+              ) : invitations.length === 0 ? (
+                <div className="text-center py-12">
+                  <Mail className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                  <h3 className="text-lg font-semibold mb-2">No invitations yet</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Start by inviting users to join your organization
+                  </p>
+                  <Button onClick={handleInviteUserClick}>
+                    <Mail className="w-4 h-4 mr-2" />
+                    Send First Invitation
+                  </Button>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Sent At</TableHead>
+                      <TableHead>Expires At</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {invitations.map((invitation: any) => (
+                      <TableRow key={invitation.id}>
+                        <TableCell className="font-medium">{invitation.email}</TableCell>
+                        <TableCell>
+                          {invitation.firstName} {invitation.lastName}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={getRoleBadgeVariant(invitation.role)}>
+                            {invitation.role}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={
+                              invitation.status === 'pending' ? 'default' :
+                              invitation.status === 'accepted' ? 'default' :
+                              invitation.status === 'rejected' ? 'destructive' :
+                              'secondary'
+                            }
+                          >
+                            {invitation.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {format(new Date(invitation.createdAt), "MMM dd, yyyy")}
+                        </TableCell>
+                        <TableCell>
+                          {format(new Date(invitation.expiresAt), "MMM dd, yyyy")}
+                        </TableCell>
+                        <TableCell>
+                          {invitation.status === 'pending' && (
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleResendInvitation(invitation.id)}
+                                disabled={resendInvitationMutation.isPending}
+                                title="Resend invitation"
+                              >
+                                <Mail className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => handleCancelInvitation(invitation.id)}
+                                disabled={cancelInvitationMutation.isPending}
+                                title="Cancel invitation"
+                              >
+                                <XCircle className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1405,6 +1649,86 @@ export default function UserManagement() {
               disabled={createUserMutation.isPending}
             >
               {createUserMutation.isPending ? "Creating..." : "Create User"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invite User Dialog */}
+      <Dialog open={inviteUserDialogOpen} onOpenChange={setInviteUserDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="w-5 h-5" />
+              Invite User
+            </DialogTitle>
+            <DialogDescription>
+              Send an invitation email to a new user to join your organization
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="inviteEmail">Email Address *</Label>
+              <Input
+                id="inviteEmail"
+                type="email"
+                placeholder="user@example.com"
+                value={inviteData.email}
+                onChange={(e) => setInviteData({ ...inviteData, email: e.target.value })}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="inviteFirstName">First Name (Optional)</Label>
+              <Input
+                id="inviteFirstName"
+                placeholder="John"
+                value={inviteData.firstName}
+                onChange={(e) => setInviteData({ ...inviteData, firstName: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="inviteLastName">Last Name (Optional)</Label>
+              <Input
+                id="inviteLastName"
+                placeholder="Doe"
+                value={inviteData.lastName}
+                onChange={(e) => setInviteData({ ...inviteData, lastName: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="inviteRole">Role</Label>
+              <Select
+                value={inviteData.role}
+                onValueChange={(value) => setInviteData({ ...inviteData, role: value })}
+              >
+                <SelectTrigger id="inviteRole">
+                  <SelectValue placeholder="Select role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mt-4">
+              <p className="text-sm text-blue-900 dark:text-blue-100">
+                📧 The user will receive an email with a secure link to accept the invitation. The invitation will expire in 7 days.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setInviteUserDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleInviteUser}
+              disabled={createInvitationMutation.isPending}
+            >
+              {createInvitationMutation.isPending ? "Sending..." : "Send Invitation"}
             </Button>
           </DialogFooter>
         </DialogContent>
