@@ -2,11 +2,20 @@ import express, { type Request, Response, NextFunction } from "express";
 import { createServer } from "http";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-// @ts-ignore - JS helper with runtime side-effects
-import loadEnv from "../load-env.js";
+import dotenv from "dotenv";
+import dotenvExpand from "dotenv-expand";
 
 // Load environment variables from .env and .env.local
-loadEnv();
+const env = dotenv.config();
+dotenvExpand.expand(env);
+
+// Load .env.local if it exists
+try {
+  const envLocal = dotenv.config({ path: '.env.local' });
+  dotenvExpand.expand(envLocal);
+} catch (e) {
+  // .env.local is optional
+}
 
 const app = express();
 app.use(express.json());

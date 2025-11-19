@@ -124,6 +124,13 @@ export default function Usage() {
   // Fetch usage summary
   const { data: summary, isLoading: summaryLoading } = useQuery<UsageSummary>({
     queryKey: ["/api/usage/summary", dateRange],
+    queryFn: async () => {
+      const res = await fetch(`/api/usage/summary?dateRange=${dateRange}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch usage summary");
+      return res.json();
+    },
     enabled: !!user && isAdmin,
     staleTime: 60000, // 1 minute
   });
@@ -131,6 +138,13 @@ export default function Usage() {
   // Fetch usage trends
   const { data: trends, isLoading: trendsLoading } = useQuery<UsageTrends>({
     queryKey: ["/api/usage/trends", dateRange],
+    queryFn: async () => {
+      const res = await fetch(`/api/usage/trends?dateRange=${dateRange}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch usage trends");
+      return res.json();
+    },
     enabled: !!user && isAdmin,
     staleTime: 60000,
   });
