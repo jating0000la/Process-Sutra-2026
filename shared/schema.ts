@@ -90,6 +90,8 @@ export const users = pgTable(
     index("idx_users_org_email").on(table.organizationId, table.email),
     index("idx_users_org_role_status").on(table.organizationId, table.role, table.status),
     index("idx_users_suspended").on(table.organizationId, table.status, table.updatedAt).where(sql`${table.status} = 'suspended'`),
+    // HIGH PRIORITY INDEX
+    index("idx_users_org_created").on(table.organizationId, table.createdAt.desc()),
   ]
 );
 
@@ -160,6 +162,8 @@ export const passwordChangeHistory = pgTable(
   },
   (table) => [
     index("idx_password_history_org").on(table.organizationId, table.changedAt),
+    // LOW PRIORITY INDEX
+    index("idx_password_history_user").on(table.userId, table.changedAt.desc()),
   ]
 );
 
@@ -229,6 +233,10 @@ export const tasks = pgTable(
     index("idx_tasks_planned_time").on(table.plannedTime).where(sql`${table.status} = 'pending'`),
     index("idx_tasks_org_created").on(table.organizationId, table.createdAt),
     index("idx_tasks_flow").on(table.flowId),
+    // CRITICAL PERFORMANCE INDEXES
+    index("idx_tasks_org_system_created").on(table.organizationId, table.system, table.createdAt.desc()),
+    index("idx_tasks_overdue").on(table.status, table.plannedTime).where(sql`${table.status} IN ('pending', 'in_progress')`),
+    index("idx_tasks_doer_dashboard").on(table.doerEmail, table.status, table.plannedTime.desc()),
   ]
 );
 
@@ -273,6 +281,8 @@ export const formResponses = pgTable(
     index("idx_form_responses_flow").on(table.flowId, table.taskId),
     index("idx_form_responses_org_form").on(table.organizationId, table.formId),
     index("idx_form_responses_task").on(table.taskId),
+    // HIGH PRIORITY INDEX
+    index("idx_form_responses_org_time").on(table.organizationId, table.timestamp.desc()),
   ]
 );
 
@@ -590,6 +600,8 @@ export const auditLogs = pgTable(
     index("idx_audit_logs_created_at").on(table.createdAt),
     index("idx_audit_logs_target_type").on(table.targetType),
     index("idx_audit_logs_target_id").on(table.targetId),
+    // LOW PRIORITY INDEX
+    index("idx_audit_logs_actor_time").on(table.actorId, table.createdAt.desc()),
   ]
 );
 
@@ -654,6 +666,8 @@ export const webhookDeliveryLog = pgTable(
     index("idx_webhook_delivery_log_webhook").on(table.webhookId, table.deliveredAt),
     index("idx_webhook_delivery_log_org").on(table.organizationId, table.deliveredAt),
     index("idx_webhook_delivery_log_status").on(table.httpStatus, table.deliveredAt),
+    // MEDIUM PRIORITY INDEX
+    index("idx_webhook_delivery_failures").on(table.webhookId, table.httpStatus, table.deliveredAt.desc()).where(sql`${table.httpStatus} >= 400 OR ${table.httpStatus} IS NULL`),
   ]
 );
 
