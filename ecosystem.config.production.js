@@ -1,13 +1,13 @@
 // PM2 Ecosystem Configuration for High-Concurrency Production
 // Optimized for 4 CPU cores, 16GB RAM, 200GB SSD
-// Designed for 300,000+ users with multiple Node.js instances
+// Target: 8,000+ concurrent users with cluster mode
 
 module.exports = {
   apps: [
     {
       name: 'processsutra',
       script: 'dist/index.js',
-      instances: 6, // Run 6 instances (1.5x CPU cores for I/O-bound operations)
+      instances: 4, // 4 instances = 1 per CPU core (optimal for 4-core system)
       exec_mode: 'cluster',
       
       // Environment variables
@@ -17,13 +17,13 @@ module.exports = {
       },
       
       // Performance tuning - Optimized for 16GB RAM
-      // Each instance gets ~2.5GB (6 instances * 2.5GB = 15GB, leaving 1GB for system)
-      node_args: '--max-old-space-size=2560 --max-http-header-size=16384 --optimize-for-size',
+      // Each instance gets ~3GB (4 instances * 3GB = 12GB, leaving 4GB for system/DB/Redis)
+      node_args: '--max-old-space-size=3072',
       
       // Auto-restart configuration
       autorestart: true,
       watch: false,
-      max_memory_restart: '2.5G',
+      max_memory_restart: '3G',
       
       // Logging
       error_file: '/var/log/pm2/processsutra-error.log',
@@ -58,3 +58,4 @@ module.exports = {
     }
   }
 };
+

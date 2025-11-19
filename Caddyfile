@@ -1,239 +1,71 @@
-# ProcessSutra High-Performance Multi-Tenant Caddy Configuration
-# Designed for 300,000+ users with load balancing and auto-scaling
-# Domain: processsutra.com + wildcard subdomains (*.processsutra.com)
-
-# Global options for performance tuning
 {
-    # Enable admin API for metrics
-    admin :2019
-    
-    # ACME/Let's Encrypt settings
-    email admin@processsutra.com
-    
-    # Enable HTTP/3 for better performance
+    # Global options
     servers {
-        protocol {
-            experimental_http3
+        max_header_size 16KB
+        timeouts {
+            read_body 30s
+            read_header 30s
+            write 30s
+            idle 120s
         }
     }
 }
 
-# Block direct IP access - redirect to main domain
-http://194.238.16.140, https://194.238.16.140 {
+processsutra.com www.processsutra.com {
+    # Enable compression
+    encode zstd gzip
+    
+    # Reverse proxy with optimizations
+    reverse_proxy 127.0.0.1:5000 {
+        # Load balancing
+        lb_policy round_robin
+        
+        # Increase connection limits
+        transport http {
+            # Keep connections alive
+            keepalive 120s
+            keepalive_idle_conns 100
+            max_conns_per_host 0
+            
+            # Timeouts
+            dial_timeout 10s
+            response_header_timeout 30s
+        }
+        
+        # Health check
+        health_uri /api/health
+        health_interval 30s
+        health_timeout 10s
+        
+        # Headers
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+    
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        X-XSS-Protection 1; mode=block
+        -Server
+    }
+    
+    # Cache static assets
+    @static {
+        path *.js *.css *.png *.jpg *.jpeg *.gif *.ico *.svg *.woff *.woff2
+    }
+    header @static Cache-Control public, max-age=31536000
+    
+    # Logging
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 100mb
+            roll_keep 5
+        }
+    }
+}
+
+194.238.16.140 {
     redir https://processsutra.com{uri} permanent
 }
-
-# Main domain + wildcard subdomains (multi-tenant routing)
-# Handles: processsutra.com, www.processsutra.com, *.processsutra.com
-processsutra.com, www.processsutra.com, *.processsutra.com {
-    # Automatic HTTPS with Let's Encrypt (wildcard cert)
-    tls {
-        protocols tls1.2 tls1.3
-    }
-    
-    # High-performance compression
-    encode {
-        gzip 6
-        zstd
-        minimum_length 256
-    }
-    
-    # Static assets with aggressive caching
-    @static {
-        path *.css *.js *.ico *.gif *.jpg *.jpeg *.png *.svg *.woff *.woff2 *.ttf *.eot *.webp *.avif
-    }
-    handle @static {
-        header {
-            Cache-Control "public, max-age=31536000, immutable"
-            X-Content-Type-Options "nosniff"
-        }
-        reverse_proxy localhost:5000 localhost:5001 localhost:5002 localhost:5003 localhost:5004 localhost:5005 {
-            lb_policy round_robin
-            lb_try_duration 2s
-            lb_try_interval 500ms
-            
-            health_uri /api/health
-            health_interval 10s
-            health_timeout 5s
-            health_status 200
-            
-            header_up Host {host}
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-            header_up X-Forwarded-Host {host}
-        }
-    }
-    
-    # API routes with optimized settings
-    @api {
-        path /api/*
-    }
-    handle @api {
-        reverse_proxy localhost:5000 localhost:5001 localhost:5002 localhost:5003 localhost:5004 localhost:5005 {
-            # Round-robin load balancing across 6 Node instances
-            lb_policy round_robin
-            lb_try_duration 2s
-            lb_try_interval 500ms
-            
-            # Health checks for automatic failover
-            health_uri /api/health
-            health_interval 10s
-            health_timeout 5s
-            health_status 200
-            
-            # Connection pooling for high concurrency (optimized for 16GB RAM)
-            transport http {
-                keepalive 90s
-                keepalive_idle_conns 200
-                keepalive_idle_conns_per_host 100
-                read_buffer_size 8192
-                write_buffer_size 8192
-                max_response_header_size 10240
-                dial_timeout 10s
-                response_header_timeout 30s
-            }
-            
-            # Forward essential headers
-            header_up Host {host}
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-            header_up X-Forwarded-Host {host}
-            header_up X-Forwarded-Port {server_port}
-            
-            # Remove backend headers
-            header_down -Server
-            header_down -X-Powered-By
-        }
-    }
-    
-    # WebSocket support for real-time features
-    @websocket {
-        header Connection *Upgrade*
-        header Upgrade websocket
-    }
-    handle @websocket {
-        reverse_proxy localhost:5000 localhost:5001 localhost:5002 localhost:5003 localhost:5004 localhost:5005 {
-            lb_policy least_conn
-            
-            transport http {
-                keepalive off
-                read_buffer_size 8192
-                write_buffer_size 8192
-            }
-            
-            header_up Host {host}
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-            header_up Connection {header.Connection}
-            header_up Upgrade {header.Upgrade}
-        }
-    }
-    
-    # Default route - all other requests
-    handle {
-        reverse_proxy localhost:5000 localhost:5001 localhost:5002 localhost:5003 localhost:5004 localhost:5005 {
-            # Round-robin load balancing across 6 instances
-            lb_policy round_robin
-            lb_try_duration 2s
-            lb_try_interval 500ms
-            
-            # Health checks
-            health_uri /api/health
-            health_interval 10s
-            health_timeout 5s
-            health_status 200
-            
-            # High-performance connection settings (optimized for 16GB RAM)
-            transport http {
-                keepalive 90s
-                keepalive_idle_conns 200
-                keepalive_idle_conns_per_host 100
-                read_buffer_size 8192
-                write_buffer_size 8192
-                max_response_header_size 10240
-                dial_timeout 10s
-                response_header_timeout 30s
-                expect_continue_timeout 3s
-            }
-            
-            # Forward headers
-            header_up Host {host}
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-            header_up X-Forwarded-Host {host}
-            header_up X-Forwarded-Port {server_port}
-            
-            # Clean response headers
-            header_down -Server
-            header_down -X-Powered-By
-        }
-    }
-    
-    # Security headers (applied to all responses)
-    header {
-        # HSTS with preload
-        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
-        
-        # Prevent clickjacking
-        X-Frame-Options "SAMEORIGIN"
-        
-        # Prevent MIME sniffing
-        X-Content-Type-Options "nosniff"
-        
-        # XSS protection
-        X-XSS-Protection "1; mode=block"
-        
-        # Referrer policy
-        Referrer-Policy "strict-origin-when-cross-origin"
-        
-        # Content Security Policy (adjust as needed)
-        Content-Security-Policy "default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; frame-ancestors 'self';"
-        
-        # Permissions policy
-        Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
-        
-        # Remove identifying headers
-        -Server
-        -X-Powered-By
-    }
-    
-    # Custom error handling
-    handle_errors {
-        @502 expression {http.error.status_code} == 502
-        @503 expression {http.error.status_code} == 503
-        @504 expression {http.error.status_code} == 504
-        @500 expression {http.error.status_code} == 500
-        @404 expression {http.error.status_code} == 404
-        @403 expression {http.error.status_code} == 403
-        
-        respond @502 "Service temporarily unavailable. Please try again in a moment." 502
-        respond @503 "Service under maintenance. Please check back soon." 503
-        respond @504 "Gateway timeout. The request took too long to process." 504
-        respond @500 "Internal server error. Our team has been notified." 500
-        respond @404 "Page not found. Please check the URL." 404
-        respond @403 "Access forbidden." 403
-    }
-    
-    # Structured logging with rotation
-    log {
-        output file /var/log/caddy/processsutra-access.log {
-            roll_size 100mb
-            roll_keep 10
-            roll_keep_for 720h
-        }
-        format json {
-            time_format "iso8601"
-            message_key "msg"
-        }
-        level INFO
-    }
-}
-
-# Redirect www to non-www (optional - remove if you want www)
-# www.processsutra.com {
-#     redir https://processsutra.com{uri} permanent
-# }
