@@ -312,7 +312,7 @@ export default function FormBuilder() {
               <SelectValue placeholder="Select an option" />
             </SelectTrigger>
             <SelectContent>
-              {question.options?.map((option, index) => (
+              {question.options?.filter(opt => opt && opt.trim() !== '').map((option, index) => (
                 <SelectItem key={index} value={option}>{option}</SelectItem>
               ))}
             </SelectContent>
@@ -674,7 +674,7 @@ export default function FormBuilder() {
                       <div>
                         <Label>Options</Label>
                         <div className="space-y-2">
-                          {selectedQuestion.options?.map((option, index) => (
+                          {selectedQuestion.options?.filter(opt => opt !== undefined && opt !== null).map((option, index) => (
                             <div key={index} className="flex space-x-2">
                               <Input
                                 value={option}
@@ -700,7 +700,8 @@ export default function FormBuilder() {
                             variant="outline"
                             size="sm"
                             onClick={() => {
-                              const newOptions = [...(selectedQuestion.options || []), `Option ${(selectedQuestion.options?.length || 0) + 1}`];
+                              const validOptions = (selectedQuestion.options || []).filter(opt => opt && opt.trim() !== '');
+                              const newOptions = [...validOptions, `Option ${validOptions.length + 1}`];
                               updateQuestion(selectedQuestion.id, { options: newOptions });
                             }}
                           >
@@ -782,7 +783,8 @@ export default function FormBuilder() {
                                       variant="ghost"
                                       size="sm"
                                       onClick={() => {
-                                        const newOptions = [...(column.options || []), `Option ${((column.options || []).length) + 1}`];
+                                        const validOptions = (column.options || []).filter(opt => opt && opt.trim() !== '');
+                                        const newOptions = [...validOptions, `Option ${validOptions.length + 1}`];
                                         updateTableColumnOptions(column.id, newOptions);
                                       }}
                                       className="h-8 text-xs"

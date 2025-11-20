@@ -344,14 +344,16 @@ export default function FormRenderer({
                               <SelectValue placeholder="Select..." />
                             </SelectTrigger>
                             <SelectContent>
-                              {col.options && col.options.length > 0 ? (
-                                col.options.map((option) => (
-                                  <SelectItem key={option} value={option}>
-                                    {option}
-                                  </SelectItem>
-                                ))
+                              {col.options && col.options.filter(opt => opt && opt.trim() !== '').length > 0 ? (
+                                col.options
+                                  .filter(opt => opt && opt.trim() !== '')
+                                  .map((option) => (
+                                    <SelectItem key={option} value={option}>
+                                      {option}
+                                    </SelectItem>
+                                  ))
                               ) : (
-                                <SelectItem value="no-options" disabled>
+                                <SelectItem value="__no_options__" disabled>
                                   No options configured
                                 </SelectItem>
                               )}
@@ -590,7 +592,7 @@ export default function FormRenderer({
                           <SelectValue placeholder="Select an option" />
                         </SelectTrigger>
                         <SelectContent>
-                          {question.options?.map((option) => (
+                          {question.options?.filter(opt => opt && opt.trim() !== '').map((option) => (
                             <SelectItem key={option} value={option}>
                               {option}
                             </SelectItem>
