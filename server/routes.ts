@@ -1563,11 +1563,24 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     try {
       const userId = req.user.claims.sub;
       const user = req.currentUser;
+      
+      // Fetch the task to get orderNumber
+      const task = await storage.getTaskById(req.body.taskId);
+      if (!task) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+      
+      // Verify task belongs to user's organization
+      if (task.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied to this task" });
+      }
+      
       const validatedData = insertFormResponseSchema.parse({
         ...req.body,
         organizationId: user.organizationId,
         submittedBy: userId,
         responseId: randomUUID(),
+        orderNumber: task.orderNumber, // Include orderNumber from task
       });
       const response = await storage.createFormResponse(validatedData);
 
@@ -1581,6 +1594,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           formId: response.formId,
           formData: response.formData,
           submittedBy: response.submittedBy,
+          orderNumber: response.orderNumber,
           timestamp: response.timestamp
         });
       })().catch(err => console.error('[Webhook] Error firing form.submitted webhooks:', err));

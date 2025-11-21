@@ -48,13 +48,13 @@ export default function Header({ title, description, actions }: HeaderProps) {
   return (
     <>
       {/* Navigation Header */}
-      <header className="fixed top-0 inset-x-0 h-16 bg-white/80 backdrop-blur border-b border-gray-200 z-40">
-        <div className="px-4 sm:px-6 lg:px-8 h-full flex items-center justify-between">
-          <div className="flex items-center space-x-3">
+      <header className="fixed top-0 inset-x-0 h-16 bg-white/80 backdrop-blur border-b border-gray-200 z-50">
+        <div className="px-3 sm:px-4 lg:px-6 h-full flex items-center justify-between">
+          <div className="flex items-center space-x-2 sm:space-x-3">
             <Button
               variant="ghost"
               size="icon"
-              className="md:hidden"
+              className="md:hidden h-9 w-9"
               onClick={toggleSidebar}
               aria-label="Toggle navigation"
             >
@@ -73,28 +73,28 @@ export default function Header({ title, description, actions }: HeaderProps) {
             <img
               src="/src/logo/ProcessSutra2.png"
               alt="ProcessSutra Logo"
-              className="h-10 w-auto object-contain cursor-pointer"
+              className="h-8 sm:h-10 w-auto object-contain cursor-pointer"
               onClick={() => setLocation("/")}
             />
           </div>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 sm:space-x-3">
             <NotificationDropdown />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="flex items-center space-x-3 p-2">
-                  <Avatar className="h-8 w-8">
+                <Button variant="ghost" className="flex items-center space-x-2 sm:space-x-3 p-1.5 sm:p-2">
+                  <Avatar className="h-7 w-7 sm:h-8 sm:w-8">
                     <AvatarImage 
                       alt="User profile"
                       className="profile-image"
                     />
-                    <AvatarFallback>
+                    <AvatarFallback className="text-xs sm:text-sm">
                       {getInitials(user?.displayName)}
                     </AvatarFallback>
                   </Avatar>
                   <span className="hidden sm:inline text-sm font-medium text-gray-700">
                     {getDisplayName(user?.displayName)}
                   </span>
-                  <ChevronDown className="h-4 w-4 text-gray-500" />
+                  <ChevronDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500 hidden sm:block" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
@@ -121,15 +121,23 @@ export default function Header({ title, description, actions }: HeaderProps) {
       <div className="h-16" aria-hidden="true" />
       
       {/* Page Header */}
-      <div className="bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60 border-b border-gray-200 px-6 py-4 sticky top-16 z-30">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+      <div className="bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60 border-b border-gray-200 px-3 sm:px-4 lg:px-6 py-3 sm:py-4 sticky top-16 z-30">
+        <div className="flex flex-col gap-3 sm:gap-4">
+          {/* Title Section */}
+          <div className="flex-shrink-0">
+            <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 line-clamp-1">{title}</h1>
             {description && (
-              <p className="text-sm text-gray-600">{description}</p>
+              <p className="text-xs sm:text-sm text-gray-600 mt-0.5 sm:mt-1 line-clamp-2">{description}</p>
             )}
           </div>
-          {actions && <div>{actions}</div>}
+          {/* Actions Section - Scrollable on mobile */}
+          {actions && (
+            <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0 pb-1 sm:pb-0">
+              <div className="flex items-center gap-2 min-w-max sm:min-w-0 sm:flex-wrap">
+                {actions}
+              </div>
+            </div>
+          )}
         </div>
       </div>
       {/* Overlay handled at layout level */}

@@ -890,7 +890,8 @@ export class DatabaseStorage implements IStorage {
           taskName: response.taskName,
           formId: response.formId,
           submittedBy: response.submittedBy,
-          orderNumber: (taskDetails?.orderNumber ?? undefined) as any,
+          // Use orderNumber from response if available, otherwise from task details
+          orderNumber: ((response as any).orderNumber ?? taskDetails?.orderNumber ?? undefined) as any,
           system: taskDetails?.system ?? undefined,
           flowDescription: taskDetails?.flowDescription ?? undefined,
           flowInitiatedBy: taskDetails?.flowInitiatedBy ?? undefined,

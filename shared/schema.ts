@@ -275,6 +275,7 @@ export const formResponses = pgTable(
     formId: varchar("form_id").notNull(),
     submittedBy: varchar("submitted_by").notNull(),
     formData: jsonb("form_data").notNull(), // Form field responses
+    orderNumber: varchar("order_number"), // Order/case number from the flow
     timestamp: timestamp("timestamp").defaultNow(),
   },
   (table) => [
@@ -283,6 +284,7 @@ export const formResponses = pgTable(
     index("idx_form_responses_task").on(table.taskId),
     // HIGH PRIORITY INDEX
     index("idx_form_responses_org_time").on(table.organizationId, table.timestamp.desc()),
+    index("idx_form_responses_order").on(table.organizationId, table.orderNumber),
   ]
 );
 

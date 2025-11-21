@@ -1079,34 +1079,34 @@ export default function Tasks() {
           title="My Tasks" 
           description="Manage and track your assigned tasks"
           actions={
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center flex-wrap gap-2">
               {/* View Mode Toggle */}
               <div className="flex items-center bg-white dark:bg-gray-800 rounded-lg p-1 shadow-sm border border-gray-200 dark:border-gray-700">
                 <Button
                   variant={viewMode === "table" ? "default" : "ghost"}
                   size="sm"
                   onClick={() => setViewMode("table")}
-                  className={`h-8 px-3 rounded-md transition-all ${
+                  className={`h-7 sm:h-8 px-2 sm:px-3 text-xs sm:text-sm rounded-md transition-all ${
                     viewMode === "table" 
                       ? "bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-sm" 
                       : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
                   }`}
                 >
-                  <List className="w-4 h-4 mr-1" />
-                  Table
+                  <List className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-1" />
+                  <span className="hidden sm:inline">Table</span>
                 </Button>
                 <Button
                   variant={viewMode === "cards" ? "default" : "ghost"}
                   size="sm"
                   onClick={() => setViewMode("cards")}
-                  className={`h-8 px-3 rounded-md transition-all ${
+                  className={`h-7 sm:h-8 px-2 sm:px-3 text-xs sm:text-sm rounded-md transition-all ${
                     viewMode === "cards" 
                       ? "bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-sm" 
                       : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
                   }`}
                 >
-                  <Grid className="w-4 h-4 mr-1" />
-                  Cards
+                  <Grid className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-1" />
+                  <span className="hidden sm:inline">Cards</span>
                 </Button>
               </div>
               
@@ -1115,26 +1115,29 @@ export default function Tasks() {
                 onClick={handleRefresh} 
                 disabled={isRefreshing}
                 variant="outline"
-                className="h-9"
+                size="sm"
+                className="h-7 sm:h-9 px-2 sm:px-4 text-xs sm:text-sm"
               >
-                <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
-                {isRefreshing ? "Refreshing..." : "Refresh"}
+                <RefreshCw className={`w-3 h-3 sm:w-4 sm:h-4 sm:mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">{isRefreshing ? "Refreshing..." : "Refresh"}</span>
               </Button>
               
               <Button 
                 onClick={handleExportData} 
                 disabled={isExporting}
                 variant="outline"
+                size="sm"
+                className="h-7 sm:h-9 px-2 sm:px-4 text-xs sm:text-sm"
               >
-                <Download className="w-4 h-4 mr-2" />
-                {isExporting ? "Exporting..." : "Export Data"}
+                <Download className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
+                <span className="hidden sm:inline">{isExporting ? "Exporting..." : "Export Data"}</span>
               </Button>
 
               <Dialog open={isStartFlowDialogOpen} onOpenChange={setIsStartFlowDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button>
-                    <Play className="w-4 h-4 mr-2" />
-                    Start Flow
+                  <Button size="sm" className="h-7 sm:h-9 px-2 sm:px-4 text-xs sm:text-sm">
+                    <Play className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Start Flow</span>
                   </Button>
                 </DialogTrigger>
                 <DialogContent>

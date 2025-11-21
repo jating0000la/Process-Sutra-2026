@@ -132,13 +132,13 @@ export default function Sidebar() {
       {/* Overlay for mobile */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/40 z-30 md:hidden"
+          className="fixed inset-0 bg-black/40 z-40 md:hidden"
           onClick={closeSidebar}
         />
       )}
       <aside
         className={cn(
-          "fixed md:static inset-y-0 left-0 z-30 transform transition-all duration-300 flex flex-col bg-white border-r border-gray-200 shadow-sm overflow-y-auto",
+          "fixed md:static inset-y-0 left-0 z-40 transform transition-all duration-300 flex flex-col bg-white border-r border-gray-200 shadow-sm overflow-y-auto",
           sidebarOpen ? "translate-x-0 w-64" : "-translate-x-full md:translate-x-0 md:w-20"
         )}
       >
