@@ -563,7 +563,7 @@ export default function FormBuilder() {
 
         {/* Form Builder Modal */}
         <Dialog open={isBuilderOpen} onOpenChange={setIsBuilderOpen}>
-          <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden">
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
             <DialogHeader>
               <DialogTitle>
                 {currentForm ? "Edit Form Template" : "Create Form Template"}
@@ -571,7 +571,7 @@ export default function FormBuilder() {
             </DialogHeader>
             
             {/* Tabs for Builder and Communication */}
-            <div className="flex border-b border-gray-200 mb-4">
+            <div className="flex border-b border-gray-200 mb-4 flex-shrink-0">
               <button
                 className={`px-4 py-2 font-medium transition-colors ${
                   activeTab === "builder"
@@ -596,7 +596,7 @@ export default function FormBuilder() {
             </div>
             
             {activeTab === "builder" && (
-            <div className="flex h-[70vh]">{/* Form Builder Tab Content */}
+            <div className="flex flex-1 min-h-0">{/* Form Builder Tab Content */}
               {/* Form Elements Palette */}
               <div className="w-1/4 bg-gray-50 p-4 border-r border-gray-200 overflow-y-auto">
                 <h3 className="text-sm font-semibold text-gray-900 mb-3">Form Elements</h3>
@@ -888,7 +888,7 @@ export default function FormBuilder() {
             )}
             
             {activeTab === "communication" && (
-              <div className="h-[70vh] overflow-y-auto p-6">
+              <div className="flex-1 overflow-y-auto p-6 min-h-0">
                 <div className="max-w-3xl mx-auto space-y-6">
                   {/* WhatsApp Configuration */}
                   <Card>
@@ -1018,7 +1018,7 @@ export default function FormBuilder() {
               </div>
             )}
             
-            <div className="flex justify-end space-x-3 pt-4 border-t">
+            <div className="flex justify-end space-x-3 pt-4 border-t flex-shrink-0 bg-white sticky bottom-0">
               <Button variant="outline" onClick={() => setIsBuilderOpen(false)}>
                 Cancel
               </Button>
