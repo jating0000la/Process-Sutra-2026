@@ -106,16 +106,16 @@ const getRulesBySystem = (flowRules: any, system: string): any[] => {
 };
 
 export default function AdvancedSimulator() {
-  const { isAuthenticated, isLoading, dbUser } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const { toast } = useToast();
 
   // Redirect non-admin users
   useEffect(() => {
-    if (!isLoading && dbUser && dbUser.role !== 'admin') {
+    if (!isLoading && user && user.role !== 'admin') {
       window.location.href = '/';
       return;
     }
-  }, [isLoading, dbUser]);
+  }, [isLoading, user]);
 
   const { data: flowRules } = useQuery({ queryKey: ["/api/flow-rules"], enabled: isAuthenticated });
   const { data: tatConfig } = useQuery({ queryKey: ["/api/tat-config"], enabled: isAuthenticated });

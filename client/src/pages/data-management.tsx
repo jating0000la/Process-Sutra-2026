@@ -46,7 +46,7 @@ export default function DataManagement() {
     {
       id: "forms",
       name: "Form Submissions",
-      description: "Export form responses to CSV or delete all submissions permanently",
+      description: "Export form responses as ZIP with multiple CSV files (one per form) or delete permanently",
       icon: FileText,
       color: "green",
     },
@@ -56,6 +56,13 @@ export default function DataManagement() {
       description: "Export task records to CSV or delete all task history permanently",
       icon: CheckCircle,
       color: "purple",
+    },
+    {
+      id: "files",
+      name: "Uploaded Files",
+      description: "Download all uploaded files and form submissions as ZIP archive or delete permanently",
+      icon: FileText,
+      color: "indigo",
     },
     {
       id: "users",
@@ -70,8 +77,13 @@ export default function DataManagement() {
   const handleExport = async (categoryId: string, categoryName: string) => {
     setExportLoading(categoryId);
     try {
-      // Fetch CSV data
-      const response = await fetch(`/api/export/${categoryId}?format=csv`, {
+      // Determine file extension based on category
+      const isZipCategory = categoryId === 'files' || categoryId === 'forms';
+      const fileExtension = isZipCategory ? 'zip' : 'csv';
+      const format = isZipCategory ? '' : '?format=csv';
+      
+      // Fetch data
+      const response = await fetch(`/api/export/${categoryId}${format}`, {
         method: "GET",
         credentials: "include",
       });
@@ -84,7 +96,7 @@ export default function DataManagement() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${categoryId}_export_${new Date().toISOString().split("T")[0]}.csv`;
+      a.download = `${categoryId}_export_${new Date().toISOString().split("T")[0]}.${fileExtension}`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -92,7 +104,7 @@ export default function DataManagement() {
 
       toast({
         title: "Export Successful",
-        description: `${categoryName} has been exported as CSV successfully.`,
+        description: `${categoryName} has been exported successfully.`,
       });
     } catch (error) {
       toast({

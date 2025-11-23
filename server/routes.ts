@@ -23,6 +23,7 @@ import { calculateTAT, TATConfig } from "./tatCalculator";
 import uploadsRouter from './uploads.js';
 import * as crypto from 'crypto';
 import { sanitizeFlowRule, sanitizeFlowRules } from './inputSanitizer';
+import archiver from 'archiver';
 
 // Analytics cache - 5 minute TTL to reduce database load
 const analyticsCache = new NodeCache({ 
@@ -2060,18 +2061,57 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           break;
           
         case 'forms':
-          // Export all form submissions from MongoDB
-          const formResponses = await storage.getMongoFormResponsesByOrgAndForm({
+          // Export all form submissions from MongoDB as ZIP with multiple CSV files
+          const formResponsesData = await storage.getMongoFormResponsesByOrgAndForm({
             orgId: user.organizationId,
             page: 1,
-            pageSize: 5000, // Reduced from 10000 to prevent memory issues
+            pageSize: 10000,
           });
-          rawData = formResponses.data || [];
           
-          if (rawData.length >= 5000) {
-            console.warn(`[AUDIT] Large form export - User: ${user.email}, Records: ${rawData.length} (may be truncated)`);
+          const allFormResponses = formResponsesData.data || [];
+          
+          if (allFormResponses.length === 0) {
+            return res.status(404).json({ message: "No form submissions found for this organization" });
           }
-          break;
+          
+          if (allFormResponses.length >= 10000) {
+            console.warn(`[AUDIT] Large form export - User: ${user.email}, Records: ${allFormResponses.length} (may be truncated)`);
+          }
+          
+          // Group responses by formId
+          const formResponsesByFormId = allFormResponses.reduce((acc: any, response: any) => {
+            const formId = response.formId || 'unknown';
+            if (!acc[formId]) {
+              acc[formId] = [];
+            }
+            acc[formId].push(response);
+            return acc;
+          }, {});
+          
+          // Create ZIP archive with multiple CSV files
+          const formsArchive = archiver('zip', { zlib: { level: 9 } });
+          const formsTimestamp = new Date().toISOString().split('T')[0];
+          
+          res.setHeader('Content-Type', 'application/zip');
+          res.setHeader('Content-Disposition', `attachment; filename="form_submissions_${formsTimestamp}.zip"`);
+          
+          formsArchive.pipe(res);
+          
+          // Create CSV for each form
+          for (const [formId, responses] of Object.entries(formResponsesByFormId)) {
+            try {
+              const csvData = convertToCSV(responses as any[], 'forms');
+              const sanitizedFormId = formId.replace(/[^a-zA-Z0-9._-]/g, '_');
+              formsArchive.append(csvData, { name: `${sanitizedFormId}_submissions.csv` });
+            } catch (csvError) {
+              console.error(`Error creating CSV for form ${formId}:`, csvError);
+            }
+          }
+          
+          await formsArchive.finalize();
+          
+          console.log(`[AUDIT] Forms Export Success - User: ${user.email}, Forms: ${Object.keys(formResponsesByFormId).length}, Total Submissions: ${allFormResponses.length}, Organization: ${user.organizationId}`);
+          return; // Exit early since we're streaming
           
         case 'tasks':
           // Export all tasks
@@ -2087,6 +2127,86 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           
           rawData = tasks;
           break;
+          
+        case 'files':
+          // Export all uploaded files and form submission data as ZIP
+          const { getUploadsBucket } = await import('./mongo/gridfs.js');
+          const bucket = await getUploadsBucket();
+          
+          // Get all files for this organization
+          const files = await bucket.find({ 'metadata.orgId': user.organizationId }).toArray();
+          
+          // Get all form submissions for this organization
+          const formSubmissionsData = await storage.getMongoFormResponsesByOrgAndForm({
+            orgId: user.organizationId,
+            page: 1,
+            pageSize: 10000,
+          });
+          
+          if (files.length === 0 && (!formSubmissionsData.data || formSubmissionsData.data.length === 0)) {
+            return res.status(404).json({ message: "No files or form data found for this organization" });
+          }
+          
+          if (files.length > 1000) {
+            return res.status(413).json({ 
+              message: `Too many files (${files.length}). Maximum 1000 files allowed per export. Please contact support.`,
+              fileCount: files.length,
+              maxAllowed: 1000
+            });
+          }
+          
+          // Create ZIP archive
+          const archive = archiver('zip', { zlib: { level: 9 } });
+          const timestamp = new Date().toISOString().split('T')[0];
+          
+          res.setHeader('Content-Type', 'application/zip');
+          res.setHeader('Content-Disposition', `attachment; filename="files_and_forms_export_${timestamp}.zip"`);
+          
+          archive.pipe(res);
+          
+          // Add uploaded files to the archive
+          if (files.length > 0) {
+            for (const file of files) {
+              try {
+                const downloadStream = bucket.openDownloadStream(file._id);
+                const metadata = file.metadata || {};
+                const sanitizedFilename = file.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+                const folderName = metadata.formId || 'uncategorized';
+                archive.append(downloadStream, { name: `uploads/${folderName}/${sanitizedFilename}` });
+              } catch (fileError) {
+                console.error(`Error adding file ${file._id} to archive:`, fileError);
+              }
+            }
+          }
+          
+          // Add form submission data as CSV files grouped by formId
+          if (formSubmissionsData.data && formSubmissionsData.data.length > 0) {
+            // Group responses by formId
+            const responsesByForm = formSubmissionsData.data.reduce((acc: any, response: any) => {
+              const formId = response.formId || 'unknown';
+              if (!acc[formId]) {
+                acc[formId] = [];
+              }
+              acc[formId].push(response);
+              return acc;
+            }, {});
+            
+            // Create CSV for each form
+            for (const [formId, responses] of Object.entries(responsesByForm)) {
+              try {
+                const csvData = convertToCSV(responses as any[], 'forms');
+                const sanitizedFormId = formId.replace(/[^a-zA-Z0-9._-]/g, '_');
+                archive.append(csvData, { name: `form_submissions/${sanitizedFormId}_submissions.csv` });
+              } catch (csvError) {
+                console.error(`Error creating CSV for form ${formId}:`, csvError);
+              }
+            }
+          }
+          
+          await archive.finalize();
+          
+          console.log(`[AUDIT] Files Export Success - User: ${user.email}, Files: ${files.length}, Form Submissions: ${formSubmissionsData.data?.length || 0}, Organization: ${user.organizationId}`);
+          return; // Exit early since we're streaming
           
         case 'users':
           // Export user information (without sensitive data)
@@ -2104,7 +2224,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           break;
           
         default:
-          return res.status(400).json({ message: "Invalid category. Use: flows, forms, tasks, or users" });
+          return res.status(400).json({ message: "Invalid category. Use: flows, forms, tasks, files, or users" });
       }
       
       if (format === 'csv') {
@@ -2210,13 +2330,39 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           message = `Successfully deleted ${deletedCount} tasks`;
           break;
           
+        case 'files':
+          // Delete all uploaded files from GridFS
+          try {
+            const { getUploadsBucket } = await import('./mongo/gridfs.js');
+            const bucket = await getUploadsBucket();
+            
+            // Get all files for this organization
+            const files = await bucket.find({ 'metadata.orgId': user.organizationId }).toArray();
+            
+            // Delete each file
+            for (const file of files) {
+              try {
+                await bucket.delete(file._id);
+              } catch (fileError) {
+                console.error(`Error deleting file ${file._id}:`, fileError);
+              }
+            }
+            
+            deletedCount = files.length;
+            message = `Successfully deleted ${deletedCount} uploaded files`;
+          } catch (gridfsError) {
+            console.error("GridFS deletion error:", gridfsError);
+            throw new Error("Failed to delete files from GridFS");
+          }
+          break;
+          
         case 'users':
           return res.status(400).json({ 
             message: "User data cannot be bulk deleted. Please delete users individually from User Management." 
           });
           
         default:
-          return res.status(400).json({ message: "Invalid category. Use: flows, forms, or tasks" });
+          return res.status(400).json({ message: "Invalid category. Use: flows, forms, tasks, or files" });
       }
       
       // Audit logging - AFTER successful deletion
