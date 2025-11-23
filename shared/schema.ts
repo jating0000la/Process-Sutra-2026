@@ -250,6 +250,18 @@ export const formTemplates = pgTable(
     title: varchar("title").notNull(),
     description: text("description"),
     questions: jsonb("questions").notNull(), // Array of question objects
+    // Communication configuration for WhatsApp and Email
+    whatsappConfig: jsonb("whatsapp_config").$type<{
+      enabled: boolean;
+      phoneNumber: string;
+      messageTemplate: string;
+    }>(),
+    emailConfig: jsonb("email_config").$type<{
+      enabled: boolean;
+      recipientEmail: string;
+      subject: string;
+      bodyTemplate: string;
+    }>(),
     createdBy: varchar("created_by").notNull(),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),

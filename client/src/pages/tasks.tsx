@@ -627,9 +627,11 @@ export default function Tasks() {
       queryClient.invalidateQueries({ queryKey: ["/api/form-responses"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       
-      setIsFormDialogOpen(false);
-      setFormTemplate(null);
-      setSelectedTask(null);
+      // Don't close dialog immediately - let form renderer show communication buttons
+      // The dialog will be closed by the cancel button or after user sends communication
+      // setIsFormDialogOpen(false);
+      // setFormTemplate(null);
+      // setSelectedTask(null);
     } catch (error) {
       console.error("Form submission error:", error);
       toast({

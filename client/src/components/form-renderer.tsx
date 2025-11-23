@@ -12,9 +12,15 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2, MessageSquare, Mail, Send } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { 
+  generateWhatsAppURL, 
+  generateEmailURL, 
+  isWhatsAppEnabled, 
+  isEmailEnabled 
+} from "@/lib/communicationUtils";
 
 interface FormQuestion {
   id: string;
@@ -32,6 +38,17 @@ interface FormTemplate {
   title: string;
   description?: string;
   questions: FormQuestion[];
+  whatsappConfig?: {
+    enabled: boolean;
+    phoneNumber: string;
+    messageTemplate: string;
+  };
+  emailConfig?: {
+    enabled: boolean;
+    recipientEmail: string;
+    subject: string;
+    bodyTemplate: string;
+  };
 }
 
 interface FormRendererProps {
@@ -54,6 +71,8 @@ export default function FormRenderer({
   flowId 
 }: FormRendererProps) {
   const { user } = useAuth();
+  const [isFormSubmitted, setIsFormSubmitted] = useState(false);
+  const [submittedFormData, setSubmittedFormData] = useState<Record<string, any>>({});
   
   // Fetch previous form responses from the same flow for auto-prefill
   const { data: flowResponses, error: prefillError, isLoading: prefillLoading } = useQuery({
@@ -544,7 +563,45 @@ export default function FormRenderer({
       }
     });
     
+    // Store the submitted data for communication buttons
+    setSubmittedFormData(cleanedData);
+    setIsFormSubmitted(true);
+    
     onSubmit(cleanedData);
+  };
+
+  const handleWhatsAppSend = () => {
+    const url = generateWhatsAppURL(template, submittedFormData);
+    if (url) {
+      window.open(url, '_blank');
+      toast({
+        title: "Opening WhatsApp",
+        description: "WhatsApp will open with the pre-filled message",
+      });
+    } else {
+      toast({
+        title: "Error",
+        description: "Could not generate WhatsApp message",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleEmailSend = () => {
+    const url = generateEmailURL(template, submittedFormData);
+    if (url) {
+      window.open(url, '_blank');
+      toast({
+        title: "Opening Email",
+        description: "Gmail will open with the pre-filled email",
+      });
+    } else {
+      toast({
+        title: "Error",
+        description: "Could not generate email",
+        variant: "destructive",
+      });
+    }
   };
 
   const renderField = (question: FormQuestion) => {
@@ -775,7 +832,7 @@ export default function FormRenderer({
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
             {template.questions.map((question) => renderField(question))}
             
-            {!readonly && (
+            {!readonly && !isFormSubmitted && (
               <div className="flex justify-end space-x-3 pt-4">
                 <Button 
                   type="button" 
@@ -788,6 +845,55 @@ export default function FormRenderer({
                   {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                   Submit Form
                 </Button>
+              </div>
+            )}
+
+            {/* Communication buttons after form submission */}
+            {!readonly && isFormSubmitted && (
+              <div className="border-t pt-4 mt-6">
+                {(isWhatsAppEnabled(template) || isEmailEnabled(template)) && (
+                  <>
+                    <h3 className="text-sm font-medium text-gray-900 mb-3">
+                      Send notification about this submission
+                    </h3>
+                    <div className="flex flex-wrap gap-3 mb-4">
+                      {isWhatsAppEnabled(template) && (
+                        <Button 
+                          type="button"
+                          variant="outline"
+                          className="bg-green-50 hover:bg-green-100 border-green-200"
+                          onClick={handleWhatsAppSend}
+                        >
+                          <MessageSquare className="w-4 h-4 mr-2 text-green-600" />
+                          Send via WhatsApp
+                        </Button>
+                      )}
+                      {isEmailEnabled(template) && (
+                        <Button 
+                          type="button"
+                          variant="outline"
+                          className="bg-blue-50 hover:bg-blue-100 border-blue-200"
+                          onClick={handleEmailSend}
+                        >
+                          <Mail className="w-4 h-4 mr-2 text-blue-600" />
+                          Send via Email
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mb-3">
+                      Click a button to open WhatsApp or Gmail with a pre-filled message
+                    </p>
+                  </>
+                )}
+                <div className="flex justify-end">
+                  <Button 
+                    type="button"
+                    variant="default"
+                    onClick={onCancel}
+                  >
+                    Done
+                  </Button>
+                </div>
               </div>
             )}
           </form>

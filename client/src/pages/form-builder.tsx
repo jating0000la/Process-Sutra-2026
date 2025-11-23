@@ -30,7 +30,10 @@ import {
   Calendar, 
   Upload,
   GripVertical,
-  Table
+  Table,
+  MessageSquare,
+  Mail,
+  Send
 } from "lucide-react";
 
 interface FormQuestion {
@@ -61,6 +64,17 @@ const formTemplateSchema = z.object({
       options: z.array(z.string()).optional(),
     })).optional(),
   })),
+  whatsappConfig: z.object({
+    enabled: z.boolean(),
+    phoneNumber: z.string(),
+    messageTemplate: z.string(),
+  }).optional(),
+  emailConfig: z.object({
+    enabled: z.boolean(),
+    recipientEmail: z.string(),
+    subject: z.string(),
+    bodyTemplate: z.string(),
+  }).optional(),
 });
 
 const questionTypes = [
@@ -82,6 +96,7 @@ export default function FormBuilder() {
   const [questions, setQuestions] = useState<FormQuestion[]>([]);
   const [selectedQuestion, setSelectedQuestion] = useState<FormQuestion | null>(null);
   const [tableColumns, setTableColumns] = useState<{ id: string; label: string; type: string; options?: string[] }[]>([]);
+  const [activeTab, setActiveTab] = useState<"builder" | "communication">("builder");
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -104,6 +119,17 @@ export default function FormBuilder() {
       title: "",
       description: "",
       questions: [],
+      whatsappConfig: {
+        enabled: false,
+        phoneNumber: "",
+        messageTemplate: "",
+      },
+      emailConfig: {
+        enabled: false,
+        recipientEmail: "",
+        subject: "",
+        bodyTemplate: "",
+      },
     },
   });
 
@@ -176,6 +202,7 @@ export default function FormBuilder() {
     setQuestions([]);
     setSelectedQuestion(null);
     setTableColumns([]);
+    setActiveTab("builder");
     form.reset();
   };
 
@@ -259,6 +286,8 @@ export default function FormBuilder() {
       title: form.getValues("title"),
       description: form.getValues("description"),
       questions: updatedQuestions,
+      whatsappConfig: form.getValues("whatsappConfig"),
+      emailConfig: form.getValues("emailConfig"),
     };
 
     // SECURITY: Don't log sensitive form template data in production
@@ -278,11 +307,23 @@ export default function FormBuilder() {
     setQuestions(template.questions || []);
     setSelectedQuestion(null); // Reset selected question
     setTableColumns([]); // Reset table columns
+    setActiveTab("builder"); // Reset to builder tab
     form.reset({
       formId: template.formId,
       title: template.title,
       description: template.description || "",
       questions: template.questions || [],
+      whatsappConfig: template.whatsappConfig || {
+        enabled: false,
+        phoneNumber: "",
+        messageTemplate: "",
+      },
+      emailConfig: template.emailConfig || {
+        enabled: false,
+        recipientEmail: "",
+        subject: "",
+        bodyTemplate: "",
+      },
     });
     setIsBuilderOpen(true);
   };
@@ -525,7 +566,33 @@ export default function FormBuilder() {
               </DialogTitle>
             </DialogHeader>
             
-            <div className="flex h-[70vh]">
+            {/* Tabs for Builder and Communication */}
+            <div className="flex border-b border-gray-200 mb-4">
+              <button
+                className={`px-4 py-2 font-medium transition-colors ${
+                  activeTab === "builder"
+                    ? "border-b-2 border-primary text-primary"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+                onClick={() => setActiveTab("builder")}
+              >
+                Form Builder
+              </button>
+              <button
+                className={`px-4 py-2 font-medium transition-colors ${
+                  activeTab === "communication"
+                    ? "border-b-2 border-primary text-primary"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+                onClick={() => setActiveTab("communication")}
+              >
+                <MessageSquare className="w-4 h-4 inline mr-1" />
+                Communication Settings
+              </button>
+            </div>
+            
+            {activeTab === "builder" && (
+            <div className="flex h-[70vh]">{/* Form Builder Tab Content */}
               {/* Form Elements Palette */}
               <div className="w-1/4 bg-gray-50 p-4 border-r border-gray-200 overflow-y-auto">
                 <h3 className="text-sm font-semibold text-gray-900 mb-3">Form Elements</h3>
@@ -814,6 +881,138 @@ export default function FormBuilder() {
                 )}
               </div>
             </div>
+            )}
+            
+            {activeTab === "communication" && (
+              <div className="h-[70vh] overflow-y-auto p-6">
+                <div className="max-w-3xl mx-auto space-y-6">
+                  {/* WhatsApp Configuration */}
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <MessageSquare className="w-5 h-5 text-green-600" />
+                          <CardTitle>WhatsApp Configuration</CardTitle>
+                        </div>
+                        <Checkbox
+                          checked={form.watch("whatsappConfig.enabled")}
+                          onCheckedChange={(checked) => 
+                            form.setValue("whatsappConfig.enabled", !!checked)
+                          }
+                        />
+                      </div>
+                    </CardHeader>
+                    {form.watch("whatsappConfig.enabled") && (
+                      <CardContent className="space-y-4">
+                        <div>
+                          <Label htmlFor="whatsappPhone">Phone Number (with country code, without +)</Label>
+                          <Input
+                            id="whatsappPhone"
+                            placeholder="e.g., 919876543210 or {{Phone}}"
+                            {...form.register("whatsappConfig.phoneNumber")}
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            Enter phone number with country code (e.g., 91 for India) or use {`{{FieldLabel}}`} to get it from form
+                          </p>
+                        </div>
+                        <div>
+                          <Label htmlFor="whatsappMessage">Message Template</Label>
+                          <Textarea
+                            id="whatsappMessage"
+                            placeholder="Hello {{Name}}, thank you for submitting the form..."
+                            rows={6}
+                            {...form.register("whatsappConfig.messageTemplate")}
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            Use {`{{FieldLabel}}`} to insert form field values. Example: {`{{Name}}, {{Email}}`}
+                          </p>
+                        </div>
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                          <p className="text-sm text-blue-800">
+                            <strong>Available placeholders:</strong>
+                          </p>
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {questions.map((q) => (
+                              <span key={q.id} className="text-xs bg-white px-2 py-1 rounded border border-blue-300">
+                                {`{{${q.label}}}`}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </CardContent>
+                    )}
+                  </Card>
+
+                  {/* Email Configuration */}
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <Mail className="w-5 h-5 text-blue-600" />
+                          <CardTitle>Email Configuration</CardTitle>
+                        </div>
+                        <Checkbox
+                          checked={form.watch("emailConfig.enabled")}
+                          onCheckedChange={(checked) => 
+                            form.setValue("emailConfig.enabled", !!checked)
+                          }
+                        />
+                      </div>
+                    </CardHeader>
+                    {form.watch("emailConfig.enabled") && (
+                      <CardContent className="space-y-4">
+                        <div>
+                          <Label htmlFor="emailRecipient">Recipient Email</Label>
+                          <Input
+                            id="emailRecipient"
+                            placeholder="e.g., contact@example.com or {{Email}}"
+                            {...form.register("emailConfig.recipientEmail")}
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            Enter email address or use {`{{FieldLabel}}`} to get it from form (e.g., {`{{Email}}`})
+                          </p>
+                        </div>
+                        <div>
+                          <Label htmlFor="emailSubject">Email Subject</Label>
+                          <Input
+                            id="emailSubject"
+                            placeholder="e.g., Form Submission - {{Name}}"
+                            {...form.register("emailConfig.subject")}
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            Use {`{{FieldLabel}}`} to insert form field values
+                          </p>
+                        </div>
+                        <div>
+                          <Label htmlFor="emailBody">Email Body Template</Label>
+                          <Textarea
+                            id="emailBody"
+                            placeholder="Dear {{Name}},%0AThank you for your submission..."
+                            rows={8}
+                            {...form.register("emailConfig.bodyTemplate")}
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            Use {`{{FieldLabel}}`} for form values. Use %0A for new lines.
+                          </p>
+                        </div>
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                          <p className="text-sm text-blue-800">
+                            <strong>Available placeholders:</strong>
+                          </p>
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {questions.map((q) => (
+                              <span key={q.id} className="text-xs bg-white px-2 py-1 rounded border border-blue-300">
+                                {`{{${q.label}}}`}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </CardContent>
+                    )}
+                  </Card>
+                </div>
+              </div>
+            )}
             
             <div className="flex justify-end space-x-3 pt-4 border-t">
               <Button variant="outline" onClick={() => setIsBuilderOpen(false)}>
