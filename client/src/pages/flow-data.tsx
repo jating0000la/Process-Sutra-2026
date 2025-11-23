@@ -31,7 +31,7 @@ interface FlowSummary {
 
 export default function FlowData() {
   const { toast } = useToast();
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading, dbUser } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [systemFilter, setSystemFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -45,6 +45,14 @@ export default function FlowData() {
 
   // Check if user is admin or manager
   const isAdmin = (user as any)?.role === 'admin' || (user as any)?.role === 'manager';
+
+  // Redirect non-admin users
+  useEffect(() => {
+    if (!isLoading && dbUser && dbUser.role !== 'admin') {
+      window.location.href = '/';
+      return;
+    }
+  }, [isLoading, dbUser]);
 
   // Check for system parameter in URL and set filter
   useEffect(() => {

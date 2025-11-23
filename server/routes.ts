@@ -2956,6 +2956,46 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     }
   });
 
+  app.put("/api/users/:id/role", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+    try {
+      const currentUser = req.currentUser;
+      const targetUserId = req.params.id;
+      const newRole = req.body.role;
+      
+      // Validate role
+      if (!['user', 'admin'].includes(newRole)) {
+        return res.status(400).json({ message: "Invalid role. Must be 'user' or 'admin'." });
+      }
+      
+      // Get the target user to check their current role
+      const targetUser = await storage.getUser(targetUserId);
+      
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // SECURITY: Verify same organization
+      if (targetUser.organizationId !== currentUser.organizationId) {
+        return res.status(403).json({ message: "Access denied. Cannot modify users from other organizations." });
+      }
+      
+      // Prevent admin from changing their own role
+      if (targetUserId === currentUser.id) {
+        return res.status(400).json({ 
+          message: "You cannot change your own role." 
+        });
+      }
+      
+      // Update user role
+      const updatedUser = await storage.updateUser(targetUserId, { role: newRole });
+      
+      res.json(updatedUser);
+    } catch (error) {
+      console.error("Error updating user role:", error);
+      res.status(500).json({ message: "Failed to update user role" });
+    }
+  });
+
   app.delete("/api/users/:id", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
       const currentUser = req.currentUser;

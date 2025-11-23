@@ -11,6 +11,7 @@ import { Download, Filter, RefreshCw, Search } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import Header from '@/components/header';
 import Sidebar from '@/components/sidebar';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface FormTemplate {
   id: string;
@@ -45,6 +46,7 @@ interface PaginatedResponse {
 }
 
 export default function MongoFormDataViewer() {
+  const { dbUser } = useAuth();
   const [formResponses, setFormResponses] = useState<FormResponseDoc[]>([]);
   const [formTemplates, setFormTemplates] = useState<FormTemplate[]>([]);
   const [loading, setLoading] = useState(false); // Changed to false initially
@@ -52,6 +54,14 @@ export default function MongoFormDataViewer() {
   const [exporting, setExporting] = useState(false);
   const [tatConfig, setTatConfig] = useState<{ timezone?: string; officeStartHour?: number; officeEndHour?: number } | null>(null);
   const [hasSearched, setHasSearched] = useState(false); // Track if user has searched
+
+  // Redirect non-admin users
+  useEffect(() => {
+    if (dbUser && dbUser.role !== 'admin') {
+      window.location.href = '/';
+      return;
+    }
+  }, [dbUser]);
   
   // Filters
   const [selectedFormId, setSelectedFormId] = useState<string>("");

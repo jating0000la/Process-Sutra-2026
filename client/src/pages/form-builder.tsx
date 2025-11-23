@@ -90,7 +90,7 @@ const questionTypes = [
 
 export default function FormBuilder() {
   const { toast } = useToast();
-  const { user, loading, handleTokenExpired } = useAuth();
+  const { user, loading, handleTokenExpired, dbUser } = useAuth();
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
   const [currentForm, setCurrentForm] = useState<any>(null);
   const [questions, setQuestions] = useState<FormQuestion[]>([]);
@@ -98,13 +98,17 @@ export default function FormBuilder() {
   const [tableColumns, setTableColumns] = useState<{ id: string; label: string; type: string; options?: string[] }[]>([]);
   const [activeTab, setActiveTab] = useState<"builder" | "communication">("builder");
 
-  // Redirect to login if not authenticated
+  // Redirect to login if not authenticated or not admin
   useEffect(() => {
     if (!loading && !user) {
       handleTokenExpired();
       return;
     }
-  }, [user, loading, handleTokenExpired]);
+    if (!loading && dbUser && dbUser.role !== 'admin') {
+      window.location.href = '/';
+      return;
+    }
+  }, [user, loading, handleTokenExpired, dbUser]);
 
   const { data: formTemplates, isLoading: templatesLoading } = useQuery<any[]>({
     queryKey: ["/api/form-templates"],

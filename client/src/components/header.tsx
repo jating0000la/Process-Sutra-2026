@@ -7,8 +7,26 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDown, LogOut, User, Settings } from "lucide-react";
+import { 
+  ChevronDown, 
+  LogOut, 
+  User, 
+  Settings,
+  Clock,
+  Users,
+  Building2,
+  Database,
+  Activity,
+  BookOpen,
+  Shield,
+  TrendingUp,
+  CreditCard,
+} from "lucide-react";
 import { useLocation } from "wouter";
 import { NotificationDropdown } from "@/components/notification-dropdown";
 import { Menu, PanelLeftOpen } from "lucide-react";
@@ -21,9 +39,11 @@ interface HeaderProps {
 }
 
 export default function Header({ title, description, actions }: HeaderProps) {
-  const { user, logout, isLoggingOut } = useAuth();
+  const { user, logout, isLoggingOut, dbUser } = useAuth();
   const [ , setLocation ] = useLocation();
   const { toggleSidebar, sidebarOpen } = useLayout();
+
+  const isAdmin = dbUser?.role === 'admin';
 
   const handleLogout = async () => {
     // Logout function now handles redirect automatically
@@ -102,10 +122,70 @@ export default function Header({ title, description, actions }: HeaderProps) {
                   <User className="mr-2 h-4 w-4" />
                   Profile
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setLocation("/organization-settings") }>
-                  <Settings className="mr-2 h-4 w-4" />
-                  Settings
-                </DropdownMenuItem>
+                
+                {isAdmin && (
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <Settings className="mr-2 h-4 w-4" />
+                      Settings
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-56">
+                      <DropdownMenuLabel>Configuration</DropdownMenuLabel>
+                      <DropdownMenuItem onSelect={() => setLocation("/tat-config")}>
+                        <Clock className="mr-2 h-4 w-4" />
+                        TAT Config
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setLocation("/user-management")}>
+                        <Users className="mr-2 h-4 w-4" />
+                        User Management
+                      </DropdownMenuItem>
+                      
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel>Data Management</DropdownMenuLabel>
+                      <DropdownMenuItem onSelect={() => setLocation("/data-management")}>
+                        <Database className="mr-2 h-4 w-4" />
+                        Export & Delete Data
+                      </DropdownMenuItem>
+                      
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel>API & Integration</DropdownMenuLabel>
+                      <DropdownMenuItem onSelect={() => setLocation("/api-startflow")}>
+                        <Activity className="mr-2 h-4 w-4" />
+                        Start Flow API
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setLocation("/api-documentation")}>
+                        <BookOpen className="mr-2 h-4 w-4" />
+                        API Documentation
+                      </DropdownMenuItem>
+                      
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel>Security & Compliance</DropdownMenuLabel>
+                      <DropdownMenuItem onSelect={() => setLocation("/nda-security")}>
+                        <Shield className="mr-2 h-4 w-4" />
+                        NDA & Security
+                      </DropdownMenuItem>
+                      
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel>Billing & Usage</DropdownMenuLabel>
+                      <DropdownMenuItem onSelect={() => setLocation("/usage")}>
+                        <TrendingUp className="mr-2 h-4 w-4" />
+                        Usage
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setLocation("/payments")} disabled>
+                        <CreditCard className="mr-2 h-4 w-4" />
+                        Payments
+                        <span className="ml-auto text-xs text-gray-400">Soon</span>
+                      </DropdownMenuItem>
+                      
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={() => setLocation("/settings")}>
+                        <Settings className="mr-2 h-4 w-4" />
+                        All Settings
+                      </DropdownMenuItem>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                )}
+                
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={handleLogout} disabled={isLoggingOut}>
                   <LogOut className="mr-2 h-4 w-4" />

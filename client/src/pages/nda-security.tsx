@@ -33,9 +33,9 @@ export default function NDASecurityPage() {
   const [activeTab, setActiveTab] = useState("overview");
   const [organizationName, setOrganizationName] = useState<string>("");
   const [loadingOrg, setLoadingOrg] = useState(true);
-  const [userCreatedAt, setUserCreatedAt] = useState<string>("");
+  const [organizationCreatedAt, setOrganizationCreatedAt] = useState<string>("");
 
-  // Fetch organization details and user creation date
+  // Fetch organization details including creation date
   useEffect(() => {
     const fetchData = async () => {
       // Fetch organization
@@ -45,47 +45,31 @@ export default function NDASecurityPage() {
           if (response.ok) {
             const org = await response.json();
             setOrganizationName(org.name || org.companyName || 'Not Specified');
+            // Set organization creation date (when organization first logged in/was created)
+            if (org.createdAt) {
+              setOrganizationCreatedAt(new Date(org.createdAt).toLocaleDateString());
+            } else {
+              setOrganizationCreatedAt(new Date().toLocaleDateString());
+            }
           } else {
             setOrganizationName('Not Found');
+            setOrganizationCreatedAt(new Date().toLocaleDateString());
           }
         } catch (error) {
           console.error('Error fetching organization:', error);
           setOrganizationName('Error Loading');
+          setOrganizationCreatedAt(new Date().toLocaleDateString());
         }
       } else {
         setOrganizationName('Not Assigned');
-      }
-
-      // Fetch user's first login date (created date)
-      if (dbUser?.id) {
-        try {
-          const response = await fetch('/api/login-logs');
-          if (response.ok) {
-            const logs = await response.json();
-            // Find the earliest login log
-            if (logs && logs.length > 0) {
-              const sortedLogs = logs.sort((a: any, b: any) => 
-                new Date(a.loginTime).getTime() - new Date(b.loginTime).getTime()
-              );
-              setUserCreatedAt(new Date(sortedLogs[0].loginTime).toLocaleDateString());
-            } else {
-              // Fallback to today's date if no login logs found
-              setUserCreatedAt(new Date().toLocaleDateString());
-            }
-          } else {
-            setUserCreatedAt(new Date().toLocaleDateString());
-          }
-        } catch (error) {
-          console.error('Error fetching login logs:', error);
-          setUserCreatedAt(new Date().toLocaleDateString());
-        }
+        setOrganizationCreatedAt(new Date().toLocaleDateString());
       }
 
       setLoadingOrg(false);
     };
 
     fetchData();
-  }, [dbUser?.organizationId, dbUser?.id]);
+  }, [dbUser?.organizationId]);
 
   // Check if user is admin
   const isAdmin = dbUser?.role === 'admin';
@@ -113,7 +97,7 @@ export default function NDASecurityPage() {
     const ndaContent = `
 NON-DISCLOSURE AGREEMENT (NDA)
 
-This Non-Disclosure Agreement ("Agreement") is entered into as of ${userCreatedAt || new Date().toLocaleDateString()} by and between:
+This Non-Disclosure Agreement ("Agreement") is entered into as of ${organizationCreatedAt || new Date().toLocaleDateString()} by and between:
 
 DISCLOSING PARTY: ProcessSutra by Muxro Technologies
 RECEIVING PARTY: ${dbUser?.firstName && dbUser?.lastName ? `${dbUser.firstName} ${dbUser.lastName}` : dbUser?.email}
@@ -169,11 +153,11 @@ ACKNOWLEDGED AND AGREED:
 
 Receiving Party: ${dbUser?.firstName && dbUser?.lastName ? `${dbUser.firstName} ${dbUser.lastName}` : dbUser?.email}
 Email: ${dbUser?.email}
-Date: ${userCreatedAt || new Date().toLocaleDateString()}
+Date: ${organizationCreatedAt || new Date().toLocaleDateString()}
 Organization: ${organizationName}
 
 Disclosing Party: ProcessSutra by Muxro Technologies
-Date: ${userCreatedAt || new Date().toLocaleDateString()}
+Date: ${organizationCreatedAt || new Date().toLocaleDateString()}
 
 CONFIDENTIAL AND PROPRIETARY INFORMATION
 © ${new Date().getFullYear()} Muxro Technologies. All Rights Reserved.
@@ -206,8 +190,8 @@ Security Rating: LOW RISK / ENTERPRISE-GRADE
 
 Generated for: ${dbUser?.firstName && dbUser?.lastName ? `${dbUser.firstName} ${dbUser.lastName}` : dbUser?.email}
 Organization: ${organizationName}
-Date: ${userCreatedAt || new Date().toLocaleDateString()}
-NDA Agreement Date: ${userCreatedAt || new Date().toLocaleDateString()}
+Date: ${organizationCreatedAt || new Date().toLocaleDateString()}
+NDA Agreement Date: ${organizationCreatedAt || new Date().toLocaleDateString()}
 
 ==============================================================================
 TABLE OF CONTENTS
@@ -638,8 +622,8 @@ Last Updated: ${new Date().toLocaleDateString()}
                       <p className="font-medium">Administrator</p>
                     </div>
                     <div>
-                      <span className="text-gray-600">NDA Agreement Date:</span>
-                      <p className="font-medium">{userCreatedAt || 'Loading...'}</p>
+                      <span className="text-gray-600">Organization Created:</span>
+                      <p className="font-medium">{organizationCreatedAt || 'Loading...'}</p>
                     </div>
                   </div>
                 </div>
@@ -722,16 +706,10 @@ Last Updated: ${new Date().toLocaleDateString()}
                   </div>
                 </div>
 
-                <div className="flex gap-3">
-                  <Button onClick={handleDownloadNDA} className="flex-1">
-                    <Download className="w-4 h-4 mr-2" />
-                    Download Complete NDA
-                  </Button>
-                  <Button variant="outline" className="flex-1">
-                    <FileText className="w-4 h-4 mr-2" />
-                    View Full Terms
-                  </Button>
-                </div>
+                <Button onClick={handleDownloadNDA} className="w-full">
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Complete NDA
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>

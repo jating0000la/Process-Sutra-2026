@@ -39,16 +39,8 @@ const allNavigationItems = [
   },
   // Builder Tools Section - admin only
   {
-    name: "Visual Flow Builder",
-    href: "/visual-flow-builder",
-    icon: Boxes,
-    badge: "New",
-    adminOnly: true,
-    section: "builders",
-  },
-  {
     name: "Flow Builder",
-    href: "/flows",
+    href: "/visual-flow-builder",
     icon: Workflow,
     badge: null,
     adminOnly: true,
@@ -86,24 +78,6 @@ const allNavigationItems = [
     badge: "New",
     adminOnly: true,
     section: "data",
-  },
-  // Analytics Section - admin only
-  {
-    name: "Analytics",
-    href: "/analytics",
-    icon: BarChart3,
-    badge: null,
-    adminOnly: true,
-    section: "analytics",
-  },
-  // Settings Section - admin only
-  {
-    name: "Settings",
-    href: "/settings",
-    icon: Settings,
-    badge: null,
-    adminOnly: true,
-    section: "settings",
   },
 ];
 

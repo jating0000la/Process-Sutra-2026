@@ -852,6 +852,32 @@ export default function UserManagement() {
     },
   });
 
+  // Change user role mutation
+  const changeRoleMutation = useMutation({
+    mutationFn: async ({ id, role }: { id: string; role: string }) => {
+      const response = await apiRequest("PUT", `/api/users/${id}/role`, { role });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to update user role");
+      }
+      return await response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({
+        title: "Success",
+        description: "User role updated successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Delete user mutation
   const deleteUserMutation = useMutation({
     mutationFn: async (userId: string) => {
@@ -926,6 +952,10 @@ export default function UserManagement() {
     }
     
     changeStatusMutation.mutate({ id: userId, status: newStatus });
+  };
+
+  const handleRoleChange = (userId: string, newRole: string) => {
+    changeRoleMutation.mutate({ id: userId, role: newRole });
   };
 
   const handleCreateUser = () => {
@@ -1084,9 +1114,22 @@ export default function UserManagement() {
                         <TableCell>{user.username || '-'}</TableCell>
                         <TableCell>{user.department || '-'}</TableCell>
                         <TableCell>
-                          <Badge variant={getRoleBadgeVariant(user.role || 'user')}>
-                            {user.role || 'user'}
-                          </Badge>
+                          <Select
+                            value={user.role || 'user'}
+                            onValueChange={(value) => handleRoleChange(user.id, value)}
+                          >
+                            <SelectTrigger className="w-32">
+                              <SelectValue>
+                                <Badge variant={getRoleBadgeVariant(user.role || 'user')}>
+                                  {user.role || 'user'}
+                                </Badge>
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="user">User</SelectItem>
+                              <SelectItem value="admin">Admin</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </TableCell>
                         <TableCell>
                           <Select
