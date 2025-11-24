@@ -2919,7 +2919,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           quotas: {
             maxUsers: org?.maxUsers || 0,
             currentUsers: totalUsers,
-            storageLimit: 100, // GB - from plan
+            storageLimit: 5, // GB - per organization limit
             storageUsed: totalBytes / (1024 * 1024 * 1024)
           }
         };
@@ -3087,10 +3087,10 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
         });
       }
       
-      // Prevent admins from suspending themselves
-      if (targetUserId === currentUser.id && newStatus === 'suspended') {
+      // Prevent admins from deactivating or suspending themselves (would cause loss of access)
+      if (targetUserId === currentUser.id && (newStatus === 'suspended' || newStatus === 'inactive')) {
         return res.status(400).json({ 
-          message: "You cannot suspend your own account." 
+          message: "You cannot deactivate or suspend your own account. Another admin must perform this action." 
         });
       }
       
@@ -3957,6 +3957,13 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
 
       if (!['active', 'inactive', 'suspended'].includes(newStatus)) {
         return res.status(400).json({ message: "Invalid status" });
+      }
+
+      // Prevent admin from changing their own status to inactive or suspended
+      if (userIds.includes(currentUser.id) && (newStatus === 'inactive' || newStatus === 'suspended')) {
+        return res.status(400).json({ 
+          message: "You cannot deactivate or suspend your own account. Another admin must perform this action." 
+        });
       }
 
       // Verify all users belong to same organization

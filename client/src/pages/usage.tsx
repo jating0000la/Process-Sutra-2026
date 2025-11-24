@@ -612,12 +612,40 @@ export default function Usage() {
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-medium text-gray-700">Storage Used</span>
-                        <span className="text-sm font-bold text-blue-600">{summary?.storage.totalGB.toFixed(2) || 0} GB</span>
+                        <span className={`text-sm font-bold ${
+                          ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 90 
+                            ? 'text-red-600' 
+                            : ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 75 
+                            ? 'text-amber-600' 
+                            : 'text-blue-600'
+                        }`}>
+                          {summary?.storage.totalGB.toFixed(2) || 0} GB
+                        </span>
                       </div>
-                      <Progress value={(summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 100) * 100} className="h-3" />
+                      <Progress 
+                        value={(summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100} 
+                        className={`h-3 ${
+                          ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 90 
+                            ? '[&>div]:bg-red-600' 
+                            : ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 75 
+                            ? '[&>div]:bg-amber-600' 
+                            : ''
+                        }`}
+                      />
                       <p className="text-xs text-gray-500 mt-1">
                         {summary?.quotas.storageLimit ? `${((summary?.quotas.storageUsed || 0) / summary.quotas.storageLimit * 100).toFixed(1)}% of ${summary.quotas.storageLimit} GB limit` : 'No limit set'}
                       </p>
+                      {((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 90 && (
+                        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+                          ⚠️ Storage almost full! You've used over 90% of your 5GB limit. File uploads may fail soon.
+                        </div>
+                      )}
+                      {((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 75 && 
+                       ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) <= 90 && (
+                        <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
+                          ⚠️ Storage warning: You've used over 75% of your 5GB limit.
+                        </div>
+                      )}
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="p-4 bg-blue-50 rounded-lg">
@@ -744,12 +772,34 @@ export default function Usage() {
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-medium text-gray-700">Storage</span>
-                      <span className="text-sm font-bold text-gray-900">{summary?.quotas.storageUsed.toFixed(2) || 0} GB / {summary?.quotas.storageLimit || 0} GB</span>
+                      <span className={`text-sm font-bold ${
+                        ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 90 
+                          ? 'text-red-600' 
+                          : ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 75 
+                          ? 'text-amber-600' 
+                          : 'text-gray-900'
+                      }`}>
+                        {summary?.quotas.storageUsed.toFixed(2) || 0} GB / {summary?.quotas.storageLimit || 5} GB
+                      </span>
                     </div>
-                    <Progress value={(summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 100) * 100} className="h-3" />
+                    <Progress 
+                      value={(summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100} 
+                      className={`h-3 ${
+                        ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 90 
+                          ? '[&>div]:bg-red-600' 
+                          : ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 75 
+                          ? '[&>div]:bg-amber-600' 
+                          : ''
+                      }`}
+                    />
                     <p className="text-xs text-gray-500 mt-1">
-                      {((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 100) * 100).toFixed(0)}% of quota used
+                      {((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100).toFixed(0)}% of quota used
                     </p>
+                    {((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 90 && (
+                      <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700 font-medium">
+                        ⚠️ Critical: Storage limit almost reached! Max file upload size: 10MB
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>

@@ -97,70 +97,156 @@ export default function NDASecurityPage() {
     const ndaContent = `
 NON-DISCLOSURE AGREEMENT (NDA)
 
-This Non-Disclosure Agreement ("Agreement") is entered into as of ${organizationCreatedAt || new Date().toLocaleDateString()} by and between:
+This Non-Disclosure Agreement ("Agreement") is made between:
 
-DISCLOSING PARTY: ProcessSutra by Muxro Technologies
-RECEIVING PARTY: ${dbUser?.firstName && dbUser?.lastName ? `${dbUser.firstName} ${dbUser.lastName}` : dbUser?.email}
-Organization: ${organizationName}
+1. Muxro Technologies, operating ProcessSutra ("Service Provider"),
+and
+2. ${organizationName} represented by ${dbUser?.firstName && dbUser?.lastName ? `${dbUser.firstName} ${dbUser.lastName}` : dbUser?.email} ("Client").
+
+Both are collectively referred to as the "Parties."
+
+Effective Date: ${organizationCreatedAt || new Date().toLocaleDateString()}
+
+================================================================================
 
 1. PURPOSE
-ProcessSutra by Muxro Technologies is a workflow management platform. In connection with the use 
-of this platform, Disclosing Party may share certain confidential technical and business information that 
-the Receiving Party is required to maintain in confidence.
+
+The Client may share certain information with the Service Provider while using ProcessSutra, such as:
+
+• Workflow designs
+• Forms and form responses
+• Organization information (GST, PAN, address, business data)
+• Employee data (name, email, phone, designation, etc.)
+• Documents and files uploaded
+• Any dynamic data provided voluntarily or optionally
+
+This Agreement ensures that all such information remains confidential.
+
+================================================================================
 
 2. DEFINITION OF CONFIDENTIAL INFORMATION
-"Confidential Information" means all information disclosed by Disclosing Party to Receiving Party, including:
-- Business processes and workflow configurations
-- Technical documentation and system architecture
-- User data and analytics
-- Security protocols and authentication methods
-- Database schemas and API specifications
-- Form templates and workflow rules
-- Performance metrics and analytics
-- Any information marked as "Confidential"
 
-3. OBLIGATIONS OF RECEIVING PARTY
-The Receiving Party agrees to:
-a) Hold all Confidential Information in strict confidence
-b) Not disclose Confidential Information to any third parties
-c) Use Confidential Information solely for the agreed business purpose
-d) Protect Confidential Information with the same degree of care used for their own confidential information
-e) Limit access to Confidential Information to employees or agents with a legitimate need to know
+"Confidential Information" includes, but is not limited to:
 
-4. EXCEPTIONS
-This Agreement does not apply to information that:
-a) Was publicly known at the time of disclosure
-b) Becomes publicly known through no breach of this Agreement
-c) Was rightfully known by Receiving Party prior to disclosure
-d) Is independently developed by Receiving Party without use of Confidential Information
-e) Is required to be disclosed by law or court order
+• Organization data
+• Employee or personal data
+• Business workflows, processes, or operational details
+• Files/documents uploaded by the Client
+• Any form data submitted by users
+• Any information not publicly available and provided through ProcessSutra
 
-5. TERM AND TERMINATION
-This Agreement shall remain in effect for a period of 3 years from the date of signing. 
-Upon termination, Receiving Party shall:
-- Return or destroy all Confidential Information
-- Cease all use of Confidential Information
-- Provide written certification of compliance
+Even if the Client provides only partial, optional, or dynamic data, it is still 
+protected under this NDA.
 
-6. REMEDIES
-Receiving Party acknowledges that breach of this Agreement may cause irreparable harm and that 
-Disclosing Party shall be entitled to seek injunctive relief in addition to all other available remedies.
+================================================================================
 
-7. GOVERNING LAW
-This Agreement shall be governed by the laws of the jurisdiction in which Disclosing Party is registered.
+3. OBLIGATIONS OF THE SERVICE PROVIDER
 
-ACKNOWLEDGED AND AGREED:
+The Service Provider agrees to:
 
-Receiving Party: ${dbUser?.firstName && dbUser?.lastName ? `${dbUser.firstName} ${dbUser.lastName}` : dbUser?.email}
-Email: ${dbUser?.email}
-Date: ${organizationCreatedAt || new Date().toLocaleDateString()}
+a. Maintain confidentiality
+   Not disclose, share, sell, lease, or make available the Client's data to any third party.
+
+b. Use data only for service functionality
+   Data may only be used to operate features such as workflow execution, task creation, 
+   or technical support.
+
+c. Restrict access internally
+   Only authorized personnel who require access for system operation or troubleshooting 
+   may access the data—and they are bound by confidentiality.
+
+d. Prevent unauthorized access
+   Implement reasonable technical and administrative safeguards to protect all Client data.
+
+e. Not use data for marketing or external purposes
+   No data may be used for promotion, training, or external analysis without explicit 
+   written consent from the Client.
+
+================================================================================
+
+4. EXCLUSIONS
+
+Confidential Information does not include data that:
+
+• Becomes publicly available through no fault of the Service Provider
+• Is legally required to be disclosed (only after notifying the Client)
+• The Client has already made publicly available
+
+================================================================================
+
+5. DATA OWNERSHIP
+
+All data provided through ProcessSutra will always remain the sole property of the Client.
+The Service Provider holds no ownership rights over this data.
+
+================================================================================
+
+6. DATA DELETION
+
+Upon request, the Service Provider will:
+
+• Permanently delete workflow data
+• Delete forms and submitted data
+• Remove user and employee information
+• Provide a written confirmation of deletion
+
+================================================================================
+
+7. DURATION
+
+This Agreement:
+
+• Begins from the date the Client uses ProcessSutra
+• Remains in effect for as long as the Client uses the service
+• Continues for 3 years after account deletion, unless otherwise requested in writing
+
+================================================================================
+
+8. REMEDIES
+
+Unauthorized disclosure of Client data may result in:
+
+• Legal action
+• Compensation for damages
+• Immediate termination of access to the system
+
+================================================================================
+
+9. GOVERNING LAW
+
+This Agreement is governed by the laws of India.
+
+================================================================================
+
+10. ACCEPTANCE
+
+By using ProcessSutra, the Client agrees to the terms of this NDA automatically.
+
+================================================================================
+
+CLIENT DETAILS:
+
 Organization: ${organizationName}
+Representative: ${dbUser?.firstName && dbUser?.lastName ? `${dbUser.firstName} ${dbUser.lastName}` : dbUser?.email}
+Email: ${dbUser?.email}
+Role: ${dbUser?.role || 'Administrator'}
+Agreement Date: ${organizationCreatedAt || new Date().toLocaleDateString()}
 
-Disclosing Party: ProcessSutra by Muxro Technologies
+================================================================================
+
+SERVICE PROVIDER:
+
+Muxro Technologies
+ProcessSutra – Workflow & Automation Platform
 Date: ${organizationCreatedAt || new Date().toLocaleDateString()}
+
+================================================================================
 
 CONFIDENTIAL AND PROPRIETARY INFORMATION
 © ${new Date().getFullYear()} Muxro Technologies. All Rights Reserved.
+
+This NDA protects all Client data and ensures complete confidentiality.
+For questions: security@muxrotechnologies.com
 `;
 
     // Create blob and download
@@ -537,20 +623,25 @@ Last Updated: ${new Date().toLocaleDateString()}
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <p className="text-sm text-gray-600">
-                        Official NDA for confidential information protection. Download and review
-                        the agreement that covers all confidential data and business processes.
+                        Official NDA protecting your organization's confidential data. This agreement ensures 
+                        all workflow designs, forms, employee data, documents, and business information remain 
+                        strictly confidential and are owned solely by your organization.
                       </p>
                       <div className="flex items-center gap-2 text-sm">
                         <CheckCircle className="w-4 h-4 text-green-600" />
-                        <span>Covers all confidential information</span>
+                        <span>Complete data ownership protection</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                        <span>No third-party data sharing</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                        <span>Data deletion rights guaranteed</span>
                       </div>
                       <div className="flex items-center gap-2 text-sm">
                         <CheckCircle className="w-4 h-4 text-green-600" />
                         <span>3-year validity period</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <CheckCircle className="w-4 h-4 text-green-600" />
-                        <span>Legal protection for both parties</span>
                       </div>
                       <Button onClick={handleDownloadNDA} className="w-full">
                         <Download className="w-4 h-4 mr-2" />
@@ -647,54 +738,101 @@ Last Updated: ${new Date().toLocaleDateString()}
                 {/* NDA Content Preview */}
                 <div className="bg-gray-50 rounded-lg p-6 border space-y-4 max-h-96 overflow-y-auto">
                   <div>
-                    <h3 className="font-bold text-lg mb-2">NON-DISCLOSURE AGREEMENT</h3>
-                    <p className="text-sm text-gray-600">ProcessSutra by Muxro Technologies</p>
+                    <h3 className="font-bold text-lg mb-2">NON-DISCLOSURE AGREEMENT (NDA)</h3>
+                    <p className="text-sm text-gray-600">
+                      This Agreement is made between Muxro Technologies (ProcessSutra) and {organizationName}
+                    </p>
                   </div>
 
                   <Separator />
 
                   <div>
                     <h4 className="font-semibold mb-2">1. PURPOSE</h4>
-                    <p className="text-sm text-gray-700">
-                      ProcessSutra by Muxro Technologies is a workflow management platform. In connection with the use 
-                      of this platform, Disclosing Party may share certain confidential technical and business information that 
-                      the Receiving Party is required to maintain in confidence.
+                    <p className="text-sm text-gray-700 mb-2">
+                      The Client may share certain information with the Service Provider while using ProcessSutra, such as:
+                    </p>
+                    <ul className="list-disc list-inside text-sm text-gray-700 space-y-1 ml-4">
+                      <li>Workflow designs</li>
+                      <li>Forms and form responses</li>
+                      <li>Organization information (GST, PAN, address, business data)</li>
+                      <li>Employee data (name, email, phone, designation, etc.)</li>
+                      <li>Documents and files uploaded</li>
+                      <li>Any dynamic data provided voluntarily or optionally</li>
+                    </ul>
+                    <p className="text-sm text-gray-700 mt-2">
+                      This Agreement ensures that all such information remains confidential.
                     </p>
                   </div>
 
                   <div>
                     <h4 className="font-semibold mb-2">2. DEFINITION OF CONFIDENTIAL INFORMATION</h4>
                     <p className="text-sm text-gray-700 mb-2">
-                      "Confidential Information" means all information disclosed by Disclosing Party to Receiving Party, including:
+                      "Confidential Information" includes, but is not limited to:
                     </p>
                     <ul className="list-disc list-inside text-sm text-gray-700 space-y-1 ml-4">
-                      <li>Business processes and workflow configurations</li>
-                      <li>Technical documentation and system architecture</li>
-                      <li>User data and analytics</li>
-                      <li>Security protocols and authentication methods</li>
-                      <li>Database schemas and API specifications</li>
-                      <li>Form templates and workflow rules</li>
-                      <li>Performance metrics and analytics</li>
-                      <li>Any information marked as "Confidential"</li>
+                      <li>Organization data</li>
+                      <li>Employee or personal data</li>
+                      <li>Business workflows, processes, or operational details</li>
+                      <li>Files/documents uploaded by the Client</li>
+                      <li>Any form data submitted by users</li>
+                      <li>Any information not publicly available and provided through ProcessSutra</li>
                     </ul>
+                    <p className="text-sm text-gray-700 mt-2 italic">
+                      Even if the Client provides only partial, optional, or dynamic data, it is still protected under this NDA.
+                    </p>
                   </div>
 
                   <div>
-                    <h4 className="font-semibold mb-2">3. OBLIGATIONS OF RECEIVING PARTY</h4>
-                    <p className="text-sm text-gray-700 mb-2">The Receiving Party agrees to:</p>
+                    <h4 className="font-semibold mb-2">3. OBLIGATIONS OF THE SERVICE PROVIDER</h4>
+                    <p className="text-sm text-gray-700 mb-2">The Service Provider agrees to:</p>
                     <ul className="list-disc list-inside text-sm text-gray-700 space-y-1 ml-4">
-                      <li>Hold all Confidential Information in strict confidence</li>
-                      <li>Not disclose Confidential Information to any third parties</li>
-                      <li>Use Confidential Information solely for the agreed business purpose</li>
-                      <li>Protect Confidential Information with the same degree of care used for their own confidential information</li>
-                      <li>Limit access to Confidential Information to employees or agents with a legitimate need to know</li>
+                      <li><strong>Maintain confidentiality:</strong> Not disclose, share, sell, lease, or make available the Client's data to any third party</li>
+                      <li><strong>Use data only for service functionality:</strong> Data may only be used to operate features such as workflow execution, task creation, or technical support</li>
+                      <li><strong>Restrict access internally:</strong> Only authorized personnel who require access for system operation or troubleshooting may access the data</li>
+                      <li><strong>Prevent unauthorized access:</strong> Implement reasonable technical and administrative safeguards to protect all Client data</li>
+                      <li><strong>Not use data for marketing or external purposes:</strong> No data may be used for promotion, training, or external analysis without explicit written consent</li>
                     </ul>
                   </div>
 
                   <div>
-                    <h4 className="font-semibold mb-2">4. TERM AND TERMINATION</h4>
+                    <h4 className="font-semibold mb-2">5. DATA OWNERSHIP</h4>
                     <p className="text-sm text-gray-700">
-                      This Agreement shall remain in effect for a period of <strong>3 years</strong> from the date of signing.
+                      All data provided through ProcessSutra will always remain the <strong>sole property of the Client</strong>.
+                      The Service Provider holds no ownership rights over this data.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold mb-2">6. DATA DELETION</h4>
+                    <p className="text-sm text-gray-700 mb-2">Upon request, the Service Provider will:</p>
+                    <ul className="list-disc list-inside text-sm text-gray-700 space-y-1 ml-4">
+                      <li>Permanently delete workflow data</li>
+                      <li>Delete forms and submitted data</li>
+                      <li>Remove user and employee information</li>
+                      <li>Provide a written confirmation of deletion</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold mb-2">7. DURATION</h4>
+                    <p className="text-sm text-gray-700">
+                      This Agreement begins from the date the Client uses ProcessSutra, remains in effect for as long 
+                      as the Client uses the service, and continues for <strong>3 years</strong> after account deletion, 
+                      unless otherwise requested in writing.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold mb-2">9. GOVERNING LAW</h4>
+                    <p className="text-sm text-gray-700">
+                      This Agreement is governed by the <strong>laws of India</strong>.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold mb-2">10. ACCEPTANCE</h4>
+                    <p className="text-sm text-gray-700">
+                      By using ProcessSutra, the Client agrees to the terms of this NDA automatically.
                     </p>
                   </div>
 

@@ -4,8 +4,10 @@ import { ObjectId } from 'mongodb';
 import { getUploadsBucket } from './mongo/gridfs.js';
 import { isAuthenticated } from './firebaseAuth';
 import { storage } from './storage';
+import { getStorageStats } from './usageQueries';
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } }); // 25MB
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB
+const STORAGE_LIMIT_GB = 5; // 5GB per organization
 
 export const uploadsRouter = Router();
 
@@ -21,6 +23,19 @@ uploadsRouter.post('/', isAuthenticated, upload.single('file'), async (req: any,
     const { formId, taskId, fieldId } = req.body as { formId: string; taskId?: string; fieldId: string };
     const file = req.file;
     if (!file) return res.status(400).json({ message: 'file is required' });
+
+    // Check storage quota before upload
+    const storageStats = await getStorageStats(orgId);
+    const currentStorageGB = storageStats.totalBytes / (1024 * 1024 * 1024);
+    const newFileSizeGB = file.size / (1024 * 1024 * 1024);
+    
+    if (currentStorageGB + newFileSizeGB > STORAGE_LIMIT_GB) {
+      return res.status(413).json({ 
+        message: `Storage limit exceeded. Your organization has used ${currentStorageGB.toFixed(2)} GB of ${STORAGE_LIMIT_GB} GB. This file would exceed the limit.`,
+        currentUsage: currentStorageGB,
+        limit: STORAGE_LIMIT_GB
+      });
+    }
 
     const bucket = await getUploadsBucket();
     const uploadStream = bucket.openUploadStream(file.originalname, {

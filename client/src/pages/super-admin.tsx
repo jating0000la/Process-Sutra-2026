@@ -130,6 +130,7 @@ interface EnrichedUser {
 export default function SuperAdmin() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user: authUser } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [roleFilter, setRoleFilter] = useState<string>("all");
@@ -263,6 +264,17 @@ export default function SuperAdmin() {
       });
       return;
     }
+    
+    // Check if admin is trying to deactivate/suspend themselves
+    if (selectedUsers.has(authUser?.id || '') && (bulkStatus === 'inactive' || bulkStatus === 'suspended')) {
+      toast({
+        title: "Action Not Allowed",
+        description: "You cannot deactivate or suspend your own account. Another admin must perform this action.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     bulkStatusMutation.mutate({
       userIds: Array.from(selectedUsers),
       newStatus: bulkStatus,

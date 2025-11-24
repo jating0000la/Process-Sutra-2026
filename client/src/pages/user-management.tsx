@@ -951,6 +951,16 @@ export default function UserManagement() {
       return;
     }
     
+    // Prevent admins from deactivating or suspending themselves
+    if (userId === authUser?.id && (newStatus === 'suspended' || newStatus === 'inactive')) {
+      toast({
+        title: "Action Not Allowed",
+        description: "You cannot deactivate or suspend your own account. Another admin must perform this action.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     changeStatusMutation.mutate({ id: userId, status: newStatus });
   };
 

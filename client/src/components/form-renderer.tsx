@@ -763,7 +763,23 @@ export default function FormRenderer({
                                 body: fd,
                                 credentials: "include",
                               });
-                              if (!res.ok) throw new Error(`${res.status}`);
+                              
+                              if (!res.ok) {
+                                const errorData = await res.json().catch(() => ({}));
+                                if (res.status === 413) {
+                                  // Storage limit exceeded
+                                  toast({ 
+                                    title: "Storage Limit Exceeded", 
+                                    description: errorData.message || "Your organization has reached its 5GB storage limit. Please contact your administrator.",
+                                    variant: "destructive" 
+                                  });
+                                } else {
+                                  throw new Error(errorData.message || `Upload failed with status ${res.status}`);
+                                }
+                                field.onChange(null);
+                                return;
+                              }
+                              
                               const descriptor = await res.json();
                               // descriptor: { type:'file', gridFsId, originalName, mimeType, size, ... }
                               field.onChange(descriptor);
