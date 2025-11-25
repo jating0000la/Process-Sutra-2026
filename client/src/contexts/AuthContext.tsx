@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { initializeGoogleSignIn, signInWithGoogle, signOut as googleSignOut, decodeJWT } from '@/lib/googleAuth';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
+import { devLog, devError, authLog } from '@/lib/logger';
 
 interface GoogleUser {
   sub: string;
@@ -9,6 +10,9 @@ interface GoogleUser {
   name: string;
   picture?: string;
   email_verified?: boolean;
+  uid?: string; // Alias for sub
+  id?: string; // Alias for sub
+  displayName?: string; // Alias for name
 }
 
 interface DatabaseUser {
@@ -93,9 +97,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   
   const syncUserWithBackend = async (googleUser: GoogleUser, accessToken: string, retryCount = 0): Promise<void> => {
     try {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('Syncing user with backend for:', googleUser.email);
-      }
+      authLog('Syncing user with backend', { hasEmail: !!googleUser.email });
       
       const response = await fetch('/api/auth/google-login', {
         method: 'POST',
@@ -113,9 +115,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       });
       
       if (response.ok) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('Successfully authenticated with backend');
-        }
+        authLog('Successfully authenticated with backend');
         const data = await response.json();
         
         // Clear any previous errors
@@ -132,7 +132,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // Handle different types of errors
         if (response.status === 429) {
           // Rate limited - stop retrying and show appropriate message
-          console.log('🚫 Rate limited, stopping retry attempts');
+          authLog('Rate limited, stopping retry attempts');
           setError('Too many login attempts. Please wait a few minutes and try again.');
           setIsRefreshing(false);
           return;
@@ -140,7 +140,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         
         // Handle token-related errors with retry logic
         if ((response.status === 401 || errorData.message?.includes('token')) && retryCount < 2) {
-          console.log(`🔄 Token expired, attempting refresh (attempt ${retryCount + 1})...`);
+          authLog(`Token expired, attempting refresh (attempt ${retryCount + 1})`);
           setIsRefreshing(true);
           setError('Refreshing session...');
           // Wait longer between retries to avoid hitting rate limits
@@ -152,12 +152,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         
         // If this is a final 401 error (after retries), handle token expiration
         if (response.status === 401) {
-          console.log('🔐 Authentication failed after retries, token likely expired');
+          authLog('Authentication failed after retries');
           await handleTokenExpired();
           return;
         }
         
-        console.error('Backend authentication failed:', errorData);
+        devError('Backend authentication failed', errorData);
         
         // Only clear user state if this is not a temporary token issue
         if (response.status !== 401 || retryCount >= 2) {
@@ -175,7 +175,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       // Retry logic for network errors
       if (retryCount < 2) {
-        console.log(`Network error, retrying authentication (attempt ${retryCount + 1})...`);
+        authLog(`Network error, retrying authentication (attempt ${retryCount + 1})`);
         await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
         await syncUserWithBackend(googleUser, accessToken, retryCount + 1);
         return;
@@ -283,7 +283,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const logout = async (redirect: boolean = true) => {
     // Prevent duplicate logout calls
     if (isLoggingOut) {
-      console.log('Logout already in progress, skipping...');
+      authLog('Logout already in progress, skipping');
       return;
     }
 

@@ -108,11 +108,11 @@ export default function Header({ title, description, actions }: HeaderProps) {
                       className="profile-image"
                     />
                     <AvatarFallback className="text-xs sm:text-sm">
-                      {getInitials(user?.displayName)}
+                      {getInitials(user?.name)}
                     </AvatarFallback>
                   </Avatar>
                   <span className="hidden sm:inline text-sm font-medium text-gray-700">
-                    {getDisplayName(user?.displayName)}
+                    {getDisplayName(user?.name)}
                   </span>
                   <ChevronDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500 hidden sm:block" />
                 </Button>

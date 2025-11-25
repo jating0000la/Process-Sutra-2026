@@ -177,7 +177,7 @@ export default function Profile() {
                 <Separator />
                 
                 <div className="pt-2">
-                  <Button variant="outline" onClick={logout}>
+                  <Button variant="outline" onClick={() => logout()}>
                     Log out
                   </Button>
                 </div>

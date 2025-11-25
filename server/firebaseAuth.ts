@@ -98,17 +98,33 @@ try {
 
 export function getSession() {
   const sessionTtl = 4 * 60 * 60 * 1000; // 4 hours (reduced from 1 week for security)
-  // Determine cookie security flags. In production, always use secure cookies
-  // Allow overriding only in development for local testing
+  
+  // Determine environment
   const isProd = process.env.NODE_ENV === 'production';
   const isDev = process.env.NODE_ENV === 'development';
   
-  // Force secure cookies in production, allow override only in development
-  const forceInsecure = isDev && (process.env.INSECURE_COOKIES === 'true' || process.env.COOKIE_SECURE === 'false');
-  const cookieSecure = isProd || !forceInsecure;
+  // Cookie security configuration with production-first approach
+  let cookieSecure: boolean;
+  let sameSite: 'strict' | 'lax' | 'none';
   
-  // Use strict SameSite in production for better CSRF protection
-  const sameSite: any = isProd ? 'strict' : (process.env.COOKIE_SAMESITE || 'lax');
+  if (isProd) {
+    // Production: Always enforce secure cookies
+    cookieSecure = true;
+    sameSite = 'strict';
+    
+    // Warn if trying to disable security in production
+    if (process.env.COOKIE_SECURE === 'false' || process.env.INSECURE_COOKIES === 'true') {
+      console.warn('⚠️ WARNING: Attempting to disable secure cookies in production - IGNORED for security');
+    }
+  } else {
+    // Development: Allow insecure cookies for localhost testing
+    cookieSecure = process.env.COOKIE_SECURE !== 'false' && process.env.INSECURE_COOKIES !== 'true';
+    sameSite = (process.env.COOKIE_SAMESITE as any) || 'lax';
+    
+    if (!cookieSecure) {
+      console.warn('⚠️ Development mode: Using insecure cookies for localhost testing');
+    }
+  }
   
   // Validate session secret
   if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {

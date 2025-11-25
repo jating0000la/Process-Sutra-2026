@@ -19,6 +19,8 @@ import { CheckCircle, Clock, AlertTriangle, Eye, Edit, Plus, Database, Download,
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import FormRenderer from "@/components/form-renderer";
 import { format } from "date-fns";
+import DOMPurify from 'dompurify';
+import { devLog, devError } from '@/lib/logger';
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -93,9 +95,9 @@ export default function Tasks() {
   // Add debugging to see what tasks are being returned
   useEffect(() => {
     if (tasks) {
-      console.log("Tasks data:", tasks);
-      console.log("Tasks count:", Array.isArray(tasks) ? tasks.length : 0);
-      console.log("Status filter:", statusFilter);
+      devLog("Tasks data:", tasks);
+      devLog("Tasks count:", Array.isArray(tasks) ? tasks.length : 0);
+      devLog("Status filter:", statusFilter);
     }
   }, [tasks, statusFilter]);
 
@@ -633,7 +635,7 @@ export default function Tasks() {
       // setFormTemplate(null);
       // setSelectedTask(null);
     } catch (error) {
-      console.error("Form submission error:", error);
+      devError("Form submission error", error);
       toast({
         title: "Error",
         description: "Failed to submit form. Please check all required fields.",
@@ -778,7 +780,7 @@ export default function Tasks() {
       // No data available
       toast({ title: "No Data", description: "No workflow or tasks data available for export.", variant: "destructive" });
     } catch (error) {
-      console.error("Export error:", error);
+      devError("Export error", error);
       toast({ title: "Export Failed", description: "Failed to export workflow data. Please try again.", variant: "destructive" });
     } finally {
       setIsExporting(false);
@@ -889,8 +891,8 @@ export default function Tasks() {
     setIsCompleteDialogOpen(true);
     
     // Debug: Log available statuses for this task
-    console.log('Task:', task.taskName, 'System:', task.system);
-    console.log('Available completion statuses:', getTaskCompletionStatuses(task.taskName, task.system));
+    devLog('Task:', task.taskName, 'System:', task.system);
+    devLog('Available completion statuses:', getTaskCompletionStatuses(task.taskName, task.system));
   };
 
   const handleTransferClick = (task: any) => {
@@ -2447,7 +2449,7 @@ export default function Tasks() {
                                               <Label className="text-xs font-medium text-gray-600 dark:text-gray-400 block">{key}</Label>
                                               <div className="text-sm text-gray-800 dark:text-gray-200 mt-1">
                                                 {typeof value === 'string' && value.includes('<table') ? (
-                                                  <div dangerouslySetInnerHTML={{ __html: value }} />
+                                                  <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(value) }} />
                                                 ) : Array.isArray(value) ? (
                                                   <div className="space-y-1">
                                                     {value.map((item, idx) => (

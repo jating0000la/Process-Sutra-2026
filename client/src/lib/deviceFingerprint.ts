@@ -1,4 +1,5 @@
 // Device fingerprinting utility for user management and security tracking
+import { devLog, devError } from './logger';
 
 export interface DeviceInfo {
   deviceId: string;
@@ -198,9 +199,9 @@ export async function trackLogin(userId: string) {
       }),
     });
     
-    console.log('Login tracked successfully');
+    devLog('Login tracked successfully');
   } catch (error) {
-    console.error('Failed to track login:', error);
+    devError('Failed to track login', error);
   }
 }
 
@@ -220,8 +221,8 @@ export async function trackLogout(loginLogId?: string) {
       }),
     });
     
-    console.log('Logout tracked successfully');
+    devLog('Logout tracked successfully');
   } catch (error) {
-    console.error('Failed to track logout:', error);
+    devError('Failed to track logout', error);
   }
 }

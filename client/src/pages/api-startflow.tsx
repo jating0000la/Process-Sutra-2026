@@ -539,8 +539,7 @@ app.post('/webhook', (req, res) => {
   }
   
   // Process the webhook
-  console.log('Event:', req.body.type);
-  console.log('Data:', req.body.data);
+  // Webhook data intentionally not logged for security
   res.json({ received: true });
 });`}</pre>
                 </div>
