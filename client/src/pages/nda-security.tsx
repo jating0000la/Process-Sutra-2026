@@ -298,7 +298,7 @@ TABLE OF CONTENTS
 ProcessSutra by Muxro Technologies implements enterprise-grade security measures to protect 
 your data and ensure system integrity. Our multi-layered security approach includes:
 
-✓ Firebase OAuth 2.0 Authentication
+✓ Google OAuth 2.0 Authentication
 ✓ Enhanced Token Validation
 ✓ Secure Session Management
 ✓ Rate Limiting
@@ -868,7 +868,7 @@ Last Updated: ${new Date().toLocaleDateString()}
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>Google OAuth 2.0</strong>
-                      <p className="text-gray-600">Firebase authentication integration</p>
+                      <p className="text-gray-600">Google OAuth 2.0 authentication integration</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">

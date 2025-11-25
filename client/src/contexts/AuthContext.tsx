@@ -1,8 +1,15 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { User } from 'firebase/auth';
-import { auth, handleRedirectResult, onAuthStateChange } from '@/lib/firebase';
+import { initializeGoogleSignIn, signInWithGoogle, signOut as googleSignOut, decodeJWT } from '@/lib/googleAuth';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
+
+interface GoogleUser {
+  sub: string;
+  email: string;
+  name: string;
+  picture?: string;
+  email_verified?: boolean;
+}
 
 interface DatabaseUser {
   id: string;
@@ -16,7 +23,7 @@ interface DatabaseUser {
 }
 
 interface AuthContextType {
-  user: User | null;
+  user: GoogleUser | null;
   dbUser: DatabaseUser | null;
   loading: boolean;
   error: string | null;
@@ -38,7 +45,7 @@ export const useAuth = () => {
 };
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<GoogleUser | null>(null);
   const [dbUser, setDbUser] = useState<DatabaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -66,12 +73,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // Clear React Query cache
     queryClient.clear();
 
-    // Clear any Firebase auth state
+    // Clear Google auth state
     try {
-      const { logOut } = await import('@/lib/firebase');
-      await logOut();
+      if (user?.email) {
+        googleSignOut(user.email);
+      }
     } catch (error) {
-      console.error('Error clearing Firebase auth:', error);
+      console.error('Error clearing Google auth:', error);
     }
 
     // Force redirect to login page, avoiding redirect loops
@@ -83,25 +91,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }, 1000);
   };
   
-  const syncUserWithBackend = async (firebaseUser: any, retryCount = 0): Promise<void> => {
+  const syncUserWithBackend = async (googleUser: GoogleUser, accessToken: string, retryCount = 0): Promise<void> => {
     try {
       if (process.env.NODE_ENV === 'development') {
-        console.log('Syncing user with backend for:', firebaseUser.email);
+        console.log('Syncing user with backend for:', googleUser.email);
       }
-      const idToken = await firebaseUser.getIdToken(true); // Force refresh
       
-      const response = await fetch('/api/auth/firebase-login', {
+      const response = await fetch('/api/auth/google-login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
         body: JSON.stringify({
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          displayName: firebaseUser.displayName,
-          photoURL: firebaseUser.photoURL,
-          idToken: idToken,
+          idToken: null, // We'll use access token
+          accessToken: accessToken,
+          email: googleUser.email,
+          displayName: googleUser.name,
+          photoURL: googleUser.picture,
         }),
       });
       
@@ -110,7 +117,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           console.log('Successfully authenticated with backend');
         }
         const data = await response.json();
-        // SECURITY: Don't log sensitive backend response data
         
         // Clear any previous errors
         setError(null);
@@ -139,7 +145,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           setError('Refreshing session...');
           // Wait longer between retries to avoid hitting rate limits
           await new Promise(resolve => setTimeout(resolve, 3000 * (retryCount + 1)));
-          await syncUserWithBackend(firebaseUser, retryCount + 1);
+          await syncUserWithBackend(googleUser, accessToken, retryCount + 1);
           setIsRefreshing(false);
           return;
         }
@@ -167,129 +173,108 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } catch (error) {
       console.error('Error syncing user with backend:', error);
       
-        // Retry logic for network errors
-        if (retryCount < 2) {
-          console.log(`Network error, retrying authentication (attempt ${retryCount + 1})...`);
-          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
-          await syncUserWithBackend(firebaseUser, retryCount + 1);
-          return;
-        }      setError('Authentication error. Please try again.');
+      // Retry logic for network errors
+      if (retryCount < 2) {
+        console.log(`Network error, retrying authentication (attempt ${retryCount + 1})...`);
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        await syncUserWithBackend(googleUser, accessToken, retryCount + 1);
+        return;
+      }
+      setError('Authentication error. Please try again.');
       setUser(null);
       setDbUser(null);
     }
   };
 
   useEffect(() => {
-    let tokenRefreshInterval: NodeJS.Timeout;
-    
-    // Handle redirect result on app load
-    const handleRedirect = async () => {
+    // Check if user is already authenticated on mount
+    const checkAuth = async () => {
       try {
-        console.log('Checking for redirect result...');
-        const result = await handleRedirectResult();
-        if (result?.user) {
-          console.log('✅ Redirect result found for user:', result.user.email);
-          await syncUserWithBackend(result.user);
-          setUser(result.user);
-          setLoading(false);
-          return true; // Successfully handled redirect
-        } else {
-          console.log('No redirect result found');
+        const response = await fetch('/api/auth/user', {
+          credentials: 'include',
+        });
+        
+        if (response.ok) {
+          const userData = await response.json();
+          setDbUser(userData);
+          // Set minimal user info from DB user
+          setUser({
+            sub: userData.id,
+            email: userData.email,
+            name: `${userData.firstName} ${userData.lastName}`,
+            picture: userData.profileImageUrl,
+          });
         }
       } catch (error) {
-        console.error('❌ Error handling redirect:', error);
-      }
-      return false; // No redirect handled
-    };
-
-    // Set up automatic token refresh for authenticated users
-    const setupTokenRefresh = (firebaseUser: any) => {
-      // Clear any existing interval
-      if (tokenRefreshInterval) {
-        clearInterval(tokenRefreshInterval);
-      }
-      
-      // Refresh token every 50 minutes (Firebase tokens expire after 1 hour)
-      // Reduced frequency to prevent rate limiting issues
-      tokenRefreshInterval = setInterval(async () => {
-        try {
-          if (firebaseUser && auth.currentUser && !isRefreshing) {
-            console.log('🔄 Proactive token refresh (50min interval)...');
-            setIsRefreshing(true);
-            await syncUserWithBackend(firebaseUser);
-            setIsRefreshing(false);
-          }
-        } catch (error) {
-          console.error('❌ Proactive token refresh failed:', error);
-          setIsRefreshing(false);
-        }
-      }, 50 * 60 * 1000); // 50 minutes
-    };
-
-    // Listen for auth state changes
-    const unsubscribe = onAuthStateChange(async (firebaseUser) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('🔄 Auth state changed:', firebaseUser?.email ? 'user signed in' : 'signed out');
-      }
-      
-      if (firebaseUser) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('✅ User authenticated');
-        }
-        await syncUserWithBackend(firebaseUser);
-        setUser(firebaseUser);
-        
-        // Set up token refresh for this user
-        setupTokenRefresh(firebaseUser);
-      } else {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('❌ User signed out');
-        }
-        setUser(null);
-        setDbUser(null);
-        
-        // Clear token refresh when user signs out
-        if (tokenRefreshInterval) {
-          clearInterval(tokenRefreshInterval);
-        }
-      }
-      
-      setLoading(false);
-    });
-
-    // Start the authentication flow
-    handleRedirect().then((redirectHandled) => {
-      if (!redirectHandled) {
+        console.error('Failed to check auth status:', error);
+      } finally {
         setLoading(false);
       }
-    });
-
-    return () => {
-      unsubscribe();
-      if (tokenRefreshInterval) {
-        clearInterval(tokenRefreshInterval);
-      }
     };
+
+    checkAuth();
+
+    // Initialize Google Sign-In for future logins
+    initializeGoogleSignIn(async (response: any) => {
+      try {
+        const credential = response.credential;
+        const userInfo = decodeJWT(credential);
+        
+        if (userInfo) {
+          const googleUser: GoogleUser = {
+            sub: userInfo.sub,
+            email: userInfo.email,
+            name: userInfo.name,
+            picture: userInfo.picture,
+            email_verified: userInfo.email_verified,
+          };
+          
+          setUser(googleUser);
+          await syncUserWithBackend(googleUser, credential);
+        }
+      } catch (error) {
+        console.error('Google Sign-In error:', error);
+        setError('Failed to sign in with Google');
+      }
+    }).catch(console.error);
   }, []);
 
   const login = async () => {
     try {
       setLoading(true);
-      const { signInWithGoogle } = await import('@/lib/firebase');
-      const result = await signInWithGoogle();
+      setError(null);
       
-      // If popup succeeded, handle the result immediately
-      if (result?.user) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('✅ Login successful via popup');
+      const response = await signInWithGoogle();
+      
+      if (response.access_token) {
+        // Fetch user info using access token
+        const userInfoResponse = await fetch(
+          `https://www.googleapis.com/oauth2/v2/userinfo?access_token=${response.access_token}`
+        );
+        
+        if (userInfoResponse.ok) {
+          const userInfo = await userInfoResponse.json();
+          
+          const googleUser: GoogleUser = {
+            sub: userInfo.id,
+            email: userInfo.email,
+            name: userInfo.name,
+            picture: userInfo.picture,
+            email_verified: userInfo.verified_email,
+          };
+          
+          setUser(googleUser);
+          await syncUserWithBackend(googleUser, response.access_token);
+          
+          // Redirect to home/main screen after successful login
+          window.location.href = "/";
+        } else {
+          throw new Error('Failed to fetch user info');
         }
-        await syncUserWithBackend(result.user);
-        setUser(result.user);
-        // ✅ Redirect to home after popup login
-        window.location.href = "/";
       }
     } catch (error) {
       console.error('❌ Login failed:', error);
+      setError(error instanceof Error ? error.message : 'Failed to sign in with Google');
     } finally {
       setLoading(false);
     }
@@ -305,9 +290,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setIsLoggingOut(true);
     
     try {
-      // Clear Firebase authentication
-      const { logOut } = await import('@/lib/firebase');
-      await logOut();
+      // Clear Google authentication
+      if (user?.email) {
+        googleSignOut(user.email);
+      }
       
       // Clear backend session and check response
       const logoutResponse = await fetch('/api/auth/logout', { method: 'POST' });

@@ -118,6 +118,22 @@ export default function Header({ title, description, actions }: HeaderProps) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
+                <div className="px-2 py-1.5 text-sm">
+                  <div className="font-medium">{getDisplayName(dbUser?.firstName && dbUser?.lastName ? `${dbUser.firstName} ${dbUser.lastName}` : user?.name)}</div>
+                  <div className="text-xs text-gray-500">{dbUser?.email || user?.email}</div>
+                  {dbUser?.role && (
+                    <div className="mt-1">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                        dbUser.role === 'admin' 
+                          ? 'bg-blue-100 text-blue-800' 
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {dbUser.role.charAt(0).toUpperCase() + dbUser.role.slice(1)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={() => setLocation("/profile")}>
                   <User className="mr-2 h-4 w-4" />
                   Profile
