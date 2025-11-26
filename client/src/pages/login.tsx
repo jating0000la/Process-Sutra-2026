@@ -30,7 +30,7 @@ export default function LoginPage() {
               </div>
             )}
             <Button
-              onClick={login}
+              onClick={() => window.location.href = '/api/auth/google'}
               disabled={loading}
               className="w-full flex items-center justify-center gap-3 py-3 text-lg font-medium bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-xl shadow-md transition-all"
             >

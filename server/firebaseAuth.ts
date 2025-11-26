@@ -434,8 +434,8 @@ export async function setupAuth(app: Express) {
         isSuperAdmin: dbUser.isSuperAdmin
       });
 
-      // Redirect to main screen with success parameter
-      res.redirect('/?login=success');
+      // Redirect to main screen
+      res.redirect('/');
 
     } catch (error) {
       console.error('Google OAuth callback error:', error);
