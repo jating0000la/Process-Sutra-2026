@@ -54,7 +54,7 @@ function ApiLoginRedirect() {
 }
 
 function Router() {
-  const { user, loading } = useAuth();
+  const { user, loading, error } = useAuth();
   useNotifications();
 
   if (loading) {
@@ -63,6 +63,11 @@ function Router() {
         <div className="text-lg">Loading...</div>
       </div>
     );
+  }
+
+  // Show error state if authentication failed
+  if (error && !user) {
+    console.log('Authentication error:', error);
   }
 
   return (
@@ -80,7 +85,7 @@ function Router() {
         </>
       ) : (
         <>
-          {/* Public user routes */}
+          {/* Authenticated user routes */}
           <Route path="/" component={Analytics} />
           <Route path="/tasks" component={Tasks} />
           <Route path="/analytics" component={Analytics} />

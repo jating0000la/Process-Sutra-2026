@@ -45,7 +45,7 @@ export default function LoginPage() {
           </div>
         </CardContent>
       </Card>
-      {/* <AuthDebug /> */}
+      <AuthDebug />
     </div>
   );
 }

@@ -97,33 +97,31 @@ try {
 }
 
 export function getSession() {
-  const sessionTtl = 4 * 60 * 60 * 1000; // 4 hours (reduced from 1 week for security)
+  const sessionTtl = 24 * 60 * 60 * 1000; // 24 hours for better user experience
   
   // Determine environment
   const isProd = process.env.NODE_ENV === 'production';
   const isDev = process.env.NODE_ENV === 'development';
   
-  // Cookie security configuration with production-first approach
+  // Cookie security configuration with development-friendly approach
   let cookieSecure: boolean;
   let sameSite: 'strict' | 'lax' | 'none';
   
   if (isProd) {
     // Production: Always enforce secure cookies
     cookieSecure = true;
-    sameSite = 'strict';
+    sameSite = 'lax'; // Changed from 'strict' to 'lax' for better OAuth compatibility
     
     // Warn if trying to disable security in production
     if (process.env.COOKIE_SECURE === 'false' || process.env.INSECURE_COOKIES === 'true') {
       console.warn('⚠️ WARNING: Attempting to disable secure cookies in production - IGNORED for security');
     }
   } else {
-    // Development: Allow insecure cookies for localhost testing
-    cookieSecure = process.env.COOKIE_SECURE !== 'false' && process.env.INSECURE_COOKIES !== 'true';
-    sameSite = (process.env.COOKIE_SAMESITE as any) || 'lax';
+    // Development: Use insecure cookies for localhost testing
+    cookieSecure = false; // Always false for development
+    sameSite = 'lax'; // Use 'lax' for better OAuth compatibility
     
-    if (!cookieSecure) {
-      console.warn('⚠️ Development mode: Using insecure cookies for localhost testing');
-    }
+    console.warn('⚠️ Development mode: Using insecure cookies for localhost testing');
   }
   
   // Validate session secret
@@ -135,22 +133,25 @@ export function getSession() {
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
     conString: process.env.DATABASE_URL,
-    createTableIfMissing: false,
-    ttl: sessionTtl,
+    createTableIfMissing: true, // Allow table creation for development
+    ttl: Math.floor(sessionTtl / 1000), // Convert to seconds
     tableName: "sessions",
   });
   
   return session({
+    name: 'connect.sid', // Use default session name
     secret: process.env.SESSION_SECRET,
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
-    rolling: true, // Refresh session on activity for better security
+    rolling: true,
     cookie: {
       httpOnly: true,
       secure: cookieSecure,
       sameSite,
       maxAge: sessionTtl,
+      path: '/',
+      domain: isDev ? undefined : process.env.DOMAIN, // No domain for localhost
     },
   });
 }
@@ -273,8 +274,24 @@ async function upsertUser(userData: any) {
 }
 
 export async function setupAuth(app: Express) {
-  app.set("trust proxy", 1);
-  app.use(getSession());
+  app.set("trust proxy", true);
+  
+  // Apply session middleware
+  const sessionMiddleware = getSession();
+  app.use(sessionMiddleware);
+  
+  // Debug middleware to log session info
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api/')) {
+      console.log(`Session debug - ${req.method} ${req.path}:`, {
+        sessionID: req.sessionID,
+        hasSession: !!req.session,
+        hasUser: !!(req.session as any)?.user,
+        cookies: req.headers.cookie ? 'present' : 'none'
+      });
+    }
+    next();
+  });
 
   // Rate limiting for authentication endpoints - More lenient for automatic token refresh
   const authRateLimiter = rateLimit({
@@ -416,8 +433,8 @@ export async function setupAuth(app: Express) {
         isSuperAdmin: dbUser.isSuperAdmin
       });
 
-      // Redirect to main screen
-      res.redirect('/');
+      // Redirect to main screen with success parameter
+      res.redirect('/?login=success');
 
     } catch (error) {
       console.error('Google OAuth callback error:', error);
@@ -638,6 +655,17 @@ export async function setupAuth(app: Express) {
       
       res.status(401).json({ message: 'Authentication failed' });
     }
+  });
+
+  // Debug session endpoint
+  app.get('/api/auth/session-debug', (req, res) => {
+    res.json({
+      sessionID: req.sessionID,
+      hasSession: !!req.session,
+      sessionData: req.session,
+      cookies: req.headers.cookie,
+      userAgent: req.headers['user-agent']
+    });
   });
 
   // Get current user with status check

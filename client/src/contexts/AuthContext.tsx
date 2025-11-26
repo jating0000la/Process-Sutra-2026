@@ -86,10 +86,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       console.error('Error clearing Google auth:', error);
     }
 
-    // Force redirect to login page, avoiding redirect loops
+    // Clear any existing auth state and redirect to login
     setTimeout(() => {
       const currentPath = window.location.pathname;
-      if (currentPath !== '/' && currentPath !== '/api/login') {
+      // Only redirect if not already on login page
+      if (currentPath !== '/' && currentPath !== '/login') {
         window.location.replace('/');
       }
     }, 1000);
@@ -190,12 +191,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // Check if user is already authenticated on mount
     const checkAuth = async () => {
       try {
+        authLog('Checking authentication status on mount');
         const response = await fetch('/api/auth/user', {
           credentials: 'include',
         });
         
+        authLog('Auth check response status:', response.status);
+        
         if (response.ok) {
           const userData = await response.json();
+          authLog('User data received:', { email: userData.email, role: userData.role });
           setDbUser(userData);
           // Set minimal user info from DB user
           setUser({
@@ -204,11 +209,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             name: `${userData.firstName} ${userData.lastName}`,
             picture: userData.profileImageUrl,
           });
+          authLog('User state updated successfully');
+        } else {
+          authLog('No valid session found');
+          const errorData = await response.text();
+          authLog('Auth check error response:', errorData);
         }
       } catch (error) {
         console.error('Failed to check auth status:', error);
+        authLog('Auth check failed with error:', error);
       } finally {
         setLoading(false);
+        authLog('Auth loading completed');
       }
     };
 
@@ -266,8 +278,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           setUser(googleUser);
           await syncUserWithBackend(googleUser, response.access_token);
           
-          // Redirect to home/main screen after successful login
-          window.location.href = "/";
+          authLog('Login successful, user authenticated');
+          // Redirect to main dashboard after successful login
+          window.location.href = '/';
         } else {
           throw new Error('Failed to fetch user info');
         }
