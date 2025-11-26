@@ -28,7 +28,7 @@
     "start": "NODE_ENV=production node dist/index.js",
     "start:prod": "NODE_ENV=production node dist/index.js",
     "deploy": "./deploy.sh",
-    "deploy:setup": "npm ci && npm run build && pm2 start ecosystem.config.js",
+    "deploy:setup": "npm ci && npm run build && pm2 start ecosystem.config.production.js",
     "deploy:update": "git pull && npm ci && npm run build && pm2 restart processsutra",
     "check": "tsc",
     "db:push": "drizzle-kit push",

@@ -267,10 +267,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           await syncUserWithBackend(googleUser, response.access_token);
           
           // Redirect to home/main screen after successful login
-          // Use replace to avoid back button issues
-          setTimeout(() => {
-            window.location.replace('/');
-          }, 100);
+          window.location.href = "/";
         } else {
           throw new Error('Failed to fetch user info');
         }

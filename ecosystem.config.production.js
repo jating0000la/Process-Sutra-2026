@@ -6,14 +6,26 @@ module.exports = {
   apps: [
     {
       name: 'processsutra',
-      script: 'dist/index.js',
+      script: './dist/index.js',
       instances: 4, // 4 instances = 1 per CPU core (optimal for 4-core system)
       exec_mode: 'cluster',
       
-      // Environment variables
+      // Interpreter settings for ES modules
+      interpreter: 'node',
+      interpreter_args: '--experimental-specifier-resolution=node',
+      
+      // Load environment variables from .env file
+      env_file: '.env',
+      
+      // Environment variables (these override .env file values)
       env_production: {
         NODE_ENV: 'production',
         PORT: 5000,
+        // Allow insecure cookies for testing on HTTP
+        // TODO: Remove these after SSL/HTTPS is configured
+        COOKIE_SECURE: 'false',
+        INSECURE_COOKIES: 'true',
+        DISABLE_DEV_AUTH: 'false',
       },
       
       // Performance tuning - Optimized for 16GB RAM
