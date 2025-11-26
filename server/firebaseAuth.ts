@@ -674,6 +674,37 @@ export async function setupAuth(app: Express) {
     });
   });
 
+  // Test login endpoint for production debugging
+  app.post('/api/auth/test-login', async (req, res) => {
+    try {
+      console.log('🧪 Test login endpoint called');
+      
+      // Create a test user session
+      (req.session as any).user = {
+        id: 'test-user-id',
+        email: 'test@processsutra.com',
+        claims: { sub: 'test-user-id', email: 'test@processsutra.com' }
+      };
+      
+      await new Promise<void>((resolve, reject) => {
+        req.session.save((err) => {
+          if (err) {
+            console.error('Test session save failed:', err);
+            reject(err);
+          } else {
+            console.log('✅ Test session saved successfully');
+            resolve();
+          }
+        });
+      });
+      
+      res.json({ success: true, message: 'Test login successful' });
+    } catch (error) {
+      console.error('Test login failed:', error);
+      res.status(500).json({ error: 'Test login failed' });
+    }
+  });
+
   // Get current user with status check
   app.get('/api/auth/user', isAuthenticated, async (req, res) => {
     try {
