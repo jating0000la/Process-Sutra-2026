@@ -446,6 +446,7 @@ export async function setupAuth(app: Express) {
   // Google token login endpoint (for client-side authentication)
   app.post('/api/auth/google-login', async (req, res) => {
     try {
+      console.log('🔐 Google login attempt:', { hasIdToken: !!req.body.idToken, hasAccessToken: !!req.body.accessToken, email: req.body.email });
       const { idToken, accessToken, email, displayName, photoURL } = req.body;
 
       // Development bypass when Google OAuth is not available
@@ -609,6 +610,7 @@ export async function setupAuth(app: Express) {
             console.error('Session save failed:', err);
             reject(err);
           } else {
+            console.log('✅ Session saved successfully for user:', dbUser.email);
             resolve();
           }
         });
