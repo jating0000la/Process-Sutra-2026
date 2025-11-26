@@ -108,13 +108,16 @@ export function getSession() {
   let sameSite: 'strict' | 'lax' | 'none';
   
   if (isProd) {
-    // Production: Always enforce secure cookies
-    cookieSecure = true;
-    sameSite = 'strict';
-    
-    // Warn if trying to disable security in production
+    // Production: Check if explicitly allowing insecure cookies (for VPS without SSL)
     if (process.env.COOKIE_SECURE === 'false' || process.env.INSECURE_COOKIES === 'true') {
-      console.warn('⚠️ WARNING: Attempting to disable secure cookies in production - IGNORED for security');
+      console.warn('⚠️ WARNING: Using insecure cookies in production - Make sure you understand the security implications!');
+      cookieSecure = false;
+      sameSite = (process.env.COOKIE_SAMESITE as any) || 'lax';
+    } else {
+      // Default production: enforce secure cookies
+      cookieSecure = true;
+      sameSite = 'strict';
+      console.log('✅ Production mode: Using secure cookies with strict SameSite policy');
     }
   } else {
     // Development: Allow insecure cookies for localhost testing

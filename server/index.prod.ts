@@ -115,12 +115,12 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "accounts.google.com", "https://accounts.google.com"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "accounts.google.com", "https://accounts.google.com", "https://www.gstatic.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://accounts.google.com"],
       imgSrc: ["'self'", "data:", "https:", "blob:"],
-      connectSrc: ["'self'", "accounts.google.com", "https://accounts.google.com"],
+      connectSrc: ["'self'", "accounts.google.com", "https://accounts.google.com", "https://www.googleapis.com"],
       frameSrc: ["accounts.google.com", "https://accounts.google.com"],
-      fontSrc: ["'self'", "data:"],
+      fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
       workerSrc: ["'self'", "blob:"],
@@ -146,10 +146,18 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
   : ['https://processsutra.com', 'https://www.processsutra.com'];
 
+// In development or if INSECURE_COOKIES is true, allow all origins
+const isDevelopmentCors = process.env.INSECURE_COOKIES === 'true' || process.env.NODE_ENV === 'development';
+
 app.use(cors({
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
+    
+    // In development mode or with insecure cookies, allow all origins
+    if (isDevelopmentCors) {
+      return callback(null, true);
+    }
     
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
