@@ -445,8 +445,17 @@ export async function setupAuth(app: Express) {
 
   // Google token login endpoint (for client-side authentication)
   app.post('/api/auth/google-login', async (req, res) => {
+    // Add CORS headers for production
+    res.header('Access-Control-Allow-Credentials', 'true');
+    
     try {
-      console.log('🔐 Google login attempt:', { hasIdToken: !!req.body.idToken, hasAccessToken: !!req.body.accessToken, email: req.body.email });
+      console.log('🔐 Google login attempt:', { 
+        hasIdToken: !!req.body.idToken, 
+        hasAccessToken: !!req.body.accessToken, 
+        email: req.body.email,
+        origin: req.headers.origin,
+        userAgent: req.headers['user-agent']
+      });
       const { idToken, accessToken, email, displayName, photoURL } = req.body;
 
       // Development bypass when Google OAuth is not available
