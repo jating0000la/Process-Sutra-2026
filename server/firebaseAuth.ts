@@ -133,9 +133,10 @@ export function getSession() {
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
     conString: process.env.DATABASE_URL,
-    createTableIfMissing: true, // Allow table creation for development
-    ttl: Math.floor(sessionTtl / 1000), // Convert to seconds
+    createTableIfMissing: true,
+    ttl: Math.floor(sessionTtl / 1000),
     tableName: "sessions",
+    errorLog: console.error, // Log session store errors
   });
   
   return session({
@@ -151,7 +152,7 @@ export function getSession() {
       sameSite,
       maxAge: sessionTtl,
       path: '/',
-      domain: isDev ? undefined : process.env.DOMAIN, // No domain for localhost
+      // Don't set domain - let browser handle it automatically
     },
   });
 }
@@ -664,7 +665,10 @@ export async function setupAuth(app: Express) {
       hasSession: !!req.session,
       sessionData: req.session,
       cookies: req.headers.cookie,
-      userAgent: req.headers['user-agent']
+      userAgent: req.headers['user-agent'],
+      nodeEnv: process.env.NODE_ENV,
+      cookieSecure: process.env.COOKIE_SECURE,
+      databaseUrl: process.env.DATABASE_URL ? 'configured' : 'missing'
     });
   });
 
@@ -840,6 +844,11 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
   const user = (req.session as any)?.user;
 
   if (!user) {
+    console.log('Authentication failed - no user in session:', {
+      sessionID: req.sessionID,
+      hasSession: !!req.session,
+      path: req.path
+    });
     return res.status(401).json({ message: "Unauthorized" });
   }
 
