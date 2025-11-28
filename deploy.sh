@@ -16,7 +16,7 @@ echo "🔨 Building application..."
 npm run build
 
 # Create logs directory
-mkdir -p logs
+mkdir -p /var/log/pm2 /var/log/caddy
 
 # Install PM2 globally if not installed
 if ! command -v pm2 &> /dev/null; then
@@ -26,11 +26,11 @@ fi
 
 # Stop existing application
 echo "🛑 Stopping existing application..."
-pm2 stop processsutra || true
+pm2 stop processsutra-api || true
 
 # Start application with PM2
 echo "▶️ Starting application..."
-pm2 start ecosystem.config.js
+pm2 start ecosystem.config.cjs
 
 # Save PM2 configuration
 pm2 save
@@ -41,4 +41,4 @@ pm2 startup
 echo "✅ Deployment completed successfully!"
 echo "🌐 Application should be running at: https://processsutra.com"
 echo "📊 Check status with: pm2 status"
-echo "📝 View logs with: pm2 logs processsutra"
+echo "📝 View logs with: pm2 logs processsutra-api"

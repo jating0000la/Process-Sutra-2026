@@ -6,7 +6,9 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./firebaseAuth";
 import { db } from "./db";
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import NodeCache from 'node-cache';
+import { healthCheck } from './health';
 import {
   insertFlowRuleSchema,
   insertTaskSchema,
@@ -93,18 +95,31 @@ const bulkFlowRuleLimiter = rateLimit({
 
 export async function registerRoutes(app: Express): Promise<Server> {
   console.log('[routes] registerRoutes invoked - NODE_ENV=', process.env.NODE_ENV);
+  
+  // Production security middleware
+  if (process.env.NODE_ENV === 'production') {
+    app.use(helmet({
+      contentSecurityPolicy: false, // Handled by Caddy
+      crossOriginEmbedderPolicy: false
+    }));
+    
+    // Global rate limiting for production
+    const globalLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 1000, // limit each IP to 1000 requests per windowMs
+      message: 'Too many requests from this IP',
+      standardHeaders: true,
+      legacyHeaders: false
+    });
+    app.use('/api', globalLimiter);
+  }
+  
   // Auth middleware
   await setupAuth(app);
 
-  // Lightweight health check (no auth, no DB) for debugging routing/ports
-  app.get('/api/health', (_req, res) => {
-    res.json({ 
-      ok: true, 
-      ts: new Date().toISOString(),
-      env: process.env.NODE_ENV || 'development',
-      port: process.env.PORT || '5000'
-    });
-  });
+  // Health check endpoints
+  app.get('/health', healthCheck);
+  app.get('/api/health', healthCheck);
 
   // Database health check (separate endpoint)
   app.get('/api/health/db', async (_req, res) => {
@@ -4090,6 +4105,18 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     }
   });
 
+  // Graceful shutdown handling
+  const gracefulShutdown = () => {
+    console.log('Received shutdown signal, closing server gracefully...');
+    httpServer.close(() => {
+      console.log('Server closed');
+      process.exit(0);
+    });
+  };
+  
+  process.on('SIGTERM', gracefulShutdown);
+  process.on('SIGINT', gracefulShutdown);
+  
   const httpServer = createServer(app);
   return httpServer;
 }

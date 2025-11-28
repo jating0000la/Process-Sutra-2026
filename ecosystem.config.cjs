@@ -7,15 +7,18 @@ module.exports = {
       name: 'processsutra-api',
       script: './dist/index.js',
 
-      // Use all cores dynamically
-      instances: 4,
+      // Use all cores for 8000+ concurrent users
+      instances: 4, // Auto-detect CPU cores
       exec_mode: 'cluster',
 
-      // Node performance tuning
-      node_args: '--max-old-space-size=3072 --optimize_for_size --stack_size=1024',
-      env_file: '.env',
+      // Node performance tuning for high concurrency
+      node_args: '--max-old-space-size=4096 --max-http-header-size=16384',
 
       env: {
+        NODE_ENV: 'production',
+      },
+
+      env_production: {
         NODE_ENV: 'production',
       },
 
