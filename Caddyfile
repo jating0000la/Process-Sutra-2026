@@ -1,71 +1,78 @@
 {
-    # Global options
+    # GLOBAL OPTIONS
     servers {
-        max_header_size 16KB
+        protocols h1 h2 h3
+        max_header_size 32KB
         timeouts {
+            read_header 20s
             read_body 30s
-            read_header 30s
             write 30s
-            idle 120s
+            idle 180s
         }
     }
 }
 
-processsutra.com www.processsutra.com {
-    # Enable compression
+processsutra.com, www.processsutra.com {
     encode zstd gzip
-    
-    # Reverse proxy with optimizations
+
     reverse_proxy 127.0.0.1:5000 {
-        # Load balancing
-        lb_policy round_robin
-        
-        # Increase connection limits
+        # Transport tuning
         transport http {
-            # Keep connections alive
             keepalive 120s
-            keepalive_idle_conns 100
+            keepalive_idle_conns 200
             max_conns_per_host 0
-            
-            # Timeouts
+            read_buffer 64KB
+            write_buffer 64KB
+
             dial_timeout 10s
+            tls_timeout 10s
             response_header_timeout 30s
         }
-        
-        # Health check
-        health_uri /api/health
-        health_interval 30s
-        health_timeout 10s
-        
-        # Headers
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
+
+        # Correct upstream headers (VERY IMPORTANT)
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Port {server_port}
         header_up X-Forwarded-Proto {scheme}
+        header_up X-Real-IP {http.request.remote}
+        header_up X-Forwarded-For {http.request.remote}
     }
-    
+
     # Security headers
     header {
-        X-Content-Type-Options nosniff
-        X-Frame-Options SAMEORIGIN
-        X-XSS-Protection 1; mode=block
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "geolocation=(), microphone=(), camera=()"
         -Server
+
+        Content-Security-Policy "
+            default-src 'self';
+            script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com;
+            style-src 'self' 'unsafe-inline' https://accounts.google.com;
+            img-src 'self' data: https://accounts.google.com;
+            frame-src https://accounts.google.com;
+            connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com;
+        "
     }
-    
-    # Cache static assets
+
+    # Static asset caching
     @static {
         path *.js *.css *.png *.jpg *.jpeg *.gif *.ico *.svg *.woff *.woff2
     }
-    header @static Cache-Control public, max-age=31536000
-    
+    header @static Cache-Control "public, max-age=31536000, immutable"
+
     # Logging
     log {
         output file /var/log/caddy/access.log {
-            roll_size 100mb
+            roll_size 100MB
             roll_keep 5
+            roll_keep_for 30d
         }
     }
 }
 
-194.238.16.140 {
+# Redirect IP to domain
+http://194.238.16.140 {
     redir https://processsutra.com{uri} permanent
 }
