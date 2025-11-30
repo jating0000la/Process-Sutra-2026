@@ -294,11 +294,6 @@ export default function FormBuilder() {
       emailConfig: form.getValues("emailConfig"),
     };
 
-    // SECURITY: Don't log sensitive form template data in production
-    if (process.env.NODE_ENV === 'development') {
-      console.log("Saving form template for formId:", formData.formId);
-    }
-
     if (currentForm) {
       updateTemplateMutation.mutate({ id: currentForm.id, data: formData });
     } else {

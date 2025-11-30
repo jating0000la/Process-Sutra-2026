@@ -1,3 +1,9 @@
+/**
+ * @deprecated This file is deprecated. File uploads now use Google Drive instead of GridFS.
+ * See server/services/googleDriveService.ts for the new implementation.
+ * This file is kept for backward compatibility only.
+ */
+
 import { GridFSBucket } from 'mongodb';
 import { getMongoClient } from './client.js';
 

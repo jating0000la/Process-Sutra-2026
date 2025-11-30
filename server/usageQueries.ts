@@ -197,49 +197,62 @@ export async function getTopForms(organizationId: string, limit: number = 10) {
 }
 
 /**
- * Get storage statistics from MongoDB using aggregation pipeline
+ * Get storage statistics from Google Drive
+ * Note: Files are stored in individual user Google Drive accounts
+ * This returns aggregate stats across all users with Drive access in the organization
  */
 export async function getStorageStats(organizationId: string) {
   try {
-    const { getMongoClient } = await import('./mongo/client');
+    const { storage } = await import('./storage');
+    const { getOAuth2Client } = await import('./services/googleOAuth');
+    const { getStorageStats: getDriveStorageStats } = await import('./services/googleDriveService');
+    const { refreshTokenIfNeeded } = await import('./utils/tokenRefresh');
     
-    const client = await getMongoClient();
-    const dbName = process.env.MONGODB_DB as string;
-    const db = client.db(dbName);
-    const filesCollection = db.collection('uploads.files');
-
-    // Use aggregation pipeline for better performance
-    const [stats] = await filesCollection.aggregate([
-      { $match: { 'metadata.organizationId': organizationId } },
-      {
-        $group: {
-          _id: null,
-          totalFiles: { $sum: 1 },
-          totalBytes: { $sum: '$length' }
-        }
-      }
-    ]).toArray();
-
-    // Get file type distribution in separate query
-    const typeResults = await filesCollection.aggregate([
-      { $match: { 'metadata.organizationId': organizationId } },
-      {
-        $group: {
-          _id: { $arrayElemAt: [{ $split: ['$contentType', '/'] }, 0] },
-          count: { $sum: 1 }
-        }
-      }
-    ]).toArray();
-
+    // Get all users in organization with Google Drive enabled
+    const orgUsers = await storage.getUsersByOrganization(organizationId);
+    const driveEnabledUsers = orgUsers.filter((u: any) => u.googleDriveEnabled && u.googleAccessToken);
+    
+    if (driveEnabledUsers.length === 0) {
+      return {
+        totalFiles: 0,
+        totalBytes: 0,
+        filesByType: {}
+      };
+    }
+    
+    let totalFiles = 0;
+    let totalBytes = 0;
     const filesByType: Record<string, number> = {};
-    typeResults.forEach((result: any) => {
-      const type = result._id || 'other';
-      filesByType[type] = result.count;
-    });
-
+    
+    // Aggregate stats from all users with Drive access
+    for (const user of driveEnabledUsers) {
+      try {
+        const oauth2Client = getOAuth2Client();
+        
+        // Refresh token if needed and update oauth2Client
+        const tokenValid = await refreshTokenIfNeeded(user, oauth2Client);
+        if (!tokenValid) {
+          console.warn(`Skipping user ${user.email} due to invalid token`);
+          continue;
+        }
+        
+        const userStats = await getDriveStorageStats(oauth2Client, organizationId);
+        totalFiles += userStats.totalFiles;
+        totalBytes += userStats.totalBytes;
+        
+        // Merge file type counts
+        Object.entries(userStats.byFileType).forEach(([type, count]) => {
+          filesByType[type] = (filesByType[type] || 0) + count;
+        });
+      } catch (error) {
+        console.error(`Error fetching Drive stats for user ${user.email}:`, error);
+        // Continue with other users
+      }
+    }
+    
     return {
-      totalFiles: stats?.totalFiles || 0,
-      totalBytes: stats?.totalBytes || 0,
+      totalFiles,
+      totalBytes,
       filesByType
     };
   } catch (error) {

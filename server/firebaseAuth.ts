@@ -70,8 +70,6 @@ async function createLoginLog(userId: string, organizationId: string, req: Reque
       loginStatus: status,
       failureReason,
     });
-    
-    console.log(`📝 Login log created: ${status} - User: ${userId}, IP: ${metadata.ipAddress}`);
   } catch (error) {
     console.error('Failed to create login log:', error);
     // Don't throw - logging failure shouldn't block authentication
@@ -87,7 +85,6 @@ try {
   
   if (clientId && clientSecret && redirectUri) {
     googleAuthConfigured = true;
-    console.log('✅ Google OAuth configured successfully');
   } else {
     console.warn('⚠️ Google OAuth credentials missing - authentication disabled');
   }
@@ -189,11 +186,9 @@ async function getOrCreateOrganization(email: string) {
           maxUsers: 50,
           planType: 'free'
         });
-        console.log(`✅ Created new organization: ${orgName} for domain: ${domain}`);
       } catch (createError: any) {
         // Handle race condition: if organization was created by another request simultaneously
         if (createError.code === '23505' && createError.constraint === 'organizations_domain_key') {
-          console.log(`⚠️ Organization already exists for domain: ${domain}, fetching existing one`);
           organization = await storage.getOrganizationByDomain(domain);
           if (!organization) {
             throw new Error(`Failed to retrieve organization for domain: ${domain}`);
@@ -248,7 +243,6 @@ async function upsertUser(userData: any) {
         lastLoginAt: new Date(),
       };
       
-      console.log(`🔐 Creating admin for new organization: ${normalizedEmail} -> ${organization.name}`);
       return await storage.createUser(userPayload);
     } else {
       // For existing organizations, create user as regular user (not admin)
@@ -264,7 +258,6 @@ async function upsertUser(userData: any) {
         lastLoginAt: new Date(),
       };
       
-      console.log(`🔐 Creating user for existing organization: ${normalizedEmail} -> ${organization.name}`);
       return await storage.createUser(userPayload);
     }
     
@@ -281,18 +274,20 @@ export async function setupAuth(app: Express) {
   const sessionMiddleware = getSession();
   app.use(sessionMiddleware);
   
-  // Debug middleware to log session info
-  app.use((req, res, next) => {
-    if (req.path.startsWith('/api/')) {
-      console.log(`Session debug - ${req.method} ${req.path}:`, {
-        sessionID: req.sessionID,
-        hasSession: !!req.session,
-        hasUser: !!(req.session as any)?.user,
-        cookies: req.headers.cookie ? 'present' : 'none'
-      });
-    }
-    next();
-  });
+  // Session debug middleware (development only)
+  if (process.env.NODE_ENV === 'development') {
+    app.use((req, res, next) => {
+      if (req.path.startsWith('/api/')) {
+        console.log(`Session debug - ${req.method} ${req.path}:`, {
+          sessionID: req.sessionID,
+          hasSession: !!req.session,
+          hasUser: !!(req.session as any)?.user,
+          cookies: req.headers.cookie ? 'present' : 'none'
+        });
+      }
+      next();
+    });
+  }
 
   // Rate limiting for authentication endpoints - More lenient for automatic token refresh
   const authRateLimiter = rateLimit({
@@ -332,7 +327,14 @@ export async function setupAuth(app: Express) {
       // Store state in session for CSRF protection
       (req.session as any).oauthState = state;
       
-      res.redirect(authUrl);
+      // Save session before redirect to ensure state is persisted
+      req.session.save((err) => {
+        if (err) {
+          console.error('Failed to save session:', err);
+          return res.status(500).json({ message: 'Failed to initiate authentication' });
+        }
+        res.redirect(authUrl);
+      });
     } catch (error) {
       console.error('Google OAuth initiation error:', error);
       res.status(500).json({ message: 'Failed to initiate Google authentication' });
@@ -353,12 +355,33 @@ export async function setupAuth(app: Express) {
         return res.redirect('/?error=missing_code');
       }
       
-      // Verify state for CSRF protection
+      // Check if this is a Drive integration flow by decoding the state
+      let isDriveFlow = false;
+      if (state && typeof state === 'string') {
+        try {
+          const decoded = Buffer.from(state, 'base64').toString();
+          const stateData = JSON.parse(decoded);
+          // Drive flow state contains userId, auth flow state is just a random string
+          if (stateData && stateData.userId) {
+            isDriveFlow = true;
+            // Forward to the Drive OAuth handler
+            return res.redirect(`/api/oauth/google/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state as string)}`);
+          }
+        } catch (e) {
+          // Not a Drive flow state, continue with auth flow
+        }
+      }
+      
+      // Verify state for CSRF protection (auth flow only)
       const sessionState = (req.session as any).oauthState;
+      
       if (state !== sessionState) {
-        console.error('OAuth state mismatch');
+        console.error('OAuth state mismatch - CSRF protection failed');
         return res.redirect('/?error=invalid_state');
       }
+      
+      // Clear the state from session after verification
+      delete (req.session as any).oauthState;
       
       // Exchange code for tokens
       const tokens = await getTokensFromCode(code);
@@ -449,13 +472,6 @@ export async function setupAuth(app: Express) {
     res.header('Access-Control-Allow-Credentials', 'true');
     
     try {
-      console.log('🔐 Google login attempt:', { 
-        hasIdToken: !!req.body.idToken, 
-        hasAccessToken: !!req.body.accessToken, 
-        email: req.body.email,
-        origin: req.headers.origin,
-        userAgent: req.headers['user-agent']
-      });
       const { idToken, accessToken, email, displayName, photoURL } = req.body;
 
       // Development bypass when Google OAuth is not available
@@ -628,12 +644,6 @@ export async function setupAuth(app: Express) {
       // Log successful login
       await createLoginLog(dbUser.id, (dbUser as any).organizationId, req, 'success');
 
-      console.log('🔐 User logged in:', {
-        email: dbUser.email,
-        role: dbUser.role,
-        isSuperAdmin: dbUser.isSuperAdmin
-      });
-
       res.json({ 
         success: true, 
         user: {
@@ -698,10 +708,8 @@ export async function setupAuth(app: Express) {
       await new Promise<void>((resolve, reject) => {
         req.session.save((err) => {
           if (err) {
-            console.error('Test session save failed:', err);
             reject(err);
           } else {
-            console.log('✅ Test session saved successfully');
             resolve();
           }
         });
@@ -709,7 +717,6 @@ export async function setupAuth(app: Express) {
       
       res.json({ success: true, message: 'Test login successful' });
     } catch (error) {
-      console.error('Test login failed:', error);
       res.status(500).json({ error: 'Test login failed' });
     }
   });
@@ -862,8 +869,6 @@ export async function setupAuth(app: Express) {
             logoutTime,
             sessionDuration,
           });
-          
-          console.log(`📝 Logout logged: User ${sessionUser.email}, Session duration: ${sessionDuration} minutes`);
         }
       } catch (error) {
         console.error('Failed to update logout time:', error);
@@ -886,11 +891,6 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
   const user = (req.session as any)?.user;
 
   if (!user) {
-    console.log('Authentication failed - no user in session:', {
-      sessionID: req.sessionID,
-      hasSession: !!req.session,
-      path: req.path
-    });
     return res.status(401).json({ message: "Unauthorized" });
   }
 

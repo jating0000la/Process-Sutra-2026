@@ -260,12 +260,22 @@ export default function Tasks() {
               break;
               
             case 'file':
-              // Handle file uploads
+              // Handle file uploads - show as clickable link if webViewLink exists
               if (formValue.answer) {
-                if (typeof formValue.answer === 'string') {
+                if (typeof formValue.answer === 'object' && formValue.answer.webViewLink) {
+                  // File object with link
+                  const fileName = formValue.answer.originalName || formValue.answer.fileName || 'View File';
+                  formattedAnswer = `<a href="${formValue.answer.webViewLink}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 hover:underline">📎 ${fileName} ↗</a>`;
+                } else if (typeof formValue.answer === 'string') {
                   formattedAnswer = `📎 ${formValue.answer}`;
                 } else if (Array.isArray(formValue.answer)) {
-                  formattedAnswer = formValue.answer.map((file: any) => `📎 ${file}`).join(', ');
+                  formattedAnswer = formValue.answer.map((file: any) => {
+                    if (typeof file === 'object' && file.webViewLink) {
+                      const fileName = file.originalName || file.fileName || 'View File';
+                      return `<a href="${file.webViewLink}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 hover:underline">📎 ${fileName} ↗</a>`;
+                    }
+                    return `📎 ${file}`;
+                  }).join(', ');
                 }
               }
               break;
@@ -416,12 +426,27 @@ export default function Tasks() {
               break;
               
             case 'file':
-              // Handle file uploads
+              // Handle file uploads - show as clickable link if webViewLink exists
               if (value) {
-                if (typeof value === 'string') {
+                if (
+                  typeof value === 'object' &&
+                  value !== null &&
+                  'webViewLink' in value &&
+                  typeof (value as { webViewLink?: string }).webViewLink === 'string'
+                ) {
+                  // File object with link
+                  const fileName = (value as any).originalName || (value as any).fileName || 'View File';
+                  formattedValue = `<a href="${(value as any).webViewLink}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 hover:underline">📎 ${fileName} ↗</a>`;
+                } else if (typeof value === 'string') {
                   formattedValue = `📎 ${value}`;
                 } else if (Array.isArray(value)) {
-                  formattedValue = value.map((file: any) => `📎 ${file}`).join(', ');
+                  formattedValue = value.map((file: any) => {
+                    if (typeof file === 'object' && file.webViewLink) {
+                      const fileName = file.originalName || file.fileName || 'View File';
+                      return `<a href="${file.webViewLink}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 hover:underline">📎 ${fileName} ↗</a>`;
+                    }
+                    return `📎 ${file}`;
+                  }).join(', ');
                 }
               }
               break;
@@ -655,7 +680,6 @@ export default function Tasks() {
         serverResponse = await apiRequest("GET", "/api/export/flow-data");
       } catch (err) {
         // Server endpoint may be unavailable in some environments; we'll fall back to client-side export
-        console.warn("Server export failed, will attempt client-side export:", err);
         serverResponse = null;
       }
 
@@ -2448,7 +2472,7 @@ export default function Tasks() {
                                             <div key={key} className="border-b border-gray-100 dark:border-gray-600 pb-2 last:border-b-0">
                                               <Label className="text-xs font-medium text-gray-600 dark:text-gray-400 block">{key}</Label>
                                               <div className="text-sm text-gray-800 dark:text-gray-200 mt-1">
-                                                {typeof value === 'string' && value.includes('<table') ? (
+                                                {typeof value === 'string' && (value.includes('<table') || value.includes('<a href')) ? (
                                                   <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(value) }} />
                                                 ) : Array.isArray(value) ? (
                                                   <div className="space-y-1">

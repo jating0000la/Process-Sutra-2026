@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ChevronDown, ChevronRight, Clock, CheckCircle, AlertCircle } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, CheckCircle, AlertCircle, ExternalLink, FileIcon } from "lucide-react";
 import { format } from "date-fns";
 
 interface TaskData {
@@ -174,10 +174,27 @@ export default function FlowDataViewer({
       };
 
       // Safe conversion function that handles the {answer, questionId, questionTitle} objects
-      const convertToSafeDisplay = (data: any): string => {
+      const convertToSafeDisplay = (data: any): string | React.ReactElement => {
         if (data === null || data === undefined) return 'No data';
         if (typeof data === 'string') return data;
         if (typeof data === 'number' || typeof data === 'boolean') return String(data);
+        
+        // Handle file upload objects with webViewLink
+        // Check for various file object structures
+        if (typeof data === 'object' && (data.type === 'file' || data.driveFileId) && data.webViewLink) {
+          return (
+            <a 
+              href={data.webViewLink} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 hover:underline"
+            >
+              <FileIcon className="w-4 h-4" />
+              <span>{data.originalName || data.fileName || 'View File'}</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          );
+        }
         
         // Handle form response objects with answer property
         if (typeof data === 'object' && data.answer !== undefined) {
@@ -314,16 +331,6 @@ export default function FlowDataViewer({
                       processedValue = parseIfJsonString(value);
                     }
                     
-                    // Debug logging to see what's happening
-                    if (key.toLowerCase().includes('product')) {
-                      console.log('Product Details Debug:', {
-                        originalValue: value,
-                        processedValue: processedValue,
-                        isTableRow: isTableRowObject(processedValue),
-                        type: typeof processedValue
-                      });
-                    }
-                    
                     // Check if this value is also a table-like object (after processing)
                     if (isTableRowObject(processedValue)) {
                       return (
@@ -431,13 +438,16 @@ export default function FlowDataViewer({
                     const displayValue = convertToSafeDisplay(processedValue);
                     const displayKey = labelFromValue ?? String(key).replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
                     
+                    // Check if displayValue is a React element (e.g., file link)
+                    const isReactElement = React.isValidElement(displayValue);
+                    
                     return (
                       <div key={`${key}-${index}`} className="border-b border-gray-100 dark:border-gray-700 pb-2 last:border-b-0">
                         <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                           {displayKey}
                         </div>
                         <div className="text-sm text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-3 py-2 rounded">
-                          {displayValue}
+                          {isReactElement ? displayValue : <span>{displayValue}</span>}
                         </div>
                       </div>
                     );
@@ -451,6 +461,8 @@ export default function FlowDataViewer({
 
       // Handle non-object data
       const displayValue = convertToSafeDisplay(parsedFormResponse);
+      const isReactElement = React.isValidElement(displayValue);
+      
       return (
         <div className="bg-white dark:bg-gray-900 border rounded-lg overflow-hidden">
           {title && (
@@ -460,7 +472,7 @@ export default function FlowDataViewer({
           )}
           <div className="p-4">
             <div className="text-sm text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 px-3 py-2 rounded">
-              {displayValue}
+              {isReactElement ? displayValue : <span>{displayValue}</span>}
             </div>
           </div>
         </div>

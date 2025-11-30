@@ -82,6 +82,11 @@ export const users = pgTable(
     status: varchar("status").default("active"), // active, inactive, suspended
     lastLoginAt: timestamp("last_login_at"),
     passwordChangedAt: timestamp("password_changed_at"),
+    // Google OAuth tokens for Drive access
+    googleAccessToken: text("google_access_token"),
+    googleRefreshToken: text("google_refresh_token"),
+    googleTokenExpiry: timestamp("google_token_expiry"),
+    googleDriveEnabled: boolean("google_drive_enabled").default(false),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
   },
@@ -90,6 +95,7 @@ export const users = pgTable(
     index("idx_users_org_email").on(table.organizationId, table.email),
     index("idx_users_org_role_status").on(table.organizationId, table.role, table.status),
     index("idx_users_suspended").on(table.organizationId, table.status, table.updatedAt).where(sql`${table.status} = 'suspended'`),
+    index("idx_users_google_drive").on(table.googleDriveEnabled).where(sql`${table.googleDriveEnabled} = true`),
     // HIGH PRIORITY INDEX
     index("idx_users_org_created").on(table.organizationId, table.createdAt.desc()),
   ]

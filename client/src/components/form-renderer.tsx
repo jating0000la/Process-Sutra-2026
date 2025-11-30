@@ -21,6 +21,7 @@ import {
   isWhatsAppEnabled, 
   isEmailEnabled 
 } from "@/lib/communicationUtils";
+import { FileUploadField } from "@/components/file-upload-field";
 
 interface FormQuestion {
   id: string;
@@ -211,13 +212,9 @@ export default function FormRenderer({
     return prefillData;
   }, [flowResponses, template.questions, flowId]);
 
-  // Debug: Log prefill data for troubleshooting
+  // Auto-prefill success notification
   useEffect(() => {
     if (flowId && flowResponses) {
-      console.log('[FormRenderer] Flow responses fetched:', flowResponses);
-      console.log('[FormRenderer] Auto-prefill data generated:', autoPrefillData);
-      console.log('[FormRenderer] Number of fields prefilled:', Object.keys(autoPrefillData).length);
-      
       // Show success toast if fields were prefilled
       if (Object.keys(autoPrefillData).length > 0) {
         toast({
@@ -704,110 +701,17 @@ export default function FormRenderer({
                     );
                   case "file":
                     return (
-                      <div className="space-y-2">
-                        <Input
-                          type="file"
-                          onChange={async (e) => {
-                            const inputEl = e.currentTarget as HTMLInputElement;
-                            const file = inputEl.files?.[0];
-                            if (!file) {
-                              field.onChange(null);
-                              return;
-                            }
-
-                            // File validation
-                            const maxSizeBytes = 10 * 1024 * 1024; // 10MB
-                            const allowedTypes = [
-                              'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
-                              'application/pdf',
-                              'application/msword',
-                              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                              'application/vnd.ms-excel',
-                              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                              'text/plain', 'text/csv'
-                            ];
-
-                            // Check file size
-                            if (file.size > maxSizeBytes) {
-                              const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
-                              toast({ 
-                                title: "File too large", 
-                                description: `Maximum file size is 10MB. Your file is ${fileSizeMB} MB.`,
-                                variant: "destructive" 
-                              });
-                              inputEl.value = ""; // Reset input
-                              field.onChange(null);
-                              return;
-                            }
-
-                            // Check file type
-                            if (!allowedTypes.includes(file.type)) {
-                              toast({ 
-                                title: "Invalid file type", 
-                                description: "Only images, PDFs, Office documents, and text files are allowed.",
-                                variant: "destructive" 
-                              });
-                              inputEl.value = ""; // Reset input
-                              field.onChange(null);
-                              return;
-                            }
-
-                            try {
-                              const fd = new FormData();
-                              fd.append("formId", template.formId);
-                              fd.append("fieldId", question.id);
-                              // taskId is optional; include if provided via prop in future
-                              fd.append("file", file);
-                              const res = await fetch("/api/uploads", {
-                                method: "POST",
-                                body: fd,
-                                credentials: "include",
-                              });
-                              
-                              if (!res.ok) {
-                                const errorData = await res.json().catch(() => ({}));
-                                if (res.status === 413) {
-                                  // Storage limit exceeded
-                                  toast({ 
-                                    title: "Storage Limit Exceeded", 
-                                    description: errorData.message || "Your organization has reached its 5GB storage limit. Please contact your administrator.",
-                                    variant: "destructive" 
-                                  });
-                                } else {
-                                  throw new Error(errorData.message || `Upload failed with status ${res.status}`);
-                                }
-                                field.onChange(null);
-                                return;
-                              }
-                              
-                              const descriptor = await res.json();
-                              // descriptor: { type:'file', gridFsId, originalName, mimeType, size, ... }
-                              field.onChange(descriptor);
-                              toast({ title: "Uploaded", description: descriptor.originalName || "File uploaded" });
-                            } catch (err) {
-                              console.error("Upload failed", err);
-                              toast({ title: "Upload failed", description: "Could not upload file", variant: "destructive" });
-                              field.onChange(null);
-                            } finally {
-                              // clear the input to allow re-uploading same file if needed
-                              if (inputEl) {
-                                try { inputEl.value = ""; } catch {}
-                              }
-                            }
-                          }}
-                          disabled={readonly}
-                        />
-                        {field.value && typeof field.value === 'object' && field.value.type === 'file' && field.value.gridFsId && (
-                          <a
-                            href={`/api/uploads/${field.value.gridFsId}`}
-                            className="text-blue-600 hover:underline text-sm"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            {field.value.originalName || 'Download file'}
-                          </a>
-                        )}
-                      </div>
+                      <FileUploadField
+                        formId={template.formId}
+                        fieldId={question.id}
+                        taskId={undefined}
+                        value={field.value}
+                        onChange={field.onChange}
+                        disabled={readonly}
+                        accept={undefined}
+                        label={undefined}
+                        description={question.placeholder}
+                      />
                     );
                   case "table":
                     return <TableInput question={question} field={field} readonly={readonly} />;

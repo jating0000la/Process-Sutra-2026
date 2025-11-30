@@ -1,7 +1,7 @@
 import { AppLayout } from "@/components/app-layout";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,6 +15,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useState } from "react";
 import { Building2, User, Mail, Phone, MapPin, FileText, Briefcase, Users, Globe, Save, Edit3, X, Check } from "lucide-react";
 import { z } from "zod";
+import { GoogleDriveSettings } from "@/components/google-drive-settings";
 
 // Types for organization data
 interface OrganizationData {
@@ -123,14 +124,18 @@ export default function Profile() {
     <AppLayout title="Profile" description="Your account and organization information">
       <div className="max-w-6xl mx-auto space-y-6">
         <Tabs defaultValue="personal" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="personal" className="flex items-center gap-2">
               <User className="w-4 h-4" />
               Personal Info
             </TabsTrigger>
+            <TabsTrigger value="integrations" className="flex items-center gap-2">
+              <Globe className="w-4 h-4" />
+              Integrations
+            </TabsTrigger>
             <TabsTrigger value="organization" className="flex items-center gap-2">
               <Building2 className="w-4 h-4" />
-              Organization Details
+              Organization
             </TabsTrigger>
           </TabsList>
 
@@ -183,6 +188,23 @@ export default function Profile() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Integrations Tab */}
+          <TabsContent value="integrations">
+            <div className="space-y-6">
+              <GoogleDriveSettings />
+              
+              {/* Placeholder for future integrations */}
+              <Card className="opacity-60">
+                <CardHeader>
+                  <CardTitle className="text-gray-500">More Integrations Coming Soon</CardTitle>
+                  <CardDescription>
+                    We're working on adding more integration options like Dropbox, OneDrive, and more.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            </div>
           </TabsContent>
 
           {/* Organization Details Tab */}

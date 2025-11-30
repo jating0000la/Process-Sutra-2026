@@ -584,6 +584,98 @@ export default function VisualFlowBuilder() {
     }
   };
 
+  const handleDeleteStep = () => {
+    if (!selectedNode || selectedNode.type === "start" || selectedNode.type === "end") {
+      toast({
+        title: "Cannot Delete",
+        description: "Start and End nodes cannot be deleted. Delete the flow rules connected to this step instead.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (window.confirm(`Are you sure you want to delete the step "${selectedNode.label}"? This will delete all flow rules connected to this step.`)) {
+      // Find all rules connected to this step (as currentTask or nextTask)
+      const connectedRules = flowRules.filter(
+        rule => rule.currentTask === selectedNode.label || rule.nextTask === selectedNode.label
+      );
+
+      if (connectedRules.length === 0) {
+        toast({
+          title: "No Rules Found",
+          description: "No flow rules are connected to this step.",
+        });
+        return;
+      }
+
+      // Delete all connected rules
+      Promise.all(connectedRules.map(rule => 
+        apiRequest("DELETE", `/api/flow-rules/${rule.id}`)
+      ))
+        .then(() => {
+          toast({ 
+            title: "Success", 
+            description: `Deleted step "${selectedNode.label}" and ${connectedRules.length} connected rule(s)` 
+          });
+          queryClient.invalidateQueries({ queryKey: ["/api/flow-rules"] });
+          setSelectedNode(null);
+        })
+        .catch(() => {
+          toast({ 
+            title: "Error", 
+            description: "Failed to delete step", 
+            variant: "destructive" 
+          });
+        });
+    }
+  };
+
+  const handleDeleteFlow = () => {
+    if (!selectedSystem) {
+      toast({
+        title: "No Flow Selected",
+        description: "Please select a flow to delete",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (window.confirm(`Are you sure you want to delete the entire flow "${selectedSystem}"? This will delete all steps and rules in this flow. This action cannot be undone.`)) {
+      // Find all rules for this system
+      const systemRules = flowRules.filter(rule => rule.system === selectedSystem);
+
+      if (systemRules.length === 0) {
+        toast({
+          title: "No Rules Found",
+          description: "This flow has no rules to delete.",
+        });
+        return;
+      }
+
+      // Delete all rules for this system
+      Promise.all(systemRules.map(rule => 
+        apiRequest("DELETE", `/api/flow-rules/${rule.id}`)
+      ))
+        .then(() => {
+          toast({ 
+            title: "Success", 
+            description: `Deleted flow "${selectedSystem}" with ${systemRules.length} rule(s)` 
+          });
+          queryClient.invalidateQueries({ queryKey: ["/api/flow-rules"] });
+          setSelectedSystem("");
+          setSelectedNode(null);
+          setSelectedEdge(null);
+        })
+        .catch(() => {
+          toast({ 
+            title: "Error", 
+            description: "Failed to delete flow", 
+            variant: "destructive" 
+          });
+        });
+    }
+  };
+
   const handleSaveNewRule = () => {
     if (!newRule.nextTask || !newRule.doer || !newRule.email) {
       toast({
@@ -744,6 +836,16 @@ export default function VisualFlowBuilder() {
                 <Plus className="w-4 h-4 mr-2" />
                 New Flow
               </Button>
+              {selectedSystem && (
+                <Button 
+                  onClick={handleDeleteFlow}
+                  variant="destructive"
+                  size="sm"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete Flow
+                </Button>
+              )}
               <div className="flex items-center space-x-2 bg-white rounded-lg px-3 py-2 border">
                 <Filter className="w-4 h-4 text-gray-500" />
                 <Select value={selectedSystem} onValueChange={setSelectedSystem}>
@@ -1169,6 +1271,17 @@ export default function VisualFlowBuilder() {
                             <Plus className="w-4 h-4 mr-2" />
                             Add Next Step
                           </Button>
+                          
+                          {selectedNode.type !== "start" && selectedNode.type !== "end" && (
+                            <Button 
+                              className="w-full" 
+                              variant="destructive"
+                              onClick={handleDeleteStep}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete Step
+                            </Button>
+                          )}
                           
                           {/* Show general Add Rule button as alternative */}
                           <Button 

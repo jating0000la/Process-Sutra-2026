@@ -771,9 +771,7 @@ const response = await fetch('http://localhost:5000/api/integrations/start-flow'
   })
 });
 
-const result = await response.json();
-console.log('Flow created:', result.flowId);
-console.log('First task:', result.task.taskName);`}
+const result = await response.json();`}
                         </pre>
                       </div>
                       

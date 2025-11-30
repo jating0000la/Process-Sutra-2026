@@ -67,7 +67,7 @@ function Router() {
 
   // Show error state if authentication failed
   if (error && !user) {
-    console.log('Authentication error:', error);
+    // Error handled by AuthContext
   }
 
   return (

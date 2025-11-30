@@ -23,6 +23,7 @@ import { randomUUID } from "crypto";
 import { randomBytes } from "crypto";
 import { calculateTAT, TATConfig } from "./tatCalculator";
 import uploadsRouter from './uploads.js';
+import oauthRouter from './oauthRoutes.js';
 import * as crypto from 'crypto';
 import { sanitizeFlowRule, sanitizeFlowRules } from './inputSanitizer';
 import archiver from 'archiver';
@@ -147,8 +148,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // File uploads (GridFS)
+  // File uploads (Google Drive)
   app.use('/api/uploads', uploadsRouter);
+  
+  // OAuth routes (Google Drive authorization)
+  app.use('/api/oauth', oauthRouter);
 
   // Role-based middleware with status check
   const requireAdmin = async (req: any, res: any, next: any) => {
@@ -2145,11 +2149,8 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           
         case 'files':
           // Export all uploaded files and form submission data as ZIP
-          const { getUploadsBucket } = await import('./mongo/gridfs.js');
-          const bucket = await getUploadsBucket();
-          
-          // Get all files for this organization
-          const files = await bucket.find({ 'metadata.orgId': user.organizationId }).toArray();
+          // Note: Files are now stored in Google Drive, so we'll just export form submissions
+          // Individual users' Google Drive files remain in their own Drive accounts
           
           // Get all form submissions for this organization
           const formSubmissionsData = await storage.getMongoFormResponsesByOrgAndForm({
@@ -2158,16 +2159,8 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
             pageSize: 10000,
           });
           
-          if (files.length === 0 && (!formSubmissionsData.data || formSubmissionsData.data.length === 0)) {
-            return res.status(404).json({ message: "No files or form data found for this organization" });
-          }
-          
-          if (files.length > 1000) {
-            return res.status(413).json({ 
-              message: `Too many files (${files.length}). Maximum 1000 files allowed per export. Please contact support.`,
-              fileCount: files.length,
-              maxAllowed: 1000
-            });
+          if (!formSubmissionsData.data || formSubmissionsData.data.length === 0) {
+            return res.status(404).json({ message: "No form data found for this organization" });
           }
           
           // Create ZIP archive
@@ -2175,24 +2168,9 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           const timestamp = new Date().toISOString().split('T')[0];
           
           res.setHeader('Content-Type', 'application/zip');
-          res.setHeader('Content-Disposition', `attachment; filename="files_and_forms_export_${timestamp}.zip"`);
+          res.setHeader('Content-Disposition', `attachment; filename="forms_export_${timestamp}.zip"`);
           
           archive.pipe(res);
-          
-          // Add uploaded files to the archive
-          if (files.length > 0) {
-            for (const file of files) {
-              try {
-                const downloadStream = bucket.openDownloadStream(file._id);
-                const metadata = file.metadata || {};
-                const sanitizedFilename = file.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-                const folderName = metadata.formId || 'uncategorized';
-                archive.append(downloadStream, { name: `uploads/${folderName}/${sanitizedFilename}` });
-              } catch (fileError) {
-                console.error(`Error adding file ${file._id} to archive:`, fileError);
-              }
-            }
-          }
           
           // Add form submission data as CSV files grouped by formId
           if (formSubmissionsData.data && formSubmissionsData.data.length > 0) {
@@ -2220,7 +2198,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           
           await archive.finalize();
           
-          console.log(`[AUDIT] Files Export Success - User: ${user.email}, Files: ${files.length}, Form Submissions: ${formSubmissionsData.data?.length || 0}, Organization: ${user.organizationId}`);
+          console.log(`[AUDIT] Forms Export Success - User: ${user.email}, Form Submissions: ${formSubmissionsData.data?.length || 0}, Organization: ${user.organizationId}`);
           return; // Exit early since we're streaming
           
         case 'users':
@@ -2346,29 +2324,14 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           break;
           
         case 'files':
-          // Delete all uploaded files from GridFS
-          try {
-            const { getUploadsBucket } = await import('./mongo/gridfs.js');
-            const bucket = await getUploadsBucket();
-            
-            // Get all files for this organization
-            const files = await bucket.find({ 'metadata.orgId': user.organizationId }).toArray();
-            
-            // Delete each file
-            for (const file of files) {
-              try {
-                await bucket.delete(file._id);
-              } catch (fileError) {
-                console.error(`Error deleting file ${file._id}:`, fileError);
-              }
-            }
-            
-            deletedCount = files.length;
-            message = `Successfully deleted ${deletedCount} uploaded files`;
-          } catch (gridfsError) {
-            console.error("GridFS deletion error:", gridfsError);
-            throw new Error("Failed to delete files from GridFS");
-          }
+          // Delete all uploaded files from Google Drive
+          // Note: Files are stored in each user's Google Drive, so we need to:
+          // 1. Find all users in the organization with Drive access
+          // 2. Delete files from their individual Google Drives
+          // For now, we'll just inform that files remain in individual Google Drives
+          deletedCount = 0;
+          message = `File deletion not performed. Files are stored in individual user Google Drive accounts. Users should manage their files through Google Drive directly.`;
+          console.log(`[INFO] File deletion requested for org ${user.organizationId} - files remain in user Google Drives`);
           break;
           
         case 'users':

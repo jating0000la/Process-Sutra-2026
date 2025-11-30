@@ -1564,9 +1564,6 @@ export default function FlowSimulator() {
 
   // Create comprehensive simulation with graph-based approach
   const createComplexSimulation = (system: string): { tasks: SimulationTask[], parallelPaths: FlowPath[] } => {
-    console.log('Flow Rules:', flowRules);
-    console.log('Selected System:', system);
-    
     // Handle both array and object formats of flowRules
     let rulesArray: any[] = [];
     if (Array.isArray(flowRules)) {
@@ -1577,21 +1574,16 @@ export default function FlowSimulator() {
     }
     
     const systemRules = rulesArray.filter(rule => rule.system === system);
-    console.log('Filtered System Rules:', systemRules);
     
     if (systemRules.length === 0) {
-      console.log('No rules found for system:', system);
-      console.log('Available systems:', rulesArray.map(r => r.system));
       return { tasks: [], parallelPaths: [] };
     }
     
     // Build flow graph
     const graph = buildFlowGraph(systemRules);
-    console.log('Built graph:', graph);
     
     // Generate all comprehensive paths using the new engine
     const allPaths = generateComprehensivePaths(graph);
-    console.log('Generated paths:', allPaths.length);
     
     if (allPaths.length === 0) {
       // Create a simple fallback path if no paths are generated

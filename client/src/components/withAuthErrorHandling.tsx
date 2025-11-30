@@ -21,14 +21,12 @@ export const withAuthErrorHandling = <P extends object>(
     useEffect(() => {
       // If there's an authentication error, handle it
       if (error && error.includes('401')) {
-        console.log('🔐 Authentication error detected, handling token expiration...');
         handleTokenExpired();
         return;
       }
 
       // If user is not authenticated and not loading, redirect
       if (!loading && !user) {
-        console.log('🔐 User not authenticated, redirecting to login...');
         handleTokenExpired();
         return;
       }

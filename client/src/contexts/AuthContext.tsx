@@ -58,8 +58,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const { toast } = useToast();
 
   const handleTokenExpired = async () => {
-    console.log('🔐 Token expired, clearing authentication state...');
-    
     // Show user-friendly message
     toast({
       title: "Session Expired",
@@ -310,9 +308,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       // Clear backend session and check response
       const logoutResponse = await fetch('/api/auth/logout', { method: 'POST' });
-      if (!logoutResponse.ok) {
-        console.warn('Backend logout failed, but continuing with client cleanup');
-      }
       
       // Clear client state
       setUser(null);

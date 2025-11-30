@@ -1,10 +1,14 @@
 import { google } from 'googleapis';
 import type { OAuth2Client } from 'google-auth-library';
 
-const SCOPES = ['https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'];
+const SCOPES = [
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile',
+  'https://www.googleapis.com/auth/drive.file', // Access to files created by this app
+];
 
 // Initialize OAuth2 client
-export function getOAuth2Client(): OAuth2Client {
+export function getOAuth2Client(isDriveFlow: boolean = false): OAuth2Client {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const redirectUri = process.env.GOOGLE_REDIRECT_URI;
@@ -17,13 +21,13 @@ export function getOAuth2Client(): OAuth2Client {
 }
 
 // Generate authorization URL
-export function getAuthorizationUrl(state?: string): string {
-  const oauth2Client = getOAuth2Client();
+export function getAuthorizationUrl(state?: string, isDriveFlow: boolean = false): string {
+  const oauth2Client = getOAuth2Client(isDriveFlow);
   
   return oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
-    prompt: 'consent',
+    prompt: 'consent', // Force consent screen to ensure refresh token
     state: state || '',
   });
 }
