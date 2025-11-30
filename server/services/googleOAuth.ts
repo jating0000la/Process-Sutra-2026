@@ -1,9 +1,15 @@
 import { google } from 'googleapis';
 import type { OAuth2Client } from 'google-auth-library';
 
-const SCOPES = [
+// Basic login scopes - only email and profile
+const LOGIN_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',
+];
+
+// Drive scopes - includes login scopes plus Drive access
+const DRIVE_SCOPES = [
+  ...LOGIN_SCOPES,
   'https://www.googleapis.com/auth/drive.file', // Access to files created by this app
 ];
 
@@ -24,9 +30,12 @@ export function getOAuth2Client(isDriveFlow: boolean = false): OAuth2Client {
 export function getAuthorizationUrl(state?: string, isDriveFlow: boolean = false): string {
   const oauth2Client = getOAuth2Client(isDriveFlow);
   
+  // Use appropriate scopes based on the flow type
+  const scopes = isDriveFlow ? DRIVE_SCOPES : LOGIN_SCOPES;
+  
   return oauth2Client.generateAuthUrl({
     access_type: 'offline',
-    scope: SCOPES,
+    scope: scopes,
     prompt: 'consent', // Force consent screen to ensure refresh token
     state: state || '',
   });
