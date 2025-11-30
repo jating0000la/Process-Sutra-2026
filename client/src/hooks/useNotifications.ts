@@ -18,7 +18,15 @@ export function useNotifications() {
   const reconnectDelays = [1000, 2000, 5000, 10000, 30000];
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) {
+      // Disconnect if not authenticated
+      if (sourceRef.current) {
+        sourceRef.current.close();
+        sourceRef.current = null;
+        setConnectionStatus('disconnected');
+      }
+      return;
+    }
 
     const connect = () => {
       // Clear any existing connection
@@ -28,8 +36,10 @@ export function useNotifications() {
       }
 
       setConnectionStatus('connecting');
-      const es = new EventSource("/api/notifications/stream", { withCredentials: true } as any);
-      sourceRef.current = es;
+      
+      try {
+        const es = new EventSource("/api/notifications/stream", { withCredentials: true } as any);
+        sourceRef.current = es;
 
       es.addEventListener("hello", () => {
         console.log('[Notifications] Connected to SSE stream');
@@ -125,10 +135,16 @@ export function useNotifications() {
         }
       });
 
-      es.onerror = () => {
-        console.error('[Notifications] SSE connection error');
+      es.onerror = (error) => {
+        console.error('[Notifications] SSE connection error', error);
         setConnectionStatus('disconnected');
-        es.close();
+        
+        // Close the connection
+        try {
+          es.close();
+        } catch (e) {
+          console.error('[Notifications] Error closing EventSource:', e);
+        }
         sourceRef.current = null;
 
         // Implement exponential backoff reconnection
@@ -144,6 +160,21 @@ export function useNotifications() {
           }
         }, delay);
       };
+      } catch (error) {
+        console.error('[Notifications] Failed to create EventSource:', error);
+        setConnectionStatus('disconnected');
+        
+        // Retry connection after delay
+        const delay = reconnectDelays[Math.min(reconnectAttemptRef.current, reconnectDelays.length - 1)];
+        reconnectAttemptRef.current++;
+        
+        reconnectTimeoutRef.current = setTimeout(() => {
+          if (isAuthenticated) {
+            console.log('[Notifications] Retrying connection...');
+            connect();
+          }
+        }, delay);
+      }
     };
 
     // Start initial connection

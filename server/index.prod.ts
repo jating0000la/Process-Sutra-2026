@@ -116,7 +116,7 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "accounts.google.com", "https://accounts.google.com"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "accounts.google.com", "https://accounts.google.com"],
       imgSrc: ["'self'", "data:", "https:", "blob:"],
       connectSrc: ["'self'", "accounts.google.com", "https://accounts.google.com"],
       frameSrc: ["accounts.google.com", "https://accounts.google.com"],
