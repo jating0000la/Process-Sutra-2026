@@ -28,29 +28,63 @@ export async function ensureValidToken(userId: string) {
   let dbUser = await storage.getUser(userId);
   if (!dbUser) return null;
   
-  // Check if token is expired
-  if (dbUser.googleTokenExpiry && new Date() >= dbUser.googleTokenExpiry) {
+  // Check if token is expired or missing
+  const needsRefresh = !dbUser.googleAccessToken || 
+                      (dbUser.googleTokenExpiry && new Date() >= dbUser.googleTokenExpiry);
+  
+  if (needsRefresh) {
+    // Validate refresh token exists
+    if (!dbUser.googleRefreshToken) {
+      console.error(`No refresh token available for user ${dbUser.email}`);
+      // Clear invalid tokens from database
+      await storage.updateUser(dbUser.id, {
+        googleAccessToken: null,
+        googleRefreshToken: null,
+        googleTokenExpiry: null,
+        googleDriveEnabled: false,
+      } as any);
+      return null;
+    }
+    
     // Create a refresh promise to prevent concurrent refreshes
     refreshPromise = (async () => {
       try {
         const oauth2Client = getOAuth2Client();
         oauth2Client.setCredentials({
-          access_token: dbUser.googleAccessToken,
           refresh_token: dbUser.googleRefreshToken,
-          expiry_date: dbUser.googleTokenExpiry?.getTime(),
         });
+        
+        console.log(`Refreshing token for user ${dbUser.email}...`);
         
         // Refresh the token
         const { credentials } = await oauth2Client.refreshAccessToken();
         
+        if (!credentials.access_token) {
+          throw new Error('No access token received from refresh');
+        }
+        
         // Update database with new tokens
         await storage.updateUser(dbUser.id, {
-          googleAccessToken: credentials.access_token!,
+          googleAccessToken: credentials.access_token,
           googleRefreshToken: credentials.refresh_token || dbUser.googleRefreshToken,
           googleTokenExpiry: credentials.expiry_date ? new Date(credentials.expiry_date) : undefined,
         } as any);
-      } catch (error) {
-        console.error(`Token refresh failed for user ${dbUser.email}:`, error);
+        
+        console.log(`Token refreshed successfully for user ${dbUser.email}`);
+      } catch (error: any) {
+        console.error(`Token refresh failed for user ${dbUser.email}:`, error.message || error);
+        
+        // If invalid_grant, clear tokens and disable Drive
+        if (error.message?.includes('invalid_grant')) {
+          console.log(`Clearing invalid tokens for user ${dbUser.email}`);
+          await storage.updateUser(dbUser.id, {
+            googleAccessToken: null,
+            googleRefreshToken: null,
+            googleTokenExpiry: null,
+            googleDriveEnabled: false,
+          } as any);
+        }
+        
         throw error;
       } finally {
         // Always remove lock when done

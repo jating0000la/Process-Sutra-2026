@@ -52,12 +52,17 @@ uploadsRouter.post('/', uploadLimiter, isAuthenticated, upload.single('file'), a
     if (!sessionUser?.id) return res.status(401).json({ message: 'Unauthorized' });
 
     let dbUser = await ensureValidToken(sessionUser.id);
-    if (!dbUser) return res.status(401).json({ message: 'Unauthorized' });
+    if (!dbUser) {
+      return res.status(401).json({ 
+        message: 'Session expired. Please re-authenticate.',
+        requiresReauth: true
+      });
+    }
     
     // Check if user has enabled Google Drive and has valid tokens
     if (!dbUser.googleDriveEnabled || !dbUser.googleAccessToken) {
       return res.status(403).json({ 
-        message: 'Google Drive access not enabled. Please authorize Google Drive access in your settings.',
+        message: 'Google Drive access not enabled or tokens expired. Please re-authorize Google Drive access in your settings.',
         requiresAuth: true
       });
     }
@@ -135,13 +140,33 @@ uploadsRouter.post('/', uploadLimiter, isAuthenticated, upload.single('file'), a
     });
 
     // Upload file to Google Drive
-    const driveFile = await uploadFileToDrive(
-      oauth2Client,
-      file.buffer,
-      file.originalname,
-      file.mimetype,
-      { orgId, formId, taskId: taskId ?? '', fieldId }
-    );
+    let driveFile;
+    try {
+      driveFile = await uploadFileToDrive(
+        oauth2Client,
+        file.buffer,
+        file.originalname,
+        file.mimetype,
+        { orgId, formId, taskId: taskId ?? '', fieldId }
+      );
+    } catch (driveError: any) {
+      // Handle specific Drive API errors
+      if (driveError.message?.includes('invalid_grant') || driveError.code === 401) {
+        // Token is invalid, clear it and ask user to re-authorize
+        await storage.updateUser(dbUser.id, {
+          googleAccessToken: null,
+          googleRefreshToken: null,
+          googleTokenExpiry: null,
+          googleDriveEnabled: false,
+        } as any);
+        
+        return res.status(401).json({ 
+          message: 'Google Drive authorization expired. Please re-authorize in your settings.',
+          requiresAuth: true
+        });
+      }
+      throw driveError;
+    }
 
     res.json({
       type: 'file',
@@ -157,6 +182,15 @@ uploadsRouter.post('/', uploadLimiter, isAuthenticated, upload.single('file'), a
     });
   } catch (e: any) {
     console.error('Upload error:', e);
+    
+    // Return more specific error messages
+    if (e.message?.includes('invalid_grant')) {
+      return res.status(401).json({ 
+        message: 'Google authorization invalid. Please re-authorize Google Drive access.',
+        requiresAuth: true 
+      });
+    }
+    
     res.status(500).json({ message: e.message || 'upload failed' });
   }
 });
