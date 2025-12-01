@@ -599,11 +599,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 .from(tasks)
                 .where(eq(tasks.flowId, task.flowId));
               
-              // Determine the merge condition
-              const hasAllCondition = parallelPrerequisites.some(
-                rule => (rule.mergeCondition || "all") === "all"
-              );
-              const mergeCondition = hasAllCondition ? "all" : "any";
+              // Get the merge condition from the current rule being evaluated
+              // Default to "all" if not specified (safer default)
+              const mergeCondition = nextRule.mergeCondition || "all";
               
               if (mergeCondition === "all") {
                 // Check if all parallel prerequisite tasks are completed
@@ -621,6 +619,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 }
                 console.log(`✅ [All Steps Complete] All prerequisites met: ${nextRule.nextTask}`);
               } else {
+                // mergeCondition === "any"
+                // Proceed immediately since at least one prerequisite (current task) is completed
                 console.log(`✅ [Any Step Complete] Proceeding with: ${nextRule.nextTask}`);
               }
 
