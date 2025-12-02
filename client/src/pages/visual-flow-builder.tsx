@@ -677,10 +677,20 @@ export default function VisualFlowBuilder() {
   };
 
   const handleSaveNewRule = () => {
-    if (!newRule.nextTask || !newRule.doer || !newRule.email || !newRule.status) {
+    // Status is only required when currentTask is not empty (not the first step)
+    const isFirstStep = !newRule.currentTask || newRule.currentTask === "";
+    const isStatusRequired = !isFirstStep && !newRule.status;
+    
+    if (!newRule.nextTask || !newRule.doer || !newRule.email || isStatusRequired) {
+      const missingFields = [];
+      if (!newRule.nextTask) missingFields.push("Next Task");
+      if (!newRule.doer) missingFields.push("Doer");
+      if (!newRule.email) missingFields.push("Email");
+      if (isStatusRequired) missingFields.push("Status");
+      
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields (Status, Next Task, Doer, Email)",
+        description: `Please fill in all required fields: ${missingFields.join(", ")}`,
         variant: "destructive",
       });
       return;
@@ -691,11 +701,20 @@ export default function VisualFlowBuilder() {
   const handleSaveEditRule = () => {
     if (!editingRule) return;
     
-    // Validate required fields
-    if (!editingRule.nextTask || !editingRule.doer || !editingRule.email || !editingRule.status) {
+    // Validate required fields - Status is only required when currentTask is not empty
+    const isFirstStep = !editingRule.currentTask || editingRule.currentTask === "";
+    const isStatusRequired = !isFirstStep && !editingRule.status;
+    
+    if (!editingRule.nextTask || !editingRule.doer || !editingRule.email || isStatusRequired) {
+      const missingFields = [];
+      if (!editingRule.nextTask) missingFields.push("Next Task");
+      if (!editingRule.doer) missingFields.push("Doer");
+      if (!editingRule.email) missingFields.push("Email");
+      if (isStatusRequired) missingFields.push("Status");
+      
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields (Status, Next Task, Doer, Email)",
+        description: `Please fill in all required fields: ${missingFields.join(", ")}`,
         variant: "destructive",
       });
       return;
@@ -1445,7 +1464,7 @@ export default function VisualFlowBuilder() {
                   </p>
                 </div>
                 <div>
-                  <Label>Status (When) *</Label>
+                  <Label>Status (When) {newRule.currentTask && newRule.currentTask !== "" ? "*" : ""}</Label>
                   <Input
                     value={newRule.status}
                     onChange={(e) => setNewRule({ ...newRule, status: e.target.value })}
@@ -1464,7 +1483,7 @@ export default function VisualFlowBuilder() {
                     <option value="Complete" />
                   </datalist>
                   <p className="text-xs text-gray-500 mt-1">
-                    {!newRule.currentTask ? "🔒 Blocked for first task" : "Condition to trigger this path"}
+                    {!newRule.currentTask ? "🔒 Not required for first task" : "* Required - Condition to trigger this path"}
                   </p>
                 </div>
               </div>
@@ -1625,7 +1644,7 @@ export default function VisualFlowBuilder() {
                     </Select>
                   </div>
                   <div>
-                    <Label>Status (When) *</Label>
+                    <Label>Status (When) {editingRule.currentTask && editingRule.currentTask !== "" ? "*" : ""}</Label>
                     <Input
                       value={editingRule.status}
                       onChange={(e) => setEditingRule({ ...editingRule, status: e.target.value })}
@@ -1641,6 +1660,9 @@ export default function VisualFlowBuilder() {
                       <option value="Pending" />
                       <option value="Complete" />
                     </datalist>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {!editingRule.currentTask || editingRule.currentTask === "" ? "Not required for first task" : "* Required - Condition to trigger this path"}
+                    </p>
                   </div>
                 </div>
                 <div>
