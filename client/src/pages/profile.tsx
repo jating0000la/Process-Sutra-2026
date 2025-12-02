@@ -12,10 +12,11 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { useState } from "react";
-import { Building2, User, Mail, Phone, MapPin, FileText, Briefcase, Users, Globe, Save, Edit3, X, Check } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Building2, User, Mail, Phone, MapPin, FileText, Briefcase, Users, Globe, Save, Edit3, X, Check, AlertCircle } from "lucide-react";
 import { z } from "zod";
 import { GoogleDriveSettings } from "@/components/google-drive-settings";
+import { useNotificationContext } from "@/contexts/NotificationContext";
 
 // Types for organization data
 interface OrganizationData {
@@ -35,7 +36,6 @@ interface OrganizationData {
 }
 
 interface EditedData {
-  name?: string;
   companyName?: string;
   address?: string;
   phone?: string;
@@ -46,7 +46,6 @@ interface EditedData {
 }
 
 const organizationUpdateSchema = z.object({
-  name: z.string().optional(),
   companyName: z.string().optional(),
   address: z.string().optional(),
   phone: z.string().optional(),
@@ -62,12 +61,54 @@ export default function Profile() {
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
   const [editedData, setEditedData] = useState<EditedData>({});
+  const { addNotification } = useNotificationContext();
+  const [notificationShown, setNotificationShown] = useState(false);
 
   // Fetch current organization details
   const { data: organization, isLoading: orgLoading } = useQuery<OrganizationData>({
     queryKey: ["/api/organizations/current"],
     enabled: !!dbUser?.organizationId,
   });
+
+  // Check for incomplete organization details and notify admin users
+  useEffect(() => {
+    if (!organization || orgLoading || notificationShown || dbUser?.role !== 'admin') {
+      return;
+    }
+
+    // Define required fields for organization
+    const requiredFields: (keyof OrganizationData)[] = [
+      'companyName',
+      'address',
+      'phone',
+      'industry',
+      'customerType',
+      'businessType'
+    ];
+
+    // Check if any required field is missing or empty
+    const missingFields = requiredFields.filter(
+      field => !organization[field] || organization[field] === '' || organization[field] === '—'
+    );
+
+    if (missingFields.length > 0) {
+      // Show notification
+      addNotification({
+        title: 'Organization Details Incomplete',
+        description: `Please complete your organization profile. Missing: ${missingFields.join(', ')}`,
+        type: 'warning',
+      });
+
+      // Show toast
+      toast({
+        title: 'Action Required',
+        description: 'Please complete your organization details in the Profile page.',
+        variant: 'default',
+      });
+
+      setNotificationShown(true);
+    }
+  }, [organization, orgLoading, dbUser?.role, notificationShown, addNotification, toast]);
 
   // Update organization mutation
   const updateOrgMutation = useMutation({
@@ -211,10 +252,24 @@ export default function Profile() {
           <TabsContent value="organization">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  <Building2 className="w-5 h-5" />
-                  Organization Details
-                </CardTitle>
+                <div className="flex items-center gap-3">
+                  <CardTitle className="flex items-center gap-2">
+                    <Building2 className="w-5 h-5" />
+                    Organization Details
+                  </CardTitle>
+                  {dbUser?.role === 'admin' && organization && (
+                    (() => {
+                      const requiredFields: (keyof OrganizationData)[] = ['companyName', 'address', 'phone', 'industry', 'customerType', 'businessType'];
+                      const missingFields = requiredFields.filter(field => !organization[field] || organization[field] === '' || organization[field] === '—');
+                      return missingFields.length > 0 ? (
+                        <Badge variant="destructive" className="flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          Incomplete
+                        </Badge>
+                      ) : null;
+                    })()
+                  )}
+                </div>
                 {dbUser?.role === "admin" && (
                   <div className="flex gap-2">
                     {isEditing ? (
@@ -265,21 +320,6 @@ export default function Profile() {
                     <div className="space-y-4">
                       <h3 className="text-lg font-semibold text-gray-800 border-b pb-2">Basic Information</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                          <Label>Organization Name</Label>
-                          {isEditing ? (
-                            <Input
-                              value={editedData.name || organization?.name || ""}
-                              onChange={(e) => handleInputChange("name", e.target.value)}
-                              placeholder="Enter organization name"
-                            />
-                          ) : (
-                            <div className="p-3 bg-gray-50 rounded-md border">
-                              {organization?.name || "—"}
-                            </div>
-                          )}
-                        </div>
-                        
                         <div className="space-y-2">
                           <Label>Company Name</Label>
                           {isEditing ? (

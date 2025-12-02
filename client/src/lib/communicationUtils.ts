@@ -138,7 +138,13 @@ export function generateWhatsAppURL(
   const encodedMessage = encodeURIComponent(message);
 
   // Clean phone number (remove any non-digits)
-  const cleanPhone = resolvedPhoneNumber.replace(/\D/g, '');
+  let cleanPhone = resolvedPhoneNumber.replace(/\D/g, '');
+
+  // If phone number length is exactly 10 digits, add +91 prefix (India)
+  // If length is more than 10, take as it is
+  if (cleanPhone.length === 10) {
+    cleanPhone = '91' + cleanPhone;
+  }
 
   return `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodedMessage}`;
 }

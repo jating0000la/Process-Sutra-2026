@@ -41,14 +41,26 @@ import {
   Activity,
   BarChart3,
   Filter,
-  Zap
+  Zap,
+  AlertCircle
 } from "lucide-react";
 import { format } from "date-fns";
+import { useOrganizationCheck } from "@/hooks/useOrganizationCheck";
+import { useGoogleDriveCheck } from "@/hooks/useGoogleDriveCheck";
+import { useLocation } from "wouter";
 
 export default function Analytics() {
   const { toast } = useToast();
-  const { user, loading, handleTokenExpired } = useAuth();
+  const { user, loading, handleTokenExpired, dbUser } = useAuth();
   const [activeTab, setActiveTab] = useState("overview");
+  const [, setLocation] = useLocation();
+  
+  // Check organization details for admin users
+  const { isIncomplete } = useOrganizationCheck();
+  
+  // Check Google Drive connection for admin users
+  const { isConnected: isDriveConnected } = useGoogleDriveCheck();
+  
   const [doerFilters, setDoerFilters] = useState({
     startDate: "",
     endDate: "",
@@ -267,6 +279,52 @@ export default function Analytics() {
         />
 
         <div className="p-8 space-y-8">
+          {/* Organization Incomplete Banner - Admin Only */}
+          {dbUser?.role === 'admin' && isIncomplete && (
+            <div className="bg-amber-50 border-2 border-amber-400 rounded-lg p-4 flex items-start gap-4 shadow-md">
+              <AlertCircle className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h3 className="font-semibold text-amber-900 mb-1">
+                  Organization Details Incomplete
+                </h3>
+                <p className="text-sm text-amber-800 mb-3">
+                  Please complete your organization profile to unlock all features and ensure smooth operations.
+                </p>
+                <Button 
+                  size="sm" 
+                  variant="default"
+                  onClick={() => setLocation('/profile')}
+                  className="bg-amber-600 hover:bg-amber-700"
+                >
+                  Complete Profile Now
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Google Drive Not Connected Banner - Admin Only */}
+          {dbUser?.role === 'admin' && isDriveConnected === false && (
+            <div className="bg-blue-50 border-2 border-blue-400 rounded-lg p-4 flex items-start gap-4 shadow-md">
+              <AlertCircle className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h3 className="font-semibold text-blue-900 mb-1">
+                  Google Drive Not Connected
+                </h3>
+                <p className="text-sm text-blue-800 mb-3">
+                  Connect your Google Drive to enable file uploads in forms. Files will be stored securely in your Drive.
+                </p>
+                <Button 
+                  size="sm" 
+                  variant="default"
+                  onClick={() => setLocation('/profile')}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  Connect Now
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Key Performance Metrics */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="transform transition-all duration-300 hover:scale-105">

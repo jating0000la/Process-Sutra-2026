@@ -887,6 +887,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         flowInitialFormData: parsedInitialFormData,
       });
 
+      // Create a FormResponse record for the initial form data if provided
+      if (parsedInitialFormData && startRule.formId) {
+        try {
+          await storage.createFormResponse({
+            responseId: randomUUID(),
+            flowId,
+            taskId: task.id,
+            taskName: startRule.nextTask,
+            formId: startRule.formId,
+            formData: parsedInitialFormData,
+            submittedBy: userId,
+            timestamp: flowStartTime,
+            organizationId: user.organizationId,
+            orderNumber,
+          });
+        } catch (formResponseError) {
+          console.error("Error creating form response for initial data:", formResponseError);
+          // Don't fail the entire flow start if form response creation fails
+        }
+      }
+
       // Notify the assigned doer via SSE if connected
       try {
         if (startRule.email) {
@@ -1378,6 +1399,27 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
         flowDescription: description,
         flowInitialFormData: initialFormData || null,
       });
+
+      // Create a FormResponse record for the initial form data if provided
+      if (initialFormData && startRule.formId) {
+        try {
+          await storage.createFormResponse({
+            responseId: randomUUID(),
+            flowId,
+            taskId: task.id,
+            taskName: startRule.nextTask,
+            formId: startRule.formId,
+            formData: initialFormData,
+            submittedBy: actorEmail || "external-api",
+            timestamp: new Date(),
+            organizationId,
+            orderNumber,
+          });
+        } catch (formResponseError) {
+          console.error("Error creating form response for initial data:", formResponseError);
+          // Don't fail the entire flow start if form response creation fails
+        }
+      }
 
       res.status(201).json({ flowId, taskId: task.id, message: "Flow started successfully" });
     } catch (error) {

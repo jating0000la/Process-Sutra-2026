@@ -38,6 +38,8 @@ import Usage from "@/pages/usage";
 import Payments from "@/pages/payments";
 import DataManagement from "@/pages/data-management";
 import { useEffect } from "react";
+import { useOrganizationCheck } from "@/hooks/useOrganizationCheck";
+import { useGoogleDriveCheck } from "@/hooks/useGoogleDriveCheck";
 
 // Component to handle /api/login redirect
 function ApiLoginRedirect() {
@@ -56,6 +58,12 @@ function ApiLoginRedirect() {
 function Router() {
   const { user, loading, error } = useAuth();
   useNotifications();
+  
+  // Check organization details for admin users
+  useOrganizationCheck();
+  
+  // Check Google Drive connection for admin users
+  useGoogleDriveCheck();
 
   if (loading) {
     return (

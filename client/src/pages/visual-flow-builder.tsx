@@ -677,10 +677,10 @@ export default function VisualFlowBuilder() {
   };
 
   const handleSaveNewRule = () => {
-    if (!newRule.nextTask || !newRule.doer || !newRule.email) {
+    if (!newRule.nextTask || !newRule.doer || !newRule.email || !newRule.status) {
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields",
+        description: "Please fill in all required fields (Status, Next Task, Doer, Email)",
         variant: "destructive",
       });
       return;
@@ -692,10 +692,10 @@ export default function VisualFlowBuilder() {
     if (!editingRule) return;
     
     // Validate required fields
-    if (!editingRule.nextTask || !editingRule.doer || !editingRule.email) {
+    if (!editingRule.nextTask || !editingRule.doer || !editingRule.email || !editingRule.status) {
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields (Next Task, Doer, Email)",
+        description: "Please fill in all required fields (Status, Next Task, Doer, Email)",
         variant: "destructive",
       });
       return;
@@ -1038,10 +1038,10 @@ export default function VisualFlowBuilder() {
                               markerEnd = "url(#arrowhead-selected)";
                             } else if (isDecision) {
                               if (statusLower.includes("yes") || statusLower.includes("approved") || 
-                                  statusLower.includes("done") || statusLower.includes("success")) {
+                                  statusLower.includes("done") || statusLower.includes("success") ||statusLower.includes("pass")) {
                                 strokeColor = "#10b981";
                                 markerEnd = "url(#arrowhead-green)";
-                              } else if (statusLower.includes("no") || statusLower.includes("decline")) {
+                              } else if (statusLower.includes("no") || statusLower.includes("decline")||statusLower.includes("fail")) {
                                 strokeColor = "#ef4444";
                                 markerEnd = "url(#arrowhead-red)";
                               } else {
@@ -1445,7 +1445,7 @@ export default function VisualFlowBuilder() {
                   </p>
                 </div>
                 <div>
-                  <Label>Status (When)</Label>
+                  <Label>Status (When) *</Label>
                   <Input
                     value={newRule.status}
                     onChange={(e) => setNewRule({ ...newRule, status: e.target.value })}
@@ -1625,7 +1625,7 @@ export default function VisualFlowBuilder() {
                     </Select>
                   </div>
                   <div>
-                    <Label>Status (When)</Label>
+                    <Label>Status (When) *</Label>
                     <Input
                       value={editingRule.status}
                       onChange={(e) => setEditingRule({ ...editingRule, status: e.target.value })}
