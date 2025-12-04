@@ -65,6 +65,7 @@ export interface IStorage {
   getAllOrganizations(): Promise<Organization[]>;
   updateOrganizationStatus(id: string, isActive: boolean): Promise<Organization>;
   updateOrganization(id: string, updates: Partial<InsertOrganization>): Promise<Organization>;
+  deleteOrganization(id: string): Promise<void>;
   updateUserSuperAdminStatus(userId: string, isSuperAdmin: boolean): Promise<User>;
 
   // Audit log operations
@@ -287,6 +288,56 @@ export class DatabaseStorage implements IStorage {
       .where(eq(organizations.id, id))
       .returning();
     return organization;
+  }
+
+  async deleteOrganization(id: string): Promise<void> {
+    // Cascade delete all related data
+    // Note: Database foreign key constraints should handle cascade deletes automatically
+    // This method is for explicit deletion control and audit logging
+    
+    try {
+      // Delete MongoDB form responses first
+      try {
+        const { getFormResponsesCollection } = await import('./mongo/client.js');
+        const col = await getFormResponsesCollection();
+        const result = await col.deleteMany({ orgId: id });
+        console.log(`[deleteOrganization] Deleted ${result.deletedCount} form responses from MongoDB for org ${id}`);
+      } catch (mongoError) {
+        console.error(`[deleteOrganization] Error deleting MongoDB data for org ${id}:`, mongoError);
+        // Continue with PostgreSQL deletion even if MongoDB fails
+      }
+      
+      // Delete GridFS files
+      try {
+        const { deleteFilesByOrganization } = await import('./mongo/gridfs.js');
+        await deleteFilesByOrganization(id);
+        console.log(`[deleteOrganization] Deleted GridFS files for org ${id}`);
+      } catch (gridfsError) {
+        console.error(`[deleteOrganization] Error deleting GridFS files for org ${id}:`, gridfsError);
+        // Continue with PostgreSQL deletion
+      }
+      
+      // Delete PostgreSQL data in order of dependencies
+      await db.delete(formResponses).where(eq(formResponses.organizationId, id));
+      await db.delete(formTemplates).where(eq(formTemplates.organizationId, id));
+      await db.delete(tasks).where(eq(tasks.organizationId, id));
+      await db.delete(flowRules).where(eq(flowRules.organizationId, id));
+      await db.delete(webhookDeliveryLog).where(eq(webhookDeliveryLog.organizationId, id));
+      await db.delete(webhookRetryQueue).where(eq(webhookRetryQueue.organizationId, id));
+      await db.delete(webhooks).where(eq(webhooks.organizationId, id));
+      await db.delete(auditLogs).where(eq(auditLogs.organizationId, id));
+      await db.delete(passwordChangeHistory).where(eq(passwordChangeHistory.organizationId, id));
+      await db.delete(userDevices).where(eq(userDevices.organizationId, id));
+      await db.delete(userLoginLogs).where(eq(userLoginLogs.organizationId, id));
+      await db.delete(tatConfig).where(eq(tatConfig.organizationId, id));
+      await db.delete(users).where(eq(users.organizationId, id));
+      await db.delete(organizations).where(eq(organizations.id, id));
+      
+      console.log(`[deleteOrganization] Successfully deleted organization ${id} and all related data`);
+    } catch (error) {
+      console.error(`[deleteOrganization] Error deleting organization ${id}:`, error);
+      throw new Error(`Failed to delete organization: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   async updateUserSuperAdminStatus(userId: string, isSuperAdmin: boolean): Promise<User> {

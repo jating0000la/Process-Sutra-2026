@@ -24,7 +24,8 @@ import {
   HardDrive,
   Workflow,
   BarChart3,
-  PieChart
+  PieChart,
+  Settings
 } from "lucide-react";
 import { 
   LineChart, 
@@ -93,6 +94,8 @@ interface UsageSummary {
   quotas: {
     maxUsers: number;
     currentUsers: number;
+    maxFlows: number;
+    currentFlows: number;
     storageLimit: number;
     storageUsed: number;
   };
@@ -542,6 +545,140 @@ export default function Usage() {
                   </CardContent>
                 </Card>
               </div>
+
+              {/* Organization Quota Status - Controlled by Super Admin */}
+              {summary && (
+                <Card className="shadow-lg border-0 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+                  <CardHeader className="border-b border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="flex items-center gap-2">
+                          <Settings className="h-5 w-5 text-blue-600" />
+                          Organization Plan Quotas
+                        </CardTitle>
+                        <CardDescription>Limits configured by super admin in organization control panel</CardDescription>
+                      </div>
+                      <Badge variant="outline" className="text-xs">
+                        Admin Controlled
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-6 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Flow Executions Quota */}
+                      <div className="p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Workflow className="h-5 w-5 text-blue-600" />
+                            <span className="text-sm font-medium text-gray-700">Flow Executions</span>
+                          </div>
+                          <Badge variant={summary.quotas.currentFlows > summary.quotas.maxFlows ? "destructive" : "default"} className="text-xs">
+                            {summary.quotas.currentFlows}/{summary.quotas.maxFlows}
+                          </Badge>
+                        </div>
+                        <Progress 
+                          value={(summary.quotas.currentFlows / summary.quotas.maxFlows) * 100} 
+                          className={`h-2 ${
+                            (summary.quotas.currentFlows / summary.quotas.maxFlows) * 100 > 90
+                              ? '[&>div]:bg-red-600'
+                              : (summary.quotas.currentFlows / summary.quotas.maxFlows) * 100 > 75
+                              ? '[&>div]:bg-amber-600'
+                              : '[&>div]:bg-blue-600'
+                          }`}
+                        />
+                        <p className="text-xs text-gray-500 mt-2">
+                          {((summary.quotas.currentFlows / summary.quotas.maxFlows) * 100).toFixed(0)}% utilized
+                        </p>
+                      </div>
+
+                      {/* Users Quota */}
+                      <div className="p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Users className="h-5 w-5 text-green-600" />
+                            <span className="text-sm font-medium text-gray-700">Active Users</span>
+                          </div>
+                          <Badge variant={summary.quotas.currentUsers > summary.quotas.maxUsers ? "destructive" : "default"} className="text-xs">
+                            {summary.quotas.currentUsers}/{summary.quotas.maxUsers}
+                          </Badge>
+                        </div>
+                        <Progress 
+                          value={(summary.quotas.currentUsers / summary.quotas.maxUsers) * 100} 
+                          className={`h-2 ${
+                            (summary.quotas.currentUsers / summary.quotas.maxUsers) * 100 > 90
+                              ? '[&>div]:bg-red-600'
+                              : (summary.quotas.currentUsers / summary.quotas.maxUsers) * 100 > 75
+                              ? '[&>div]:bg-amber-600'
+                              : '[&>div]:bg-green-600'
+                          }`}
+                        />
+                        <p className="text-xs text-gray-500 mt-2">
+                          {((summary.quotas.currentUsers / summary.quotas.maxUsers) * 100).toFixed(0)}% utilized
+                        </p>
+                      </div>
+
+                      {/* Storage Quota */}
+                      <div className="p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Database className="h-5 w-5 text-purple-600" />
+                            <span className="text-sm font-medium text-gray-700">Storage Space</span>
+                          </div>
+                          <Badge variant={summary.quotas.storageUsed > summary.quotas.storageLimit ? "destructive" : "default"} className="text-xs">
+                            {summary.quotas.storageUsed.toFixed(2)}/{summary.quotas.storageLimit.toFixed(2)} GB
+                          </Badge>
+                        </div>
+                        <Progress 
+                          value={(summary.quotas.storageUsed / summary.quotas.storageLimit) * 100} 
+                          className={`h-2 ${
+                            (summary.quotas.storageUsed / summary.quotas.storageLimit) * 100 > 90
+                              ? '[&>div]:bg-red-600'
+                              : (summary.quotas.storageUsed / summary.quotas.storageLimit) * 100 > 75
+                              ? '[&>div]:bg-amber-600'
+                              : '[&>div]:bg-purple-600'
+                          }`}
+                        />
+                        <p className="text-xs text-gray-500 mt-2">
+                          {((summary.quotas.storageUsed / summary.quotas.storageLimit) * 100).toFixed(0)}% utilized
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Warning Banner if any quota exceeded */}
+                    {(summary.quotas.currentFlows > summary.quotas.maxFlows || 
+                      summary.quotas.currentUsers > summary.quotas.maxUsers || 
+                      summary.quotas.storageUsed > summary.quotas.storageLimit) && (
+                      <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                        <div className="flex items-start gap-3">
+                          <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
+                          <div>
+                            <p className="font-medium text-red-900 text-sm">⚠️ Quota Limit Exceeded</p>
+                            <p className="text-sm text-red-700 mt-1">
+                              Your organization has exceeded one or more plan limits. Contact your system administrator 
+                              to upgrade your plan in the organization control panel or reduce usage.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Info Banner */}
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="flex items-start gap-3">
+                        <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="font-medium text-blue-900 text-sm">About Organization Quotas</p>
+                          <p className="text-sm text-blue-700 mt-1">
+                            These limits are set by your system super admin through the <strong>Organization Control Panel</strong>. 
+                            They define your pricing tier (Starter, Professional, Enterprise, Custom) and can include usage-based billing. 
+                            To request a quota increase or change your pricing tier, contact your administrator.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
 
             {/* Flows Tab */}
@@ -613,9 +750,9 @@ export default function Usage() {
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-medium text-gray-700">Storage Used</span>
                         <span className={`text-sm font-bold ${
-                          ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 90 
+                          ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 90 
                             ? 'text-red-600' 
-                            : ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 75 
+                            : ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 75 
                             ? 'text-amber-600' 
                             : 'text-blue-600'
                         }`}>
@@ -623,27 +760,27 @@ export default function Usage() {
                         </span>
                       </div>
                       <Progress 
-                        value={(summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100} 
+                        value={(summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100} 
                         className={`h-3 ${
-                          ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 90 
+                          ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 90 
                             ? '[&>div]:bg-red-600' 
-                            : ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 75 
+                            : ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 75 
                             ? '[&>div]:bg-amber-600' 
                             : ''
                         }`}
                       />
                       <p className="text-xs text-gray-500 mt-1">
-                        {summary?.quotas.storageLimit ? `${((summary?.quotas.storageUsed || 0) / summary.quotas.storageLimit * 100).toFixed(1)}% of ${summary.quotas.storageLimit} GB limit` : 'No limit set'}
+                        {summary?.quotas.storageLimit ? `${((summary?.quotas.storageUsed || 0) / summary.quotas.storageLimit * 100).toFixed(1)}% of ${summary.quotas.storageLimit.toFixed(2)} GB limit` : 'No limit set'}
                       </p>
-                      {((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 90 && (
+                      {((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 90 && (
                         <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
-                          ⚠️ Storage almost full! You've used over 90% of your 5GB limit. File uploads may fail soon.
+                          ⚠️ Storage almost full! You've used over 90% of your {summary?.quotas.storageLimit.toFixed(2)} GB limit. File uploads may fail soon.
                         </div>
                       )}
-                      {((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 75 && 
-                       ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) <= 90 && (
+                      {((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 75 && 
+                       ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) <= 90 && (
                         <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
-                          ⚠️ Storage warning: You've used over 75% of your 5GB limit.
+                          ⚠️ Storage warning: You've used over 75% of your {summary?.quotas.storageLimit.toFixed(2)} GB limit.
                         </div>
                       )}
                     </div>
@@ -755,16 +892,76 @@ export default function Usage() {
               {/* Quota Limits */}
               <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
                 <CardHeader className="border-b border-gray-100">
-                  <CardTitle>Resource Quotas</CardTitle>
-                  <CardDescription>Current usage vs. plan limits</CardDescription>
+                  <CardTitle className="flex items-center gap-2">
+                    <Settings className="h-5 w-5 text-blue-600" />
+                    Resource Quotas
+                  </CardTitle>
+                  <CardDescription>Current usage vs. plan limits (configured by super admin)</CardDescription>
                 </CardHeader>
                 <CardContent className="pt-6 space-y-6">
+                  {/* Quota Info Banner */}
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="font-medium text-blue-900 text-sm">Organization Plan Limits</p>
+                        <p className="text-sm text-blue-700 mt-1">
+                          These quotas are controlled by your system administrator through the organization control panel. 
+                          Contact your admin to upgrade limits if you're approaching capacity.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-gray-700">Flow Executions</span>
+                      <span className={`text-sm font-bold ${
+                        ((summary?.quotas.currentFlows || 0) / (summary?.quotas.maxFlows || 1) * 100) > 90 
+                          ? 'text-red-600' 
+                          : ((summary?.quotas.currentFlows || 0) / (summary?.quotas.maxFlows || 1) * 100) > 75 
+                          ? 'text-amber-600' 
+                          : 'text-gray-900'
+                      }`}>
+                        {summary?.quotas.currentFlows || 0} / {summary?.quotas.maxFlows || 0}
+                      </span>
+                    </div>
+                    <Progress 
+                      value={(summary?.quotas.currentFlows || 0) / (summary?.quotas.maxFlows || 1) * 100} 
+                      className={`h-3 ${
+                        ((summary?.quotas.currentFlows || 0) / (summary?.quotas.maxFlows || 1) * 100) > 90 
+                          ? '[&>div]:bg-red-600' 
+                          : ((summary?.quotas.currentFlows || 0) / (summary?.quotas.maxFlows || 1) * 100) > 75 
+                          ? '[&>div]:bg-amber-600' 
+                          : ''
+                      }`}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      {((summary?.quotas.currentFlows || 0) / (summary?.quotas.maxFlows || 1) * 100).toFixed(0)}% of quota used
+                    </p>
+                  </div>
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-medium text-gray-700">Users</span>
-                      <span className="text-sm font-bold text-gray-900">{summary?.quotas.currentUsers || 0} / {summary?.quotas.maxUsers || 0}</span>
+                      <span className={`text-sm font-bold ${
+                        ((summary?.quotas.currentUsers || 0) / (summary?.quotas.maxUsers || 1) * 100) > 90 
+                          ? 'text-red-600' 
+                          : ((summary?.quotas.currentUsers || 0) / (summary?.quotas.maxUsers || 1) * 100) > 75 
+                          ? 'text-amber-600' 
+                          : 'text-gray-900'
+                      }`}>
+                        {summary?.quotas.currentUsers || 0} / {summary?.quotas.maxUsers || 0}
+                      </span>
                     </div>
-                    <Progress value={(summary?.quotas.currentUsers || 0) / (summary?.quotas.maxUsers || 1) * 100} className="h-3" />
+                    <Progress 
+                      value={(summary?.quotas.currentUsers || 0) / (summary?.quotas.maxUsers || 1) * 100} 
+                      className={`h-3 ${
+                        ((summary?.quotas.currentUsers || 0) / (summary?.quotas.maxUsers || 1) * 100) > 90 
+                          ? '[&>div]:bg-red-600' 
+                          : ((summary?.quotas.currentUsers || 0) / (summary?.quotas.maxUsers || 1) * 100) > 75 
+                          ? '[&>div]:bg-amber-600' 
+                          : ''
+                      }`}
+                    />
                     <p className="text-xs text-gray-500 mt-1">
                       {((summary?.quotas.currentUsers || 0) / (summary?.quotas.maxUsers || 1) * 100).toFixed(0)}% of quota used
                     </p>
@@ -773,29 +970,29 @@ export default function Usage() {
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-medium text-gray-700">Storage</span>
                       <span className={`text-sm font-bold ${
-                        ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 90 
+                        ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 90 
                           ? 'text-red-600' 
-                          : ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 75 
+                          : ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 75 
                           ? 'text-amber-600' 
                           : 'text-gray-900'
                       }`}>
-                        {summary?.quotas.storageUsed.toFixed(2) || 0} GB / {summary?.quotas.storageLimit || 5} GB
+                        {summary?.quotas.storageUsed.toFixed(2) || 0} GB / {summary?.quotas.storageLimit.toFixed(2) || 0} GB
                       </span>
                     </div>
                     <Progress 
-                      value={(summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100} 
+                      value={(summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100} 
                       className={`h-3 ${
-                        ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 90 
+                        ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 90 
                           ? '[&>div]:bg-red-600' 
-                          : ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 75 
+                          : ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 75 
                           ? '[&>div]:bg-amber-600' 
                           : ''
                       }`}
                     />
                     <p className="text-xs text-gray-500 mt-1">
-                      {((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100).toFixed(0)}% of quota used
+                      {((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100).toFixed(0)}% of quota used
                     </p>
-                    {((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 5) * 100) > 90 && (
+                    {((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 90 && (
                       <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700 font-medium">
                         ⚠️ Critical: Storage limit almost reached! Max file upload size: 10MB
                       </div>

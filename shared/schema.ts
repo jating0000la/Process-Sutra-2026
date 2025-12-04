@@ -44,6 +44,23 @@ export const organizations = pgTable(
     industry: varchar("industry"),
     customerType: varchar("customer_type").$type<"B2B" | "B2C" | "B2G">(), // B2B, B2C, B2G
     businessType: varchar("business_type").$type<"Trading" | "Manufacturing" | "Wholesaler" | "Retailer" | "Service Provider">(), // Trading, Manufacturing, Wholesaler, Retailer, Service Provider
+    // Super Admin control fields
+    pricingTier: varchar("pricing_tier").default("starter"), // starter, growth, enterprise
+    monthlyPrice: integer("monthly_price").default(0),
+    billingCycle: varchar("billing_cycle").default("monthly"), // monthly, yearly
+    maxFlows: integer("max_flows").default(100),
+    maxStorage: integer("max_storage").default(5000), // in MB
+    usageBasedBilling: boolean("usage_based_billing").default(false),
+    pricePerFlow: integer("price_per_flow").default(0),
+    pricePerUser: integer("price_per_user").default(0),
+    pricePerGb: integer("price_per_gb").default(0),
+    healthScore: integer("health_score").default(100),
+    healthStatus: varchar("health_status").default("healthy"), // healthy, warning, critical
+    isSuspended: boolean("is_suspended").default(false),
+    suspendedAt: timestamp("suspended_at"),
+    suspensionReason: text("suspension_reason"),
+    ownerId: varchar("owner_id"),
+    ownerEmail: varchar("owner_email"),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
   },
@@ -54,6 +71,10 @@ export const organizations = pgTable(
     index("idx_organizations_industry").on(table.industry),
     index("idx_organizations_customer_type").on(table.customerType),
     index("idx_organizations_business_type").on(table.businessType),
+    index("idx_organizations_health_score").on(table.healthScore),
+    index("idx_organizations_pricing_tier").on(table.pricingTier),
+    index("idx_organizations_suspended").on(table.isSuspended).where(sql`${table.isSuspended} = true`),
+    index("idx_organizations_owner").on(table.ownerId),
   ]
 );
 

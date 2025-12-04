@@ -71,3 +71,33 @@ export async function getStorageStats(organizationId?: string): Promise<{
     };
   }
 }
+
+export async function deleteFilesByOrganization(organizationId: string): Promise<number> {
+  try {
+    const client = await getMongoClient();
+    const dbName = process.env.MONGODB_DB as string;
+    const db = client.db(dbName);
+    const bucket = new GridFSBucket(db, { bucketName: 'uploads' });
+    
+    // Find all files for this organization
+    const filesCollection = db.collection('uploads.files');
+    const files = await filesCollection.find({ 'metadata.organizationId': organizationId }).toArray();
+    
+    // Delete each file
+    let deletedCount = 0;
+    for (const file of files) {
+      try {
+        await bucket.delete(file._id);
+        deletedCount++;
+      } catch (error) {
+        console.error(`Error deleting file ${file._id}:`, error);
+      }
+    }
+    
+    console.log(`[GridFS] Deleted ${deletedCount} files for organization ${organizationId}`);
+    return deletedCount;
+  } catch (error) {
+    console.error('Error deleting files by organization:', error);
+    return 0;
+  }
+}

@@ -27,6 +27,8 @@ import oauthRouter from './oauthRoutes.js';
 import * as crypto from 'crypto';
 import { sanitizeFlowRule, sanitizeFlowRules } from './inputSanitizer';
 import archiver from 'archiver';
+import { registerSuperAdminRoutes } from './superAdminRoutes';
+
 
 // Analytics cache - 5 minute TTL to reduce database load
 const analyticsCache = new NodeCache({ 
@@ -898,7 +900,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             formId: startRule.formId,
             formData: parsedInitialFormData,
             submittedBy: userId,
-            timestamp: flowStartTime,
             organizationId: user.organizationId,
             orderNumber,
           });
@@ -1411,7 +1412,6 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
             formId: startRule.formId,
             formData: initialFormData,
             submittedBy: actorEmail || "external-api",
-            timestamp: new Date(),
             organizationId,
             orderNumber,
           });
@@ -2874,15 +2874,42 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
         const totalBytes = storageStats.totalBytes;
         const filesByType = storageStats.filesByType;
         
-        // Cost calculation (example rates - adjust as needed)
-        const flowRate = 5; // ₹5 per flow
-        const userRate = 100; // ₹100 per active user
-        const formRate = 2; // ₹2 per form submission
+        // Cost calculation using organization pricing settings
+        // Use organization's pricing tier rates if usage-based billing is enabled
+        const flowRate = org?.usageBasedBilling && org?.pricePerFlow 
+          ? org.pricePerFlow / 100 // Convert paise to rupees
+          : 5; // Default: ₹5 per flow
+        const userRate = org?.usageBasedBilling && org?.pricePerUser 
+          ? org.pricePerUser / 100 // Convert paise to rupees
+          : 100; // Default: ₹100 per active user
+        const formRate = 2; // ₹2 per form submission (not configurable yet)
         
-        const flowCost = monthFlows * flowRate;
-        const userCost = activeUsers * userRate;
+        // Calculate overage charges for usage-based billing
+        let overageFlowCost = 0;
+        let overageUserCost = 0;
+        let overageStorageCost = 0;
+        
+        if (org?.usageBasedBilling) {
+          const flowsOverage = Math.max(0, totalFlows - (org.maxFlows || 0));
+          const usersOverage = Math.max(0, activeUsers - (org.maxUsers || 0));
+          const storageOverageGB = Math.max(0, (totalBytes / (1024 * 1024 * 1024)) - ((org.maxStorage || 5000) / 1024));
+          
+          overageFlowCost = flowsOverage * flowRate;
+          overageUserCost = usersOverage * userRate;
+          overageStorageCost = org.pricePerGb 
+            ? storageOverageGB * (org.pricePerGb / 100) 
+            : 0;
+        }
+        
+        // Base monthly fee
+        const baseFee = org?.monthlyPrice ? org.monthlyPrice / 100 : 0; // Convert paise to rupees
+        
+        // Total costs
+        const flowCost = (monthFlows * flowRate) + overageFlowCost;
+        const userCost = (activeUsers * userRate) + overageUserCost;
         const formCost = monthForms * formRate;
-        const currentMonthCost = flowCost + userCost + formCost;
+        const storageCost = overageStorageCost;
+        const currentMonthCost = baseFee + flowCost + userCost + formCost + storageCost;
         
         const lastMonthCost = (lastMonthFlows * flowRate) + (activeUsers * userRate) + (lastMonthForms * formRate);
         const costComparison = lastMonthCost > 0 ? ((currentMonthCost - lastMonthCost) / lastMonthCost * 100) : 0;
@@ -2939,7 +2966,9 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           quotas: {
             maxUsers: org?.maxUsers || 0,
             currentUsers: totalUsers,
-            storageLimit: 5, // GB - per organization limit
+            maxFlows: org?.maxFlows || 0,
+            currentFlows: totalFlows,
+            storageLimit: (org?.maxStorage || 5000) / 1024, // Convert MB to GB
             storageUsed: totalBytes / (1024 * 1024 * 1024)
           }
         };
@@ -3377,13 +3406,24 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           const tasks = await storage.getTasksByOrganization(org.id);
           const completedTasks = tasks.filter((t: any) => t.status === 'completed').length;
           
+          // Calculate current flows (unique flow IDs)
+          const uniqueFlowIds = new Set(tasks.map((t: any) => t.flowId));
+          const currentFlows = uniqueFlowIds.size;
+          
+          // Calculate current storage from form responses
+          const responses = await storage.getFormResponsesByOrganization(org.id);
+          // Rough estimate: 0.5 MB per response
+          const currentStorage = Math.round(responses.length * 0.5);
+          
           return {
             ...org,
             totalUsers,
             activeUsers,
             totalTasks: tasks.length,
             completedTasks,
-            taskCompletionRate: tasks.length > 0 ? ((completedTasks / tasks.length) * 100).toFixed(1) : 0
+            taskCompletionRate: tasks.length > 0 ? ((completedTasks / tasks.length) * 100).toFixed(1) : 0,
+            currentFlows,
+            currentStorage
           };
         })
       );
@@ -3408,6 +3448,8 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       let totalTasks = 0;
       let completedTasks = 0;
       let totalFileUploads = 0;
+      let totalRevenue = 0;
+      let monthlyRecurring = 0;
       
       const orgStats = await Promise.all(
         organizations.map(async (org) => {
@@ -3420,6 +3462,11 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           suspendedUsers += users.filter((u: any) => u.status === 'suspended').length;
           totalTasks += tasks.length;
           completedTasks += tasks.filter((t: any) => t.status === 'completed').length;
+          
+          // Calculate billing
+          const baseFee = org.monthlyPrice || 0;
+          monthlyRecurring += baseFee;
+          totalRevenue += baseFee;
           
           try {
             const { getFileCount } = await import('./mongo/gridfs');
@@ -3442,7 +3489,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
         system: {
           totalOrganizations: organizations.length,
           activeOrganizations: organizations.filter(o => o.isActive).length,
-          inactiveOrganizations: organizations.filter(o => !o.isActive).length,
+          suspendedOrganizations: organizations.filter(o => o.isSuspended).length,
         },
         users: {
           total: totalUsers,
@@ -3458,6 +3505,11 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
         },
         data: {
           totalFileUploads,
+        },
+        billing: {
+          totalRevenue,
+          monthlyRecurring,
+          averageRevenuePerOrg: organizations.length > 0 ? totalRevenue / organizations.length : 0,
         },
         byOrganization: orgStats,
       });
@@ -3735,6 +3787,9 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
   // ORGANIZATION ADMIN ROUTES (kept for backward compatibility)
   // These work within a single organization scope
   // ============================================================
+
+  // Register Super Admin routes from separate module
+  registerSuperAdminRoutes(app, isAuthenticated, requireSuperAdmin, superAdminLimiter);
 
   // Super Admin Dashboard Statistics (Organization Scoped)
   app.get("/api/super-admin/statistics", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {

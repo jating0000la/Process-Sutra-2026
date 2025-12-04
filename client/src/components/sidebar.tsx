@@ -16,6 +16,7 @@ import {
   Activity,
   Database,
   Boxes,
+  Shield,
 } from "lucide-react";
 
 // All navigation items in the correct order
@@ -149,6 +150,7 @@ export default function Sidebar() {
                   case "data": return "My Data";
                   case "analytics": return "Analytics";
                   case "settings": return "Settings";
+                  case "superadmin": return "System Control";
                   default: return "";
                 }
               };

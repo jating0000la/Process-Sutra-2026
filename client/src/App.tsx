@@ -27,8 +27,7 @@ import { useNotifications } from "@/hooks/useNotifications";
 import ApiStartFlow from "@/pages/api-startflow";
 import ApiDocumentation from "@/pages/api-documentation";
 import FormResponses from "@/pages/form-responses";
-import SuperAdmin from "@/pages/super-admin";
-import SystemSuperAdmin from "@/pages/system-super-admin";
+import OrganizationControl from "@/pages/organization-control";
 
 import FormDataViewer from "@/pages/form-data-viewer";
 import MongoFormDataViewer from "@/pages/mongo-form-data-viewer";
@@ -142,13 +141,8 @@ function Router() {
               <UserManagement />
             </ProtectedRoute>
           </Route>
-          <Route path="/super-admin">
-            <ProtectedRoute requireAdmin>
-              <SuperAdmin />
-            </ProtectedRoute>
-          </Route>
-          <Route path="/system-super-admin">
-            <SystemSuperAdmin />
+          <Route path="/organization-control">
+            <OrganizationControl />
           </Route>
           <Route path="/organization-settings">
             <ProtectedRoute requireAdmin>
