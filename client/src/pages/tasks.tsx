@@ -992,6 +992,7 @@ export default function Tasks() {
       const flowData = await response.json();
       
       // Set the flow data for the dialog
+      // Make sure to include all task data including flowInitialFormData
       setFlowDataForTask({
         flowId: task.flowId,
         orderNumber: task.orderNumber,
@@ -2401,7 +2402,75 @@ export default function Tasks() {
                       </CardHeader>
                       <CardContent className="overflow-y-visible print:overflow-visible">
                         <div className="space-y-4">
-                          {flowDataForTask.formResponses?.length === 0 ? (
+                          {/* Display Initial Form Data from API if available */}
+                          {flowDataForTask.firstTask?.flowInitialFormData && (
+                            <Card className="border-l-4 border-l-purple-500 bg-purple-50/50 dark:bg-purple-900/10 relative">
+                              {/* Step indicator */}
+                              <div className="absolute -left-6 top-4 w-8 h-8 bg-white dark:bg-gray-800 rounded-full border-2 border-purple-500 flex items-center justify-center text-xs font-bold text-purple-600">
+                                0
+                              </div>
+                              
+                              <CardHeader className="pb-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center space-x-2">
+                                    <CardTitle className="text-sm">
+                                      Initial Flow Data (from API)
+                                    </CardTitle>
+                                    <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-700">
+                                      API Data
+                                    </Badge>
+                                  </div>
+                                  <span className="text-xs text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+                                    {flowDataForTask.firstTask.flowInitiatedAt 
+                                      ? new Date(flowDataForTask.firstTask.flowInitiatedAt).toLocaleDateString()
+                                      : 'Flow Start'
+                                    }
+                                  </span>
+                                </div>
+                                {flowDataForTask.firstTask.flowInitiatedBy && (
+                                  <div className="flex items-center text-xs text-gray-500">
+                                    <UserCheck className="w-3 h-3 mr-1" />
+                                    Initiated by: {flowDataForTask.firstTask.flowInitiatedBy}
+                                  </div>
+                                )}
+                              </CardHeader>
+                              <CardContent className="pt-0">
+                                <div className="space-y-2">
+                                  {Object.entries(flowDataForTask.firstTask.flowInitialFormData).map(([key, value]) => (
+                                    <div key={key} className="border-b border-purple-100 dark:border-purple-600 pb-2 last:border-b-0">
+                                      <Label className="text-xs font-medium text-purple-600 dark:text-purple-400 block">{key}</Label>
+                                      <div className="text-sm text-gray-800 dark:text-gray-200 mt-1">
+                                        {typeof value === 'string' ? (
+                                          <span className="break-words">{value}</span>
+                                        ) : Array.isArray(value) ? (
+                                          <div className="space-y-1">
+                                            {value.map((item, idx) => (
+                                              <div key={idx} className="bg-purple-50 dark:bg-purple-700 p-2 rounded text-xs">
+                                                {typeof item === 'object' ? 
+                                                  Object.entries(item).map(([k, v]) => (
+                                                    <div key={k}><span className="font-medium">{k}:</span> {String(v)}</div>
+                                                  )) : 
+                                                  String(item)
+                                                }
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : typeof value === 'object' && value !== null ? (
+                                          <div className="bg-purple-50 dark:bg-purple-700 p-2 rounded text-xs font-mono max-h-32 overflow-y-auto">
+                                            {JSON.stringify(value, null, 2)}
+                                          </div>
+                                        ) : (
+                                          <span className="break-words">{String(value)}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          )}
+
+                          {flowDataForTask.formResponses?.length === 0 && !flowDataForTask.firstTask?.flowInitialFormData ? (
                             <div className="text-center py-8">
                               <Database className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                               <p className="text-gray-500 text-sm">No form data available</p>

@@ -503,7 +503,8 @@ export class DatabaseStorage implements IStorage {
             if (firstFormResponse.length > 0) {
               return {
                 ...task,
-                flowInitialFormData: firstFormResponse[0].formData
+                // Preserve original initial data from API; fallback to first form response only if missing
+                flowInitialFormData: task.flowInitialFormData ?? firstFormResponse[0].formData
               };
             }
           }
@@ -556,7 +557,8 @@ export class DatabaseStorage implements IStorage {
             if (firstFormResponse.length > 0) {
               return {
                 ...task,
-                flowInitialFormData: firstFormResponse[0].formData
+                // Preserve original initial data from API; fallback to first form response only if missing
+                flowInitialFormData: task.flowInitialFormData ?? firstFormResponse[0].formData
               };
             }
           }
@@ -618,7 +620,8 @@ export class DatabaseStorage implements IStorage {
             if (firstFormResponse.length > 0) {
               return {
                 ...task,
-                flowInitialFormData: firstFormResponse[0].formData
+                // Preserve original initial data from API; fallback to first form response only if missing
+                flowInitialFormData: task.flowInitialFormData ?? firstFormResponse[0].formData
               };
             }
           }
