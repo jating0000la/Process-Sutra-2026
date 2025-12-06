@@ -776,3 +776,49 @@ export type WebhookDeliveryLog = typeof webhookDeliveryLog.$inferSelect;
 export type InsertWebhookDeliveryLog = z.infer<typeof insertWebhookDeliveryLogSchema>;
 export type WebhookRetryQueue = typeof webhookRetryQueue.$inferSelect;
 export type InsertWebhookRetryQueue = z.infer<typeof insertWebhookRetryQueueSchema>;
+
+// API Keys table for integration authentication
+export const apiKeys = pgTable(
+  "api_keys",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    keyHash: varchar("key_hash").notNull().unique(), // Store hash for security
+    keyPrefix: varchar("key_prefix").notNull(), // First 8 chars for display (e.g., "sk_live_")
+    name: varchar("name").notNull(), // User-friendly name
+    description: text("description"),
+    createdBy: varchar("created_by").notNull().references(() => users.id),
+    lastUsedAt: timestamp("last_used_at"),
+    expiresAt: timestamp("expires_at"), // Optional expiration
+    isActive: boolean("is_active").default(true),
+    scopes: jsonb("scopes").default(['flow:start']), // Permissions array
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_api_keys_org").on(table.organizationId),
+    index("idx_api_keys_active").on(table.isActive).where(sql`${table.isActive} = true`),
+    index("idx_api_keys_hash").on(table.keyHash),
+  ]
+);
+
+export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [apiKeys.organizationId],
+    references: [organizations.id],
+  }),
+  creator: one(users, {
+    fields: [apiKeys.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const insertApiKeySchema = createInsertSchema(apiKeys).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastUsedAt: true,
+});
+
+export type ApiKey = typeof apiKeys.$inferSelect;
+export type InsertApiKey = z.infer<typeof insertApiKeySchema>;

@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import Header from "@/components/header";
@@ -59,6 +59,9 @@ export default function Tasks() {
   const [viewMode, setViewMode] = useState<"cards" | "table">("table");
   const [isStartFlowDialogOpen, setIsStartFlowDialogOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Track form submissions to prevent duplicates (especially during file uploads)
+  const submittingFormsRef = useRef<Set<string>>(new Set());
 
   // Start flow form
   const startFlowForm = useForm({
@@ -634,6 +637,23 @@ export default function Tasks() {
   };
 
   const handleFormSubmit = async (formData: Record<string, any>) => {
+    // Create a unique key for this form submission
+    const submissionKey = `${selectedTask?.id}_${formTemplate?.formId}`;
+    
+    // Check if already submitting this form
+    if (submittingFormsRef.current.has(submissionKey)) {
+      console.warn('[Form Submit] Duplicate submission prevented for:', submissionKey);
+      toast({
+        title: "Please wait",
+        description: "Form submission already in progress",
+        variant: "default",
+      });
+      return;
+    }
+    
+    // Mark as submitting
+    submittingFormsRef.current.add(submissionKey);
+    
     try {
       // Server handles transformation to readable names, so send raw data
       await apiRequest("POST", "/api/form-responses", {
@@ -666,6 +686,11 @@ export default function Tasks() {
         description: "Failed to submit form. Please check all required fields.",
         variant: "destructive",
       });
+    } finally {
+      // Clear submission tracking after a delay to prevent rapid re-submissions
+      setTimeout(() => {
+        submittingFormsRef.current.delete(submissionKey);
+      }, 2000); // 2 second cooldown
     }
   };
 

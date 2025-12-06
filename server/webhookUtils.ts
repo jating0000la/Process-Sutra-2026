@@ -2,10 +2,36 @@ import crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { storage } from './storage';
 import type { Webhook } from '@shared/schema';
+import { transformFormDataToReadableNames } from './formDataTransformer';
 
 const WEBHOOK_TIMEOUT_MS = 10000; // 10 seconds
 const MAX_RETRIES = 3;
 const MAX_RESPONSE_SIZE = 10 * 1024; // 10KB - prevent large response attacks
+
+/**
+ * Check if data contains column IDs (col_*)
+ */
+function hasColumnIds(data: any): boolean {
+  if (!data || typeof data !== 'object') return false;
+  
+  // Check top-level keys
+  for (const key of Object.keys(data)) {
+    if (key.startsWith('col_')) return true;
+  }
+  
+  // Check nested objects and arrays
+  for (const value of Object.values(data)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (hasColumnIds(item)) return true;
+      }
+    } else if (value && typeof value === 'object') {
+      if (hasColumnIds(value)) return true;
+    }
+  }
+  
+  return false;
+}
 
 /**
  * Safely read response body with size limit
@@ -590,7 +616,8 @@ export async function processWebhookRetries(): Promise<void> {
 export async function fireWebhooksForEvent(
   organizationId: string,
   event: string,
-  data: any
+  data: any,
+  formTemplateQuestions?: Array<{ id: string; label: string; type: string; tableColumns?: Array<{ id: string; label: string }> }>
 ): Promise<void> {
   try {
     const hooks = await storage.getActiveWebhooksForEvent(organizationId, event);
@@ -604,13 +631,54 @@ export async function fireWebhooksForEvent(
       event,
     });
     
+    // Transform formData if present and questions are provided
+    let transformedData = data;
+    if (data.formData && formTemplateQuestions && formTemplateQuestions.length > 0) {
+      try {
+        const result = transformFormDataToReadableNames(data.formData, formTemplateQuestions);
+        transformedData = {
+          ...data,
+          formData: result.transformed,
+          _rawFormData: data.formData, // Keep original for debugging
+        };
+        
+        // CRITICAL: Validate no column IDs leaked into the transformed data
+        if (hasColumnIds(result.transformed)) {
+          console.error('[Webhook] CRITICAL: Column IDs still present after transformation!', {
+            event,
+            organizationId,
+            formData: JSON.stringify(result.transformed).substring(0, 500)
+          });
+          // Don't send webhooks with column IDs - data quality issue
+          return;
+        }
+        
+        console.log(`[Webhook] Transformed formData from column IDs to readable names for event ${event}`);
+      } catch (transformError) {
+        console.error('[Webhook] Error transforming formData:', transformError);
+        // CRITICAL: Don't send untransformed data - stop webhook firing
+        console.error('[Webhook] Aborting webhook fire due to transformation failure');
+        return;
+      }
+    } else if (data.formData) {
+      // FormData exists but no questions - check if it has column IDs
+      if (hasColumnIds(data.formData)) {
+        console.error('[Webhook] CRITICAL: FormData has column IDs but no questions for transformation!', {
+          event,
+          organizationId
+        });
+        // Don't send webhooks with raw column IDs
+        return;
+      }
+    }
+    
     // Fire all webhooks in parallel (non-blocking)
     const promises = hooks.map(hook => {
       const payload = {
         id: randomUUID(),
         type: event,
         createdAt: new Date().toISOString(),
-        data,
+        data: transformedData,
       };
       
       return fireWebhook(hook, payload).catch(error => {

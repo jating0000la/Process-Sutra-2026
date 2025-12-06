@@ -1164,10 +1164,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const apiKey = req.header("x-api-key");
     if (!apiKey) return res.status(401).json({ message: "Missing x-api-key" });
 
-    // 1) If apiKey matches an organization ID, accept it directly
-    let organization = await storage.getOrganizationById?.(apiKey);
+    let organization: any = null;
+    let apiKeyRecord: any = null;
 
-    // 2) Otherwise, try reverse-lookup from FLOW_API_KEYS/FLOW_API_KEY
+    // 1) Try to validate against stored API keys (preferred method)
+    if (apiKey.startsWith('sk_live_')) {
+      try {
+        const keyHash = crypto.createHash('sha256').update(apiKey).digest('hex');
+        apiKeyRecord = await storage.getApiKeyByHash(keyHash);
+        
+        if (apiKeyRecord) {
+          // Check expiration
+          if (apiKeyRecord.expiresAt && new Date(apiKeyRecord.expiresAt) < new Date()) {
+            return res.status(401).json({ message: "API key has expired" });
+          }
+          
+          // Update last used timestamp (non-blocking)
+          storage.updateApiKeyLastUsed(apiKeyRecord.id).catch(err => 
+            console.error('Error updating API key last used:', err)
+          );
+          
+          organization = await storage.getOrganizationById(apiKeyRecord.organizationId);
+        }
+      } catch (err) {
+        console.error('Error validating API key:', err);
+      }
+    }
+
+    // 2) Fallback: If apiKey matches an organization ID directly (legacy support)
+    if (!organization) {
+      organization = await storage.getOrganizationById?.(apiKey);
+    }
+
+    // 3) Fallback: Try reverse-lookup from FLOW_API_KEYS/FLOW_API_KEY env variables
     if (!organization) {
       const keyMap = getApiKeyMap();
       // Find entry where value === apiKey
@@ -1189,6 +1218,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       organizationDomain: organization.domain,
       actorEmail: req.header("x-actor-email") || undefined,
       source: req.header("x-source") || "api",
+      apiKeyId: apiKeyRecord?.id,
     };
     next();
   }
@@ -1428,14 +1458,110 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     }
   });
 
-  // --- Admin: Generate a suggested API token (not persisted) ---
+  // --- Admin: API Key Management ---
+  // Create new API key
+  app.post('/api/admin/integrations/keys', isAuthenticated, addUserToRequest, async (req: any, res) => {
+    const user = req.currentUser;
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    try {
+      const { name, description, expiresAt } = req.body;
+      if (!name || name.trim().length === 0) {
+        return res.status(400).json({ message: 'Name is required' });
+      }
+
+      // Generate secure API key
+      const apiKey = `sk_live_${randomBytes(32).toString('hex')}`;
+      const keyHash = crypto.createHash('sha256').update(apiKey).digest('hex');
+      const keyPrefix = apiKey.substring(0, 16) + '...';
+
+      const newKey = await storage.createApiKey({
+        organizationId: user.organizationId,
+        keyHash,
+        keyPrefix,
+        name: name.trim(),
+        description: description?.trim(),
+        createdBy: user.id,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+        isActive: true,
+        scopes: ['flow:start'],
+      });
+
+      // Return the full key ONLY on creation (never again)
+      res.json({ ...newKey, apiKey });
+    } catch (e) {
+      console.error('Error creating API key:', e);
+      res.status(500).json({ message: 'Failed to create API key' });
+    }
+  });
+
+  // List API keys
+  app.get('/api/admin/integrations/keys', isAuthenticated, addUserToRequest, async (req: any, res) => {
+    const user = req.currentUser;
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    try {
+      const keys = await storage.getApiKeysByOrganization(user.organizationId);
+      res.json(keys);
+    } catch (e) {
+      res.status(500).json({ message: 'Failed to fetch API keys' });
+    }
+  });
+
+  // Update API key (toggle active, update name/description)
+  app.put('/api/admin/integrations/keys/:id', isAuthenticated, addUserToRequest, async (req: any, res) => {
+    const user = req.currentUser;
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    try {
+      const { id } = req.params;
+      const key = await storage.getApiKeyById(id);
+      if (!key || key.organizationId !== user.organizationId) {
+        return res.status(404).json({ message: 'API key not found' });
+      }
+
+      const { name, description, isActive } = req.body;
+      const updated = await storage.updateApiKey(id, {
+        ...(name !== undefined && { name }),
+        ...(description !== undefined && { description }),
+        ...(isActive !== undefined && { isActive }),
+      });
+      res.json(updated);
+    } catch (e) {
+      res.status(500).json({ message: 'Failed to update API key' });
+    }
+  });
+
+  // Delete API key
+  app.delete('/api/admin/integrations/keys/:id', isAuthenticated, addUserToRequest, async (req: any, res) => {
+    const user = req.currentUser;
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    try {
+      const { id } = req.params;
+      const key = await storage.getApiKeyById(id);
+      if (!key || key.organizationId !== user.organizationId) {
+        return res.status(404).json({ message: 'API key not found' });
+      }
+      await storage.deleteApiKey(id);
+      res.status(204).send();
+    } catch (e) {
+      res.status(500).json({ message: 'Failed to delete API key' });
+    }
+  });
+
+  // Legacy endpoint for backward compatibility (generates key but doesn't store)
   app.post('/api/admin/integrations/token', isAuthenticated, addUserToRequest, async (req: any, res) => {
     const user = req.currentUser;
     if (!user || user.role !== 'admin') {
       return res.status(403).json({ message: 'Admin access required' });
     }
     const token = `sk_live_${randomBytes(24).toString('hex')}`;
-    res.json({ token });
+    res.json({ token, warning: 'Use /api/admin/integrations/keys to create persistent API keys' });
   });
 
   // Server-Sent Events endpoint for real-time notifications
@@ -1648,18 +1774,52 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
 
       // Fire webhooks (non-blocking with proper logging and retry)
       (async () => {
-        const { fireWebhooksForEvent } = await import('./webhookUtils');
-        await fireWebhooksForEvent(user.organizationId, 'form.submitted', {
-          responseId: response.responseId,
-          taskId: response.taskId,
-          flowId: response.flowId,
-          formId: response.formId,
-          formData: response.formData,
-          submittedBy: response.submittedBy,
-          orderNumber: response.orderNumber,
-          timestamp: response.timestamp
-        });
-      })().catch(err => console.error('[Webhook] Error firing form.submitted webhooks:', err));
+        try {
+          const { fireWebhooksForEvent } = await import('./webhookUtils');
+          
+          // Check if webhooks already fired for this responseId (prevent duplicates)
+          const existingDeliveries = await storage.getWebhookDeliveriesByPayloadId(response.responseId);
+          if (existingDeliveries && existingDeliveries.length > 0) {
+            console.log('[Webhook] Skipping duplicate webhook fire for responseId:', response.responseId);
+            return;
+          }
+          
+          // Fetch form template to get questions for data transformation
+          let formTemplateQuestions;
+          try {
+            const formTemplate = await storage.getFormTemplateById(response.formId);
+            if (formTemplate?.questions) {
+              formTemplateQuestions = formTemplate.questions;
+            }
+          } catch (err) {
+            console.error('[Webhook] Could not fetch form template for transformation:', err);
+          }
+          
+          // CRITICAL: Don't fire webhooks if transformation will fail (no questions)
+          if (!formTemplateQuestions || formTemplateQuestions.length === 0) {
+            console.error('[Webhook] Cannot fire webhooks - no form template questions for transformation. FormId:', response.formId);
+            return;
+          }
+          
+          await fireWebhooksForEvent(
+            user.organizationId, 
+            'form.submitted', 
+            {
+              responseId: response.responseId,
+              taskId: response.taskId,
+              flowId: response.flowId,
+              formId: response.formId,
+              formData: response.formData,
+              submittedBy: response.submittedBy,
+              orderNumber: response.orderNumber,
+              timestamp: response.timestamp
+            },
+            formTemplateQuestions
+          );
+        } catch (err) {
+          console.error('[Webhook] Error firing form.submitted webhooks:', err);
+        }
+      })();
 
       res.status(201).json(response);
     } catch (error) {
@@ -1750,28 +1910,74 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       }
       const url = targetUrl || hook.targetUrl;
       const secret = hook?.secret || 'test_secret';
+      
+      // Generate realistic test data based on event type
+      let testData: any;
+      if (event === 'flow.started' || event === 'flow.resumed') {
+        testData = {
+          flowId: `flow_test_${randomUUID().substring(0, 8)}`,
+          orderNumber: 'ORD-TEST-' + Date.now(),
+          system: 'Test System',
+          description: 'Test flow from webhook tester',
+          initiatedBy: user.email,
+          initiatedAt: new Date().toISOString(),
+          task: {
+            id: `task_test_${randomUUID().substring(0, 8)}`,
+            name: 'Sample Task Name',
+            assignee: user.email,
+            status: 'pending',
+            dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+          }
+        };
+      } else if (event === 'form.submitted') {
+        testData = {
+          responseId: `resp_test_${randomUUID().substring(0, 8)}`,
+          taskId: `task_test_${randomUUID().substring(0, 8)}`,
+          flowId: `flow_test_${randomUUID().substring(0, 8)}`,
+          formId: `form_test_${randomUUID().substring(0, 8)}`,
+          formData: {
+            'Customer Name': 'John Doe',
+            'Email': 'john@example.com',
+            'Phone': '+1-555-0123',
+            'Order Items': [
+              { 'Product': 'Widget A', 'Quantity': 10, 'Price': 99.99 },
+              { 'Product': 'Widget B', 'Quantity': 5, 'Price': 149.99 }
+            ],
+            'Notes': 'This is a test form submission with readable field names'
+          },
+          submittedBy: user.email,
+          orderNumber: 'ORD-TEST-' + Date.now(),
+          timestamp: new Date().toISOString()
+        };
+      } else {
+        testData = {
+          message: 'Webhook test from ProcessSutra',
+          event,
+          testData: true
+        };
+      }
+
       const payload = {
         id: randomUUID(),
         type: event,
         test: true,
         createdAt: new Date().toISOString(),
-        data: {
-          message: 'Webhook test from ProcessSutra',
-          example: event === 'form.submitted' ? { responseId: 'r123', formId: 'f001', formData: { field: 'value' } } : { flowId: 'flow_123', orderNumber: 'ORD-TEST' }
-        }
+        data: testData
       };
+      
       const body = JSON.stringify(payload);
       const sig = crypto.createHmac('sha256', secret).update(body).digest('hex');
       const started = Date.now();
       let status = 0; let responseText = '';
       try {
-        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Webhook-Signature': sig, 'X-Webhook-Id': payload.id, 'X-Webhook-Type': payload.type }, body });
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Webhook-Signature': sig, 'X-Webhook-Id': payload.id, 'X-Webhook-Type': payload.type, 'User-Agent': 'ProcessSutra-Webhooks/1.0' }, body });
         status = r.status; responseText = await r.text();
       } catch (e:any) {
         responseText = e.message || 'Network error';
       }
       res.json({ deliveredTo: url, status, elapsedMs: Date.now() - started, responseText, signature: sig, payload });
     } catch (e) {
+      console.error('Webhook test error:', e);
       res.status(500).json({ message: 'Webhook test failed' });
     }
   });

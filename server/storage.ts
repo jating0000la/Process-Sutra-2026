@@ -45,6 +45,9 @@ import {
   type WebhookDeliveryLog,
   type InsertWebhookRetryQueue,
   type WebhookRetryQueue,
+  apiKeys,
+  type InsertApiKey,
+  type ApiKey,
 } from "@shared/schema";
 import { transformFormDataToReadableNames } from "./formDataTransformer";
 import NodeCache from 'node-cache';
@@ -211,12 +214,22 @@ export interface IStorage {
   createWebhookDeliveryLog(log: InsertWebhookDeliveryLog): Promise<WebhookDeliveryLog>;
   getWebhookDeliveryLogs(webhookId: string, limit?: number): Promise<WebhookDeliveryLog[]>;
   getOrganizationWebhookDeliveryLogs(organizationId: string, limit?: number): Promise<WebhookDeliveryLog[]>;
+  getWebhookDeliveriesByPayloadId(payloadId: string): Promise<WebhookDeliveryLog[]>;
   
   // Webhook Retry Queue operations
   createWebhookRetryQueueItem(item: InsertWebhookRetryQueue): Promise<WebhookRetryQueue>;
   getPendingRetries(limit?: number): Promise<WebhookRetryQueue[]>;
   updateRetryQueueItem(id: string, data: Partial<InsertWebhookRetryQueue>): Promise<WebhookRetryQueue>;
   deleteRetryQueueItem(id: string): Promise<void>;
+
+  // API Key operations
+  createApiKey(apiKey: InsertApiKey): Promise<ApiKey>;
+  getApiKeysByOrganization(organizationId: string): Promise<ApiKey[]>;
+  getApiKeyByHash(keyHash: string): Promise<ApiKey | undefined>;
+  updateApiKeyLastUsed(id: string): Promise<void>;
+  updateApiKey(id: string, data: Partial<InsertApiKey>): Promise<ApiKey>;
+  deleteApiKey(id: string): Promise<void>;
+  getApiKeyById(id: string): Promise<ApiKey | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2051,6 +2064,14 @@ export class DatabaseStorage implements IStorage {
       .limit(limit);
   }
 
+  async getWebhookDeliveriesByPayloadId(payloadId: string): Promise<WebhookDeliveryLog[]> {
+    return await db
+      .select()
+      .from(webhookDeliveryLog)
+      .where(eq(webhookDeliveryLog.payloadId, payloadId))
+      .limit(10); // Should be only 1-2, but limit to prevent abuse
+  }
+
   // Webhook Retry Queue operations
   async createWebhookRetryQueueItem(item: InsertWebhookRetryQueue): Promise<WebhookRetryQueue> {
     const [record] = await db.insert(webhookRetryQueue).values(item).returning();
@@ -2083,6 +2104,59 @@ export class DatabaseStorage implements IStorage {
 
   async deleteRetryQueueItem(id: string): Promise<void> {
     await db.delete(webhookRetryQueue).where(eq(webhookRetryQueue.id, id));
+  }
+
+  // API Key operations
+  async createApiKey(apiKey: InsertApiKey): Promise<ApiKey> {
+    const [record] = await db.insert(apiKeys).values(apiKey).returning();
+    return record;
+  }
+
+  async getApiKeysByOrganization(organizationId: string): Promise<ApiKey[]> {
+    return await db
+      .select()
+      .from(apiKeys)
+      .where(eq(apiKeys.organizationId, organizationId))
+      .orderBy(desc(apiKeys.createdAt));
+  }
+
+  async getApiKeyByHash(keyHash: string): Promise<ApiKey | undefined> {
+    const [record] = await db
+      .select()
+      .from(apiKeys)
+      .where(and(
+        eq(apiKeys.keyHash, keyHash),
+        eq(apiKeys.isActive, true)
+      ));
+    return record;
+  }
+
+  async updateApiKeyLastUsed(id: string): Promise<void> {
+    await db
+      .update(apiKeys)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(apiKeys.id, id));
+  }
+
+  async updateApiKey(id: string, data: Partial<InsertApiKey>): Promise<ApiKey> {
+    const [record] = await db
+      .update(apiKeys)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(apiKeys.id, id))
+      .returning();
+    return record;
+  }
+
+  async deleteApiKey(id: string): Promise<void> {
+    await db.delete(apiKeys).where(eq(apiKeys.id, id));
+  }
+
+  async getApiKeyById(id: string): Promise<ApiKey | undefined> {
+    const [record] = await db
+      .select()
+      .from(apiKeys)
+      .where(eq(apiKeys.id, id));
+    return record;
   }
 }
 

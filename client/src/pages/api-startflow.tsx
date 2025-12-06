@@ -12,6 +12,7 @@ export default function ApiStartFlow() {
   const { dbUser } = useAuth();
   const isAdmin = dbUser?.role === 'admin';
   const [token, setToken] = useState<string>("");
+  const [selectedKeyId, setSelectedKeyId] = useState<string>("");
   const [orgId, setOrgId] = useState<string | undefined>(dbUser?.organizationId);
   const [system, setSystem] = useState<string>("CRM Onboarding");
   const [orderNumber, setOrderNumber] = useState<string>('ORD-12345');
@@ -22,6 +23,16 @@ export default function ApiStartFlow() {
   const [testResult, setTestResult] = useState<string>("");
   const [testError, setTestError] = useState<string>("");
   const [tokenError, setTokenError] = useState<string>("");
+
+  // API Keys state
+  const [apiKeys, setApiKeys] = useState<any[]>([]);
+  const [keysLoading, setKeysLoading] = useState<boolean>(false);
+  const [keyError, setKeyError] = useState<string>("");
+  const [creatingKey, setCreatingKey] = useState<boolean>(false);
+  const [newKeyName, setNewKeyName] = useState<string>('');
+  const [newKeyDescription, setNewKeyDescription] = useState<string>('');
+  const [newlyCreatedKey, setNewlyCreatedKey] = useState<string>('');
+  const [showNewKey, setShowNewKey] = useState<boolean>(false);
 
   // Webhook state
   const [webhooks, setWebhooks] = useState<any[]>([]);
@@ -66,6 +77,61 @@ export default function ApiStartFlow() {
     } catch (e:any) {
       setHookError(e.message || 'Failed to load webhooks');
     } finally { setHooksLoading(false); }
+  };
+
+  const loadApiKeys = async () => {
+    if (!isAdmin) return;
+    setKeysLoading(true); setKeyError('');
+    try {
+      const res = await fetch('/api/admin/integrations/keys');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setApiKeys(data);
+    } catch (e:any) {
+      setKeyError(e.message || 'Failed to load API keys');
+    } finally { setKeysLoading(false); }
+  };
+
+  useEffect(() => { loadWebhooks(); loadApiKeys(); }, [isAdmin]);
+
+  const handleCreateApiKey = async () => {
+    if (!isAdmin || !newKeyName.trim()) return;
+    setCreatingKey(true); setKeyError('');
+    try {
+      const res = await fetch('/api/admin/integrations/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newKeyName, description: newKeyDescription })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setNewlyCreatedKey(data.apiKey);
+      setShowNewKey(true);
+      setNewKeyName('');
+      setNewKeyDescription('');
+      await loadApiKeys();
+    } catch (e:any) {
+      setKeyError(e.message || 'Failed to create API key');
+    } finally { setCreatingKey(false); }
+  };
+
+  const toggleKeyActive = async (key: any) => {
+    try {
+      const res = await fetch(`/api/admin/integrations/keys/${key.id}`, { 
+        method: 'PUT', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ isActive: !key.isActive }) 
+      });
+      if (res.ok) await loadApiKeys();
+    } catch {}
+  };
+
+  const deleteKey = async (key: any) => {
+    if (!window.confirm('Delete this API key? This action cannot be undone.')) return;
+    try {
+      const res = await fetch(`/api/admin/integrations/keys/${key.id}`, { method: 'DELETE' });
+      if (res.ok) await loadApiKeys();
+    } catch {}
   };
 
   useEffect(() => { loadWebhooks(); }, [isAdmin]);
@@ -216,44 +282,130 @@ export default function ApiStartFlow() {
         <div className="p-6 space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>API Access Token</CardTitle>
+              <CardTitle>API Keys Management</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {!isAdmin ? (
-                <div className="text-sm text-gray-600">Only admins can generate integration tokens.</div>
+                <div className="text-sm text-gray-600">Only admins can manage API keys.</div>
               ) : (
                 <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label>Your Organization ID</Label>
-                      <Input readOnly value={orgId || "Unavailable"} />
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
+                    <div className="text-sm font-medium text-blue-900 mb-2">🔐 Secure API Key System</div>
+                    <ul className="text-xs text-blue-800 space-y-1 ml-4 list-disc">
+                      <li>API keys are hashed and stored securely in the database</li>
+                      <li>Keys are shown only once upon creation - save them immediately</li>
+                      <li>Each key tracks last usage and can be individually revoked</li>
+                      <li>Keys can optionally expire after a set date</li>
+                    </ul>
+                  </div>
+
+                  {/* Create New API Key */}
+                  <div className="border rounded-md p-4 space-y-4 bg-white/50">
+                    <div className="text-sm font-medium">Create New API Key</div>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Key Name *</Label>
+                        <Input value={newKeyName} onChange={e=>setNewKeyName(e.target.value)} placeholder="Production API Key" />
+                      </div>
+                      <div>
+                        <Label>Description (optional)</Label>
+                        <Input value={newKeyDescription} onChange={e=>setNewKeyDescription(e.target.value)} placeholder="Used for production integrations" />
+                      </div>
                     </div>
-                    <div>
-                      <Label>API Key (x-api-key)</Label>
-                      <Input readOnly value={token || orgId || "(generate or use Org ID)"} />
+                    <div className="flex gap-2">
+                      <Button disabled={creatingKey || !newKeyName.trim()} onClick={handleCreateApiKey}>
+                        {creatingKey ? 'Creating...' : 'Generate API Key'}
+                      </Button>
+                    </div>
+                    {keyError && <div className="text-xs text-red-600">{keyError}</div>}
+                  </div>
+
+                  {/* Show newly created key */}
+                  {showNewKey && newlyCreatedKey && (
+                    <div className="p-4 bg-green-50 border-2 border-green-500 rounded-md">
+                      <div className="text-sm font-semibold text-green-900 mb-2">✅ API Key Created Successfully!</div>
+                      <div className="text-xs text-green-800 mb-3">⚠️ Save this key now - it will never be shown again!</div>
+                      <div className="flex gap-2 items-center">
+                        <code className="flex-1 bg-white p-2 rounded border text-xs break-all">{newlyCreatedKey}</code>
+                        <Button size="sm" onClick={() => {
+                          navigator.clipboard.writeText(newlyCreatedKey);
+                          alert('API Key copied to clipboard!');
+                        }}>Copy</Button>
+                        <Button size="sm" variant="outline" onClick={() => {setShowNewKey(false); setNewlyCreatedKey('');}}>Close</Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Existing API Keys */}
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">Your API Keys</div>
+                    {keysLoading && <div className="text-sm text-gray-500">Loading...</div>}
+                    {!keysLoading && apiKeys.length === 0 && <div className="text-xs text-gray-500">No API keys created yet.</div>}
+                    <div className="space-y-2">
+                      {apiKeys.map(key => (
+                        <div key={key.id} className="border rounded-md p-3 bg-white/70 flex flex-col gap-2">
+                          <div className="flex flex-wrap gap-2 items-center justify-between">
+                            <div className="font-medium text-sm">{key.name}</div>
+                            <div className="flex gap-2 items-center">
+                              <Button size="sm" variant={key.isActive? 'secondary':'outline'} onClick={()=>toggleKeyActive(key)}>
+                                {key.isActive? 'Active':'Disabled'}
+                              </Button>
+                              <Button size="sm" variant="destructive" onClick={()=>deleteKey(key)}>Revoke</Button>
+                            </div>
+                          </div>
+                          <div className="grid md:grid-cols-4 gap-2 text-xs text-gray-600">
+                            <div><span className="font-semibold">Prefix:</span> <code className="bg-gray-100 px-1 rounded">{key.keyPrefix}</code></div>
+                            <div><span className="font-semibold">Created:</span> {new Date(key.createdAt).toLocaleDateString()}</div>
+                            <div><span className="font-semibold">Last Used:</span> {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString() : 'Never'}</div>
+                            <div className="truncate"><span className="font-semibold">Desc:</span> {key.description || '-'}</div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button onClick={handleGenerate}>Generate Token</Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        const value = token || orgId || "";
-                        if (value) {
-                          navigator.clipboard.writeText(value).then(() => {
-                            alert("API Key copied to clipboard");
-                          }).catch(() => {
-                            alert("Failed to copy API Key");
-                          });
-                        }
-                      }}
-                      disabled={!(token || orgId)}
-                    >
-                      Copy
-                    </Button>
+
+                  <div className="text-xs text-gray-500 border-t pt-3">
+                    💡 Use any active API key as the <code className="bg-gray-100 px-1 rounded">x-api-key</code> header in your requests. Keys can be revoked at any time.
                   </div>
-                  {tokenError && (<div className="text-xs text-red-600">{tokenError}</div>)}
-                  <div className="text-xs text-gray-500">API accepts header x-api-key. You can use your Organization ID as the key, or map custom keys via FLOW_API_KEYS.</div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Legacy Organization ID (Deprecated)</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!isAdmin ? (
+                <div className="text-sm text-gray-600">Only admins can view organization details.</div>
+              ) : (
+                <>
+                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <div className="text-xs text-yellow-800">
+                      ⚠️ Using organization ID as API key is deprecated. Please create proper API keys above for better security and tracking.
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Your Organization ID</Label>
+                    <Input readOnly value={orgId || "Unavailable"} />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (orgId) {
+                        navigator.clipboard.writeText(orgId).then(() => {
+                          alert("Organization ID copied to clipboard");
+                        }).catch(() => {
+                          alert("Failed to copy Organization ID");
+                        });
+                      }
+                    }}
+                    disabled={!orgId}
+                  >
+                    Copy Organization ID
+                  </Button>
                 </>
               )}
             </CardContent>
@@ -277,9 +429,12 @@ export default function ApiStartFlow() {
               <CardTitle>Headers</CardTitle>
             </CardHeader>
             <CardContent>
-              <pre className="text-sm bg-gray-50 p-3 rounded-md border">x-api-key: &lt;your_organization_id_or_custom_key&gt;
+              <pre className="text-sm bg-gray-50 p-3 rounded-md border">x-api-key: sk_live_your_api_key_here
 x-actor-email: bot@yourcompany.com (optional)
 x-source: zapier (optional)</pre>
+              <div className="mt-3 text-xs text-gray-600">
+                Use a properly generated API key from the management section above. Legacy organization ID support is maintained for backward compatibility.
+              </div>
             </CardContent>
           </Card>
 
@@ -329,7 +484,7 @@ x-source: zapier (optional)</pre>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
                   <div className="font-medium mb-2">PowerShell</div>
-                  <pre className="text-xs bg-gray-50 p-3 rounded-md border">{`$headers = @{ "x-api-key" = "YOUR_ORG_ID"; "x-actor-email" = "bot@yourcompany.com" }
+                  <pre className="text-xs bg-gray-50 p-3 rounded-md border">{`$headers = @{ "x-api-key" = "sk_live_your_api_key_here"; "x-actor-email" = "bot@yourcompany.com" }
     $body = @{ system = "CRM Onboarding"; orderNumber = "ORD-12345"; description = "New account setup"; initialFormData = @{ account = "Acme" } } | ConvertTo-Json
 // Update example to match working API
 Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Headers $headers -Body $body -ContentType "application/json"`}</pre>
@@ -339,7 +494,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
                   <pre className="text-xs bg-gray-50 p-3 rounded-md border">{`await fetch("http://localhost:5000/api/start-flow", {
   method: "POST",
   headers: {
-    "x-api-key": "YOUR_ORG_ID",
+    "x-api-key": "sk_live_your_api_key_here",
     "Content-Type": "application/json"
   },
   body: JSON.stringify({ system: "CRM Onboarding", orderNumber: "ORD-12345", description: "New account setup" })
@@ -357,7 +512,25 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
               <CardContent className="space-y-4">
                 <div>
                   <Label>API Key (x-api-key)</Label>
-                  <Input placeholder="your-organization-id" value={orgId || ""} onChange={(e) => setToken(e.target.value)} />
+                  <select 
+                    className="w-full border rounded-md h-10 px-3 text-sm"
+                    value={selectedKeyId} 
+                    onChange={(e) => {
+                      setSelectedKeyId(e.target.value);
+                      const selected = apiKeys.find(k => k.id === e.target.value);
+                      if (selected) {
+                        setToken(''); // Can't use actual key for testing from here
+                      } else {
+                        setToken(e.target.value); // It's the org ID
+                      }
+                    }}
+                  >
+                    <option value="">Select an API key or use Org ID...</option>
+                    {orgId && <option value={orgId}>Organization ID (Legacy - {orgId})</option>}
+                  </select>
+                  <div className="text-xs text-yellow-600 mt-1 p-2 bg-yellow-50 rounded border border-yellow-200">
+                    ⚠️ For security, you need to copy a full API key from above to test it. The "Try it now" feature works with Organization ID (legacy method).
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -388,6 +561,9 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
 // Ensure Try it now button always works
                   <Button onClick={handleTest} disabled={testing || !(token || orgId)}>Send Test Request</Button>
                   {testing && <div className="text-sm text-gray-600 self-center">Sending…</div>}
+                </div>
+                <div className="text-xs text-gray-500">
+                  💡 For testing with actual API keys, use curl, Postman, or your preferred HTTP client with the full key value.
                 </div>
                 {(testError || testResult) && (
                   <div>
