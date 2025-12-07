@@ -1708,7 +1708,7 @@ export default function Tasks() {
                             <TableCell className="p-4">
                               <div className="text-center">
                                 <div className="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 rounded-xl shadow-sm">
-                                  <span className="font-bold text-lg text-blue-700 dark:text-blue-300">
+                                  <span className="font-bold text-sm text-blue-700 dark:text-blue-300">
                                     #{task.orderNumber}
                                   </span>
                                 </div>
