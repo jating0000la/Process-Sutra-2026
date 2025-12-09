@@ -1796,7 +1796,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           }
           
           // CRITICAL: Don't fire webhooks if transformation will fail (no questions)
-          if (!formTemplateQuestions || formTemplateQuestions.length === 0) {
+          if (!Array.isArray(formTemplateQuestions) || formTemplateQuestions.length === 0) {
             console.error('[Webhook] Cannot fire webhooks - no form template questions for transformation. FormId:', response.formId);
             return;
           }

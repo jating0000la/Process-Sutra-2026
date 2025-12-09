@@ -1664,7 +1664,6 @@ export default function Tasks() {
                         <TableHead className="font-bold text-gray-900 dark:text-gray-100">Order #</TableHead>
                         <TableHead className="font-bold text-gray-900 dark:text-gray-100">Task Details</TableHead>
                         <TableHead className="font-bold text-gray-900 dark:text-gray-100">System & Flow</TableHead>
-                        <TableHead className="font-bold text-gray-900 dark:text-gray-100">Priority</TableHead>
                         <TableHead className="font-bold text-gray-900 dark:text-gray-100">Status</TableHead>
                         <TableHead className="font-bold text-gray-900 dark:text-gray-100">Assignee</TableHead>
                         <TableHead className="font-bold text-gray-900 dark:text-gray-100">Due Date</TableHead>
@@ -1673,7 +1672,6 @@ export default function Tasks() {
                     </TableHeader>
                     <TableBody>
                       {filteredTasks.map((task: any, index: number) => {
-                        const priority = getPriorityInfo(task);
                         return (
                           <TableRow 
                             key={task.id} 
@@ -1744,25 +1742,6 @@ export default function Tasks() {
                                     Started: {format(new Date(task.flowInitiatedAt), 'MMM dd')}
                                   </div>
                                 )}
-                              </div>
-                            </TableCell>
-                            
-                            {/* Priority */}
-                            <TableCell className="p-4">
-                              <div className={`px-2 py-1 rounded-md text-xs font-medium text-center ${
-                                priority.color === 'red' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' :
-                                priority.color === 'orange' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' :
-                                priority.color === 'yellow' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300' :
-                                priority.color === 'blue' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
-                                'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                              }`}>
-                                {priority.level === 'completed' ? '✅' : 
-                                 priority.level === 'overdue' ? '🚨' :
-                                 priority.level === 'urgent' ? '⚡' :
-                                 priority.level === 'high' ? '🔶' :
-                                 priority.level === 'medium' ? '🔸' : '🔹'}
-                                <br />
-                                {priority.label}
                               </div>
                             </TableCell>
                             
@@ -1923,7 +1902,6 @@ export default function Tasks() {
               /* Compact Card View */
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredTasks.map((task: any) => {
-                  const priority = getPriorityInfo(task);
                   return (
                     <Card key={task.id} className="group bg-white dark:bg-gray-800 rounded-lg shadow-md border hover:shadow-lg transition-all duration-200 overflow-hidden">
                       <CardContent className="p-4">
@@ -1973,20 +1951,6 @@ export default function Tasks() {
                               {format(new Date(task.plannedTime), 'MMM dd, HH:mm')}
                             </span>
                           </div>
-                          {priority.level !== 'completed' && (
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="text-gray-500 dark:text-gray-400">Priority:</span>
-                              <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                priority.color === 'red' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' :
-                                priority.color === 'orange' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' :
-                                priority.color === 'yellow' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300' :
-                                priority.color === 'blue' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
-                                'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                              }`}>
-                                {priority.label}
-                              </span>
-                            </div>
-                          )}
                         </div>
 
                         {/* Action Buttons */}
