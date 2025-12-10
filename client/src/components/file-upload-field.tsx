@@ -55,7 +55,7 @@ export function FileUploadField({
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [driveConnected, setDriveConnected] = useState<boolean | null>(null);
-  const [fileData, setFileData] = useState<FileData | null>(value || null);
+  const [fileData, setFileData] = useState<FileData | null>(null);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -65,10 +65,30 @@ export function FileUploadField({
   }, []);
 
   useEffect(() => {
+    // Handle both old format (object) and new format (URL string)
     if (value) {
-      setFileData(value);
+      if (typeof value === 'string') {
+        // New format: just a URL string
+        setFileData({
+          type: 'file',
+          driveFileId: '',
+          originalName: 'File',
+          mimeType: '',
+          size: 0,
+          webViewLink: value,
+          orgId: '',
+          formId: question.formId || '',
+          taskId: null,
+          fieldId: question.id,
+        });
+      } else {
+        // Old format: full object (backward compatibility)
+        setFileData(value);
+      }
+    } else {
+      setFileData(null);
     }
-  }, [value]);
+  }, [value, question.formId, question.id]);
 
   const checkDriveConnection = async () => {
     try {
@@ -111,11 +131,28 @@ export function FileUploadField({
         
         if (xhr.status === 200) {
           try {
-            const result: FileData = JSON.parse(xhr.responseText);
+            // Server now returns just the webViewLink as a string
+            const webViewLink: string = JSON.parse(xhr.responseText);
+            
+            // Create a minimal file data object with just the URL
+            const result: FileData = {
+              type: 'file',
+              driveFileId: '', // No longer stored
+              originalName: file.name,
+              mimeType: file.type,
+              size: file.size,
+              webViewLink: webViewLink,
+              orgId: '',
+              formId: question.formId || '',
+              taskId: null,
+              fieldId: question.id,
+            };
+            
             setFileData(result);
             
             if (onChange) {
-              onChange(result);
+              // Only pass the webViewLink to minimize data storage
+              onChange(webViewLink);
             }
 
             toast({
@@ -123,7 +160,7 @@ export function FileUploadField({
               description: `File "${file.name}" uploaded successfully to Google Drive!`,
             });
             
-            resolve(result);
+            resolve(webViewLink);
           } catch (err) {
             reject(new Error('Failed to parse server response'));
           }

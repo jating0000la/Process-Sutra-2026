@@ -12,10 +12,12 @@ import {
   Loader2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 
 export default function DataManagement() {
   const { dbUser } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [exportLoading, setExportLoading] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [deleteInput, setDeleteInput] = useState("");
@@ -142,6 +144,12 @@ export default function DataManagement() {
         title: "Delete Successful",
         description: `${categoryName} has been permanently deleted.`,
       });
+      
+      // Invalidate all relevant queries to force refresh
+      queryClient.invalidateQueries({ queryKey: ['/api/mongo/form-responses'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/form-responses'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/flows'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
       
       setDeleteConfirm(null);
       setDeleteInput("");

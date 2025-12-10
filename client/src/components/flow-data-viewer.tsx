@@ -176,10 +176,27 @@ export default function FlowDataViewer({
       // Safe conversion function that handles the {answer, questionId, questionTitle} objects
       const convertToSafeDisplay = (data: any): string | React.ReactElement => {
         if (data === null || data === undefined) return 'No data';
-        if (typeof data === 'string') return data;
+        if (typeof data === 'string') {
+          // Check if it's a Google Drive URL (new format)
+          if (data.startsWith('https://drive.google.com') || data.includes('drive.google.com')) {
+            return (
+              <a 
+                href={data} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 hover:underline"
+              >
+                <FileIcon className="w-4 h-4" />
+                <span>View File</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            );
+          }
+          return data;
+        }
         if (typeof data === 'number' || typeof data === 'boolean') return String(data);
         
-        // Handle file upload objects with webViewLink
+        // Handle file upload objects with webViewLink (old format)
         // Check for various file object structures
         if (typeof data === 'object' && (data.type === 'file' || data.driveFileId) && data.webViewLink) {
           return (

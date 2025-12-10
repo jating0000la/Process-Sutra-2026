@@ -283,17 +283,22 @@ function flattenMainData(payload) {
       flat[key] = value.join(", ");
     }
     else if (typeof value === "object" && value !== null) {
-      // Special case: file upload object
-      if (value.type === "file" && value.gridFsId) {
+      // Special case: file upload - handle both new format (string URL) and old format (object)
+      if (value.type === "file" && (value.driveFileId || value.url)) {
         flat[key + "_filename"] = value.originalName || '';
         flat[key + "_mimetype"] = value.mimeType || '';
         flat[key + "_size"] = value.size || '';
-        flat[key + "_url"] = createMongoFileURL(value.gridFsId);
+        flat[key + "_url"] = value.url || `https://drive.google.com/file/d/${value.driveFileId}/view`;
       }
       else {
         // Flatten nested objects with dot notation
         Object.assign(flat, deepFlatten(value, key));
       }
+    }
+    else if (typeof value === "string" && (value.startsWith("https://drive.google.com") || value.includes("drive.google.com"))) {
+      // New format: just a URL string
+      flat[key] = value;
+      flat[key + "_url"] = value;
     }
     else {
       // Simple scalar value
@@ -451,16 +456,6 @@ function isArrayOfObjects(arr) {
    */
   if (!Array.isArray(arr)) return false;
   return arr.length > 0 && typeof arr[0] === "object" && arr[0] !== null && !Array.isArray(arr[0]);
-}
-
-
-function createMongoFileURL(gridFsId) {
-  /**
-   * Create a URL to download files from MongoDB GridFS
-   * IMPORTANT: Update this with your actual production URL
-   */
-  const baseUrl = "https://your-domain.com/api/uploads/"; // CHANGE THIS TO YOUR PRODUCTION URL
-  return baseUrl + gridFsId;
 }
 
 

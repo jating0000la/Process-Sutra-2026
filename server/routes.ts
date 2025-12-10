@@ -44,8 +44,11 @@ const formSubmissionLimiter = rateLimit({
   message: "Too many form submissions. Please wait before submitting again.",
   standardHeaders: true,      // Return rate limit info in headers
   legacyHeaders: false,
-  // Don't use custom keyGenerator - let express-rate-limit handle IP addresses properly
-  // This automatically handles IPv4 and IPv6 addresses correctly
+  // Use session/user instead of IP to avoid trust proxy issues
+  keyGenerator: (req) => {
+    const user = (req as any).currentUser;
+    return user?.email || (req as any).sessionID || 'anonymous';
+  },
 });
 
 // Rate limiter for analytics endpoints - prevents resource exhaustion
@@ -55,6 +58,10 @@ const analyticsLimiter = rateLimit({
   message: "Too many analytics requests. Please wait before requesting more data.",
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    const user = (req as any).currentUser;
+    return user?.email || (req as any).sessionID || 'anonymous';
+  },
 });
 
 // Rate limiter for super admin endpoints - more restrictive to prevent abuse
@@ -66,6 +73,10 @@ const superAdminLimiter = rateLimit({
   legacyHeaders: false,
   skipSuccessfulRequests: false,
   skipFailedRequests: false,
+  keyGenerator: (req) => {
+    const user = (req as any).currentUser;
+    return user?.email || (req as any).sessionID || 'anonymous';
+  },
 });
 
 // Rate limiter for data export endpoints - prevent data exfiltration
@@ -77,6 +88,11 @@ const exportLimiter = rateLimit({
   legacyHeaders: false,
   skipSuccessfulRequests: false,
   skipFailedRequests: false,
+  // Use authenticated user as key instead of IP to avoid trust proxy issues
+  keyGenerator: (req) => {
+    const user = (req as any).currentUser;
+    return user?.email || req.ip || 'anonymous';
+  },
 });
 
 // Flow rule operation rate limiters
@@ -86,6 +102,10 @@ const flowRuleLimiter = rateLimit({
   message: "Too many flow rule operations. Please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    const user = (req as any).currentUser;
+    return user?.email || req.ip || 'anonymous';
+  },
 });
 
 const bulkFlowRuleLimiter = rateLimit({
@@ -94,6 +114,10 @@ const bulkFlowRuleLimiter = rateLimit({
   message: "Too many bulk imports. Please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    const user = (req as any).currentUser;
+    return user?.email || req.ip || 'anonymous';
+  },
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -109,10 +133,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Global rate limiting for production
     const globalLimiter = rateLimit({
       windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 1000, // limit each IP to 1000 requests per windowMs
+      max: 1000, // limit each user to 1000 requests per windowMs
       message: 'Too many requests from this IP',
       standardHeaders: true,
-      legacyHeaders: false
+      legacyHeaders: false,
+      keyGenerator: (req) => {
+        const user = (req as any).currentUser;
+        return user?.email || (req as any).sessionID || req.ip || 'anonymous';
+      },
     });
     app.use('/api', globalLimiter);
   }
@@ -476,6 +504,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!task) {
         return res.status(404).json({ message: "Task not found" });
       }
+      
+      // Transform flowInitialFormData if it exists and has a formId
+      if (task.flowInitialFormData && task.formId) {
+        try {
+          const template = await storage.getFormTemplateByFormId(task.formId);
+          if (template) {
+            task.flowInitialFormData = transformFormDataToReadableNames(task.flowInitialFormData, template);
+          }
+        } catch (transformError) {
+          console.error("Error transforming task form data:", transformError);
+          // Continue with untransformed data
+        }
+      }
+      
       res.json(task);
     } catch (error) {
       console.error("Error fetching task:", error);
@@ -1673,6 +1715,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
   app.delete("/api/form-templates/:id", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
       const { id } = req.params;
+      const { deleteResponses } = req.query; // Optional: force delete with responses
       const user = req.currentUser;
 
       // 1. Get template and verify organization ownership
@@ -1699,7 +1742,8 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
         });
       }
       
-      // 3. Check if form has responses in MongoDB (if MongoDB is available)
+      // 3. Handle MongoDB form responses
+      let deletedResponseCount = 0;
       try {
         const { MongoClient } = await import('mongodb');
         const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/processSutra';
@@ -1713,21 +1757,44 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           formId: template.formId 
         });
         
-        await client.close();
-        
         if (responseCount > 0) {
-          return res.status(400).json({
-            message: `Cannot delete form template. It has ${responseCount} submitted response(s). Consider archiving instead.`
-          });
+          if (deleteResponses === 'true') {
+            // Force delete: delete all MongoDB responses first
+            const deleteResult = await col.deleteMany({ 
+              organizationId: user.organizationId,
+              formId: template.formId 
+            });
+            deletedResponseCount = deleteResult.deletedCount || 0;
+            console.log(`[DELETE] Deleted ${deletedResponseCount} MongoDB responses for form ${template.formId}`);
+          } else {
+            // Prevent deletion if responses exist
+            await client.close();
+            return res.status(400).json({
+              message: `Cannot delete form template. It has ${responseCount} submitted response(s).`,
+              responseCount,
+              hint: "Add ?deleteResponses=true to force delete including all responses"
+            });
+          }
         }
+        
+        await client.close();
       } catch (mongoError) {
-        console.warn("Could not check MongoDB for form responses:", mongoError);
-        // Continue with deletion if MongoDB check fails
+        console.warn("Could not check/delete MongoDB form responses:", mongoError);
+        // Continue with template deletion if MongoDB operation fails
       }
       
-      // 4. Safe to delete
+      // 4. Delete the form template
       await storage.deleteFormTemplate(id);
-      res.status(204).send();
+      
+      // Return success with details
+      if (deletedResponseCount > 0) {
+        res.json({ 
+          message: "Form template and responses deleted successfully",
+          deletedResponses: deletedResponseCount 
+        });
+      } else {
+        res.status(204).send();
+      }
     } catch (error) {
       console.error("Error deleting form template:", error);
       res.status(500).json({ message: "Failed to delete form template" });
@@ -2345,8 +2412,24 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
             console.warn(`[AUDIT] Large form export - User: ${user.email}, Records: ${allFormResponses.length} (may be truncated)`);
           }
           
+          // Transform form responses to have readable question titles
+          const transformedFormResponses = await Promise.all(
+            allFormResponses.map(async (response: any) => {
+              try {
+                const template = await storage.getFormTemplateByFormId(response.formId);
+                if (template) {
+                  const transformedData = transformFormDataToReadableNames(response.formData, template);
+                  return { ...response, formData: transformedData };
+                }
+              } catch (error) {
+                console.error(`Error transforming form response ${response.id}:`, error);
+              }
+              return response;
+            })
+          );
+          
           // Group responses by formId
-          const formResponsesByFormId = allFormResponses.reduce((acc: any, response: any) => {
+          const formResponsesByFormId = transformedFormResponses.reduce((acc: any, response: any) => {
             const formId = response.formId || 'unknown';
             if (!acc[formId]) {
               acc[formId] = [];
@@ -2411,6 +2494,22 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
             return res.status(404).json({ message: "No form data found for this organization" });
           }
           
+          // Transform form responses to have readable question titles
+          const transformedFileFormResponses = await Promise.all(
+            formSubmissionsData.data.map(async (response: any) => {
+              try {
+                const template = await storage.getFormTemplateByFormId(response.formId);
+                if (template) {
+                  const transformedData = transformFormDataToReadableNames(response.formData, template);
+                  return { ...response, formData: transformedData };
+                }
+              } catch (error) {
+                console.error(`Error transforming form response ${response.id}:`, error);
+              }
+              return response;
+            })
+          );
+          
           // Create ZIP archive
           const archive = archiver('zip', { zlib: { level: 9 } });
           const timestamp = new Date().toISOString().split('T')[0];
@@ -2421,9 +2520,9 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           archive.pipe(res);
           
           // Add form submission data as CSV files grouped by formId
-          if (formSubmissionsData.data && formSubmissionsData.data.length > 0) {
+          if (transformedFileFormResponses && transformedFileFormResponses.length > 0) {
             // Group responses by formId
-            const responsesByForm = formSubmissionsData.data.reduce((acc: any, response: any) => {
+            const responsesByForm = transformedFileFormResponses.reduce((acc: any, response: any) => {
               const formId = response.formId || 'unknown';
               if (!acc[formId]) {
                 acc[formId] = [];
@@ -2620,8 +2719,24 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       const tasks = await storage.getTasks();
       const formResponses = await storage.getFormResponses();
       
+      // Transform form responses to have readable question titles
+      const transformedExportResponses = await Promise.all(
+        formResponses.map(async (response: any) => {
+          try {
+            const template = await storage.getFormTemplateByFormId(response.formId);
+            if (template) {
+              const transformedData = transformFormDataToReadableNames(response.formData, template);
+              return { ...response, formData: transformedData };
+            }
+          } catch (error) {
+            console.error(`Error transforming form response ${response.id}:`, error);
+          }
+          return response;
+        })
+      );
+      
       // Group form responses by task ID for quick lookup
-      const responsesByTask = formResponses.reduce((acc: any, response: any) => {
+      const responsesByTask = transformedExportResponses.reduce((acc: any, response: any) => {
         if (!acc[response.taskId]) {
           acc[response.taskId] = [];
         }
@@ -3674,14 +3789,6 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           monthlyRecurring += baseFee;
           totalRevenue += baseFee;
           
-          try {
-            const { getFileCount } = await import('./mongo/gridfs');
-            const fileCount = await getFileCount(org.id);
-            totalFileUploads += fileCount;
-          } catch (error) {
-            console.error(`Error fetching file count for org ${org.id}:`, error);
-          }
-          
           return {
             organizationId: org.id,
             organizationName: org.name,
@@ -4053,15 +4160,6 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       // Data count statistics
       const totalFlows = allFlowRules.length;
       const totalFormResponses = allFormResponses.length;
-
-      // File upload count from GridFS
-      let totalFileUploads = 0;
-      try {
-        const { getFileCount } = await import('./mongo/gridfs');
-        totalFileUploads = await getFileCount(organizationId);
-      } catch (error) {
-        console.error("Error fetching file count:", error);
-      }
 
       // Login activity statistics
       const todayStart = new Date();

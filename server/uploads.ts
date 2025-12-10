@@ -168,18 +168,8 @@ uploadsRouter.post('/', uploadLimiter, isAuthenticated, upload.single('file'), a
       throw driveError;
     }
 
-    res.json({
-      type: 'file',
-      driveFileId: driveFile.fileId,
-      originalName: driveFile.fileName,
-      mimeType: driveFile.mimeType,
-      size: driveFile.size,
-      webViewLink: driveFile.webViewLink,
-      orgId,
-      formId,
-      taskId: taskId ?? null,
-      fieldId,
-    });
+    // Only return the webViewLink to minimize data storage
+    res.json(driveFile.webViewLink);
   } catch (e: any) {
     console.error('Upload error:', e);
     

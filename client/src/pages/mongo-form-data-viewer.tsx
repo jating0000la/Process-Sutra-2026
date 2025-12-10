@@ -83,6 +83,20 @@ export default function MongoFormDataViewer() {
       } catch {}
     })();
   }, []);
+  
+  // Auto-refresh data when window regains focus (e.g., after deleting data in another tab)
+  useEffect(() => {
+    const handleFocus = () => {
+      // Only auto-refresh if user has already loaded data and a form is selected
+      if (hasSearched && selectedFormId && !loading) {
+        console.log('[MongoDB Viewer] Window focused - auto-refreshing data');
+        fetchFormResponses();
+      }
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [hasSearched, selectedFormId, loading]);
 
   // Don't automatically fetch form responses - wait for user to search
 
@@ -360,22 +374,39 @@ export default function MongoFormDataViewer() {
     setHasSearched(false); // Reset search state
   };
 
-  // Render value helper (supports GridFS file descriptors)
+  // Render value helper (supports Google Drive file descriptors)
   const renderCellValue = (value: any) => {
+    // Handle string URL (new format)
+    if (typeof value === 'string' && (value.startsWith('https://drive.google.com') || value.includes('drive.google.com'))) {
+      return (
+        <a
+          href={value}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-600 hover:underline"
+          title="View file"
+        >
+          View File
+        </a>
+      );
+    }
+
     // Array of files
     if (Array.isArray(value)) {
       const items = value
         .map((v) => (v && typeof v === 'object' ? v : null))
         .filter(Boolean) as any[];
-      if (items.length && items.every((v) => v.type === 'file' && v.gridFsId)) {
+      if (items.length && items.every((v) => v.type === 'file' && (v.driveFileId || v.url))) {
         return (
           <div className="flex flex-wrap gap-2">
             {items.map((f, idx) => (
               <a
                 key={idx}
-                href={`/api/uploads/${f.gridFsId}`}
+                href={f.url || `https://drive.google.com/file/d/${f.driveFileId}/view`}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="text-blue-600 hover:underline"
-                title={f.originalName || 'Download file'}
+                title={f.originalName || 'View file'}
               >
                 {f.originalName || `File ${idx + 1}`}
               </a>
@@ -385,15 +416,17 @@ export default function MongoFormDataViewer() {
       }
     }
 
-    // Single file descriptor
-    if (value && typeof value === 'object' && value.type === 'file' && value.gridFsId) {
+    // Single file descriptor (old format)
+    if (value && typeof value === 'object' && value.type === 'file' && (value.driveFileId || value.url)) {
       return (
         <a
-          href={`/api/uploads/${value.gridFsId}`}
+          href={value.url || `https://drive.google.com/file/d/${value.driveFileId}/view`}
+          target="_blank"
+          rel="noopener noreferrer"
           className="text-blue-600 hover:underline"
-          title={value.originalName || 'Download file'}
+          title={value.originalName || 'View file'}
         >
-          {value.originalName || 'Download'}
+          {value.originalName || 'View File'}
         </a>
       );
     }
@@ -505,6 +538,20 @@ export default function MongoFormDataViewer() {
               <Search className="h-4 w-4" />
               {loading ? "Loading..." : "Load Form Data"}
             </Button>
+            
+            {hasSearched && (
+              <Button 
+                onClick={fetchFormResponses}
+                disabled={!selectedFormId || loading}
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            )}
+            
             <Button 
               onClick={resetFilters}
               variant="outline"

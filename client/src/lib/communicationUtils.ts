@@ -39,19 +39,25 @@ function formatFormValue(value: any, question: FormQuestion): string {
     return '';
   }
 
-  // Handle file uploads - Generate download link
-  if (question.type === 'file' && typeof value === 'object' && value.type === 'file') {
-    const fileName = value.originalName || 'File';
-    const fileId = value.gridFsId;
-    
-    if (fileId) {
-      // Generate full download URL
-      const baseUrl = window.location.origin;
-      const downloadUrl = `${baseUrl}/api/uploads/${fileId}`;
-      return downloadUrl//`${fileName}: ${downloadUrl}`;
+  // Handle file uploads - Support both new format (URL string) and old format (object)
+  if (question.type === 'file') {
+    // New format: just a URL string
+    if (typeof value === 'string' && (value.startsWith('https://') || value.startsWith('http://'))) {
+      return value;
     }
     
-    return fileName;
+    // Old format: file object
+    if (typeof value === 'object' && value.type === 'file') {
+      if (value.url) {
+        return value.url;
+      }
+      
+      if (value.driveFileId) {
+        return `https://drive.google.com/file/d/${value.driveFileId}/view`;
+      }
+      
+      return value.originalName || 'File';
+    }
   }
 
   // Handle checkbox arrays

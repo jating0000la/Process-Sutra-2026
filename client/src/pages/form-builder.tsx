@@ -182,22 +182,63 @@ export default function FormBuilder() {
   });
 
   const deleteTemplateMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/form-templates/${id}`);
+    mutationFn: async ({ id, deleteResponses }: { id: string; deleteResponses?: boolean }) => {
+      const url = deleteResponses 
+        ? `/api/form-templates/${id}?deleteResponses=true`
+        : `/api/form-templates/${id}`;
+      const response = await apiRequest("DELETE", url);
+      
+      // Return the response data if available
+      if (response.status === 204) {
+        return null;
+      }
+      return await response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       toast({
         title: "Success",
-        description: "Form template deleted successfully",
+        description: data?.message || (variables.deleteResponses 
+          ? "Form template and all responses deleted successfully"
+          : "Form template deleted successfully"),
       });
       queryClient.invalidateQueries({ queryKey: ["/api/form-templates"] });
     },
-    onError: (error) => {
-      toast({
-        title: "Error",
-        description: "Failed to delete form template",
-        variant: "destructive",
-      });
+    onError: async (error: any, variables) => {
+      // Parse error response
+      let errorData: any = {};
+      
+      try {
+        if (error instanceof Response) {
+          errorData = await error.json();
+        } else if (error.response) {
+          errorData = await error.response.json();
+        } else {
+          errorData = error;
+        }
+      } catch {
+        errorData = { message: error.message || "Failed to delete form template" };
+      }
+      
+      // Check if error is due to existing responses
+      if (errorData.responseCount && errorData.responseCount > 0) {
+        // Show confirmation dialog for force delete
+        const confirmed = window.confirm(
+          `⚠️ WARNING: This form has ${errorData.responseCount} submitted response(s).\n\n` +
+          `Do you want to DELETE the form AND ALL its responses?\n\n` +
+          `This action CANNOT be undone! All form data will be permanently lost.`
+        );
+        
+        if (confirmed) {
+          // Retry with deleteResponses=true
+          deleteTemplateMutation.mutate({ id: variables.id, deleteResponses: true });
+        }
+      } else {
+        toast({
+          title: "Error",
+          description: errorData.message || "Failed to delete form template",
+          variant: "destructive",
+        });
+      }
     },
   });
 
@@ -542,7 +583,7 @@ export default function FormBuilder() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => deleteTemplateMutation.mutate(template.id)}
+                        onClick={() => deleteTemplateMutation.mutate({ id: template.id })}
                         disabled={deleteTemplateMutation.isPending}
                       >
                         <Trash2 className="w-4 h-4 mr-1" />

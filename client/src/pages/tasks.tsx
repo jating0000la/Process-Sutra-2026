@@ -2578,13 +2578,11 @@ export default function Tasks() {
                                                           </div>
                                                         </div>
                                                         <div className="flex items-center space-x-2">
-                                                          {(value as any).gridFsId && (
-                                                            <button
-                                                              onClick={() => {
-                                                                // View file in new tab
-                                                                const viewUrl = `/api/files/${(value as any).gridFsId}/view`;
-                                                                window.open(viewUrl, '_blank');
-                                                              }}
+                                                          {(typeof value === 'string' || (value as any).driveFileId || (value as any).url) && (
+                                                            <a
+                                                              href={typeof value === 'string' ? value : ((value as any).url || `https://drive.google.com/file/d/${(value as any).driveFileId}/view`)}
+                                                              target="_blank"
+                                                              rel="noopener noreferrer"
                                                               className="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 bg-blue-100 rounded hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300 dark:hover:bg-blue-800"
                                                             >
                                                               <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2592,7 +2590,7 @@ export default function Tasks() {
                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                                                               </svg>
                                                               View
-                                                            </button>
+                                                            </a>
                                                           )}
                                                         </div>
                                                       </div>

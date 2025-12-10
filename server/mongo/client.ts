@@ -39,7 +39,7 @@ export async function getFormResponsesCollection(): Promise<Collection<FormRespo
   return cli.db(process.env.MONGODB_DB as string).collection<FormResponseDoc>("formResponses");
 }
 
-// Export a shared accessor for the connected MongoClient (for GridFS and other modules)
+// Export a shared accessor for the connected MongoClient
 export async function getMongoClient(): Promise<MongoClient> {
   return getClient();
 }

@@ -346,7 +346,7 @@ Last Security Audit: October 21, 2025
 3.1 Data Encryption:
 - HTTPS/TLS encryption for all data in transit
 - Database encryption at rest
-- Secure file storage (GridFS/S3)
+- Secure file storage (Google Drive)
 - Encrypted backup storage
 
 3.2 Data Privacy:

@@ -320,16 +320,6 @@ export class DatabaseStorage implements IStorage {
         // Continue with PostgreSQL deletion even if MongoDB fails
       }
       
-      // Delete GridFS files
-      try {
-        const { deleteFilesByOrganization } = await import('./mongo/gridfs.js');
-        await deleteFilesByOrganization(id);
-        console.log(`[deleteOrganization] Deleted GridFS files for org ${id}`);
-      } catch (gridfsError) {
-        console.error(`[deleteOrganization] Error deleting GridFS files for org ${id}:`, gridfsError);
-        // Continue with PostgreSQL deletion
-      }
-      
       // Delete PostgreSQL data in order of dependencies
       await db.delete(formResponses).where(eq(formResponses.organizationId, id));
       await db.delete(formTemplates).where(eq(formTemplates.organizationId, id));
