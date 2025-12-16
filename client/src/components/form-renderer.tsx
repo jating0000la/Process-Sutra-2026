@@ -75,13 +75,46 @@ export default function FormRenderer({
   const [isFormSubmitted, setIsFormSubmitted] = useState(false);
   const [submittedFormData, setSubmittedFormData] = useState<Record<string, any>>({});
   
-  // Parse questions if they're stored as a string
-  const parsedQuestions = useMemo(() => {
-    if (!template.questions) return [];
-    return typeof template.questions === 'string' 
-      ? JSON.parse(template.questions) 
-      : template.questions;
-  }, [template.questions]);
+  // Validate and normalize template.questions to ensure it's always an array
+  const normalizedTemplate = useMemo(() => {
+    if (!template) return null;
+    
+    let questions = template.questions;
+    
+    // If questions is a string, try to parse it
+    if (typeof questions === 'string') {
+      try {
+        questions = JSON.parse(questions);
+      } catch (error) {
+        console.error('[FormRenderer] Failed to parse questions:', error);
+        questions = [];
+      }
+    }
+    
+    // Ensure questions is an array
+    if (!Array.isArray(questions)) {
+      console.error('[FormRenderer] Questions is not an array:', questions);
+      questions = [];
+    }
+    
+    // Filter out any null or undefined questions
+    questions = questions.filter((q: any) => q && typeof q === 'object' && q.id && q.label);
+    
+    return {
+      ...template,
+      questions
+    };
+  }, [template]);
+  
+  if (!normalizedTemplate || !normalizedTemplate.questions || normalizedTemplate.questions.length === 0) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <p className="text-center text-gray-500">Invalid or empty form template</p>
+        </CardContent>
+      </Card>
+    );
+  }
   
   // Fetch previous form responses from the same flow for auto-prefill
   const { data: flowResponses, error: prefillError, isLoading: prefillLoading } = useQuery({
@@ -119,7 +152,7 @@ export default function FormRenderer({
       }
 
       // For each question in current template, search for matching label in previous responses
-      parsedQuestions.forEach((question) => {
+      normalizedTemplate.questions.forEach((question) => {
         // Skip if we already found a value for this question
         if (prefillData[question.id] !== undefined) {
           return;
@@ -218,7 +251,7 @@ export default function FormRenderer({
     });
 
     return prefillData;
-  }, [flowResponses, parsedQuestions, flowId]);
+  }, [flowResponses, normalizedTemplate.questions, flowId]);
 
   // Auto-prefill success notification
   useEffect(() => {
@@ -433,7 +466,7 @@ export default function FormRenderer({
   const createFormSchema = () => {
     const schemaFields: Record<string, z.ZodTypeAny> = {};
     
-    parsedQuestions.forEach((question) => {
+    normalizedTemplate.questions.forEach((question) => {
       let fieldSchema: z.ZodTypeAny;
       
       switch (question.type) {
@@ -482,7 +515,7 @@ export default function FormRenderer({
   // Create proper default values for all form fields with auto-prefill
   const getDefaultValues = useCallback(() => {
     const defaults: Record<string, any> = {};
-    parsedQuestions.forEach((question) => {
+    normalizedTemplate.questions.forEach((question) => {
       // Priority: initialData > autoPrefillData > default empty values
       const existingValue = initialData[question.id];
       const prefillValue = autoPrefillData[question.id]; // Use question ID for matching
@@ -516,7 +549,7 @@ export default function FormRenderer({
       }
     });
     return defaults;
-  }, [initialData, autoPrefillData, parsedQuestions]);
+  }, [initialData, autoPrefillData, normalizedTemplate.questions]);
 
   const form = useForm({
     resolver: zodResolver(formSchema),
@@ -529,14 +562,14 @@ export default function FormRenderer({
   // Reset initialization flag when template or flowId changes (new form)
   useEffect(() => {
     setIsFormInitialized(false);
-  }, [template.id, flowId]);
+  }, [normalizedTemplate.id, flowId]);
 
   // Update form when auto-prefill data becomes available
   useEffect(() => {
     if (!isFormInitialized && Object.keys(autoPrefillData).length > 0) {
       // Set individual field values instead of resetting entire form
       // This approach maintains field editability better
-      parsedQuestions.forEach((question) => {
+      normalizedTemplate.questions.forEach((question) => {
         const initialValue = initialData[question.id];
         const prefillValue = autoPrefillData[question.id];
         
@@ -553,13 +586,13 @@ export default function FormRenderer({
       
       setIsFormInitialized(true);
     }
-  }, [autoPrefillData, initialData, parsedQuestions, form, isFormInitialized]);
+  }, [autoPrefillData, initialData, normalizedTemplate.questions, form, isFormInitialized]);
 
   const handleSubmit = (data: any) => {
     // Clean up the data by removing empty optional fields
     const cleanedData: Record<string, any> = {};
     
-    parsedQuestions.forEach((question) => {
+    normalizedTemplate.questions.forEach((question) => {
       const value = data[question.id];
       
       // Only include the field if it has a meaningful value or is required
@@ -576,7 +609,7 @@ export default function FormRenderer({
   };
 
   const handleWhatsAppSend = () => {
-    const url = generateWhatsAppURL(template, submittedFormData);
+    const url = generateWhatsAppURL(normalizedTemplate, submittedFormData);
     if (url) {
       window.open(url, '_blank');
       toast({
@@ -593,7 +626,7 @@ export default function FormRenderer({
   };
 
   const handleEmailSend = () => {
-    const url = generateEmailURL(template, submittedFormData);
+    const url = generateEmailURL(normalizedTemplate, submittedFormData);
     if (url) {
       window.open(url, '_blank');
       toast({
@@ -710,7 +743,7 @@ export default function FormRenderer({
                   case "file":
                     return (
                       <FileUploadField
-                        formId={template.formId}
+                        formId={normalizedTemplate.formId}
                         fieldId={question.id}
                         taskId={undefined}
                         value={field.value}
@@ -744,9 +777,9 @@ export default function FormRenderer({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{template.title}</CardTitle>
-        {template.description && (
-          <p className="text-sm text-gray-600">{template.description}</p>
+        <CardTitle>{normalizedTemplate.title}</CardTitle>
+        {normalizedTemplate.description && (
+          <p className="text-sm text-gray-600">{normalizedTemplate.description}</p>
         )}
         {prefillLoading && flowId && (
           <div className="flex items-center text-sm text-blue-600 mt-2">
@@ -758,7 +791,7 @@ export default function FormRenderer({
       <CardContent>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-            {parsedQuestions.map((question) => renderField(question))}
+            {normalizedTemplate.questions.map((question) => renderField(question))}
             
             {!readonly && !isFormSubmitted && (
               <div className="flex justify-end space-x-3 pt-4">
@@ -779,13 +812,13 @@ export default function FormRenderer({
             {/* Communication buttons after form submission */}
             {!readonly && isFormSubmitted && (
               <div className="border-t pt-4 mt-6">
-                {(isWhatsAppEnabled(template) || isEmailEnabled(template)) && (
+                {(isWhatsAppEnabled(normalizedTemplate) || isEmailEnabled(normalizedTemplate)) && (
                   <>
                     <h3 className="text-sm font-medium text-gray-900 mb-3">
                       Send notification about this submission
                     </h3>
                     <div className="flex flex-wrap gap-3 mb-4">
-                      {isWhatsAppEnabled(template) && (
+                      {isWhatsAppEnabled(normalizedTemplate) && (
                         <Button 
                           type="button"
                           variant="outline"
@@ -796,7 +829,7 @@ export default function FormRenderer({
                           Send via WhatsApp
                         </Button>
                       )}
-                      {isEmailEnabled(template) && (
+                      {isEmailEnabled(normalizedTemplate) && (
                         <Button 
                           type="button"
                           variant="outline"

@@ -104,7 +104,19 @@ function replacePlaceholders(
 ): string {
   let result = template;
 
+  // Validate questions array
+  if (!Array.isArray(questions)) {
+    console.error('[CommunicationUtils] Questions is not an array:', questions);
+    return result;
+  }
+
   questions.forEach((question) => {
+    // Validate question object
+    if (!question || typeof question !== 'object' || !question.label || !question.id) {
+      console.warn('[CommunicationUtils] Invalid question object:', question);
+      return;
+    }
+
     const placeholder = `{{${question.label}}}`;
     const value = formData[question.id];
     const formattedValue = formatFormValue(value, question);
@@ -131,6 +143,12 @@ export function generateWhatsAppURL(
   const { phoneNumber, messageTemplate } = template.whatsappConfig;
 
   if (!phoneNumber || !messageTemplate) {
+    return null;
+  }
+
+  // Validate questions array
+  if (!Array.isArray(template.questions)) {
+    console.error('[CommunicationUtils] Invalid questions array in template:', template.questions);
     return null;
   }
 
@@ -170,6 +188,12 @@ export function generateEmailURL(
   const { recipientEmail, subject, bodyTemplate } = template.emailConfig;
 
   if (!recipientEmail || !subject || !bodyTemplate) {
+    return null;
+  }
+
+  // Validate questions array
+  if (!Array.isArray(template.questions)) {
+    console.error('[CommunicationUtils] Invalid questions array in template:', template.questions);
     return null;
   }
 
