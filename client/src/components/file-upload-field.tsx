@@ -77,9 +77,9 @@ export function FileUploadField({
           size: 0,
           webViewLink: value,
           orgId: '',
-          formId: question.formId || '',
-          taskId: null,
-          fieldId: question.id,
+          formId: formId || '',
+          taskId: taskId || undefined,
+          fieldId: fieldId,
         });
       } else {
         // Old format: full object (backward compatibility)
@@ -88,7 +88,7 @@ export function FileUploadField({
     } else {
       setFileData(null);
     }
-  }, [value, question.formId, question.id]);
+  }, [value, formId, fieldId, taskId]);
 
   const checkDriveConnection = async () => {
     try {
@@ -143,9 +143,9 @@ export function FileUploadField({
               size: file.size,
               webViewLink: webViewLink,
               orgId: '',
-              formId: question.formId || '',
-              taskId: null,
-              fieldId: question.id,
+              formId: formId || '',
+              taskId: taskId || undefined,
+              fieldId: fieldId,
             };
             
             setFileData(result);
