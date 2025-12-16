@@ -621,13 +621,20 @@ export default function Tasks() {
   const handleFillForm = async (task: any) => {
     if (!task.formId) return;
     
+    console.log('[Tasks] handleFillForm called for task:', task);
+    console.log('[Tasks] Available formTemplates:', formTemplates);
+    
     // Find the form template by formId
     const template = (formTemplates as any[])?.find((t: any) => t.formId === task.formId);
+    console.log('[Tasks] Found template:', template);
+    
     if (template) {
       setSelectedTask(task); // Set the selected task for form submission
       setFormTemplate(template);
       setIsFormDialogOpen(true);
+      console.log('[Tasks] Opening form dialog with template');
     } else {
+      console.error('[Tasks] Template not found for formId:', task.formId);
       toast({
         title: "Error",
         description: "Form template not found",
@@ -2033,7 +2040,7 @@ export default function Tasks() {
           <DialogHeader>
             <DialogTitle>Fill Form</DialogTitle>
           </DialogHeader>
-          {formTemplate && (
+          {formTemplate ? (
             <FormRenderer
               template={formTemplate}
               onSubmit={handleFormSubmit}
@@ -2041,6 +2048,10 @@ export default function Tasks() {
               isSubmitting={false}
               flowId={selectedTask?.flowId}
             />
+          ) : (
+            <div className="p-6 text-center text-gray-500">
+              <p>Loading form template...</p>
+            </div>
           )}
         </DialogContent>
       </Dialog>

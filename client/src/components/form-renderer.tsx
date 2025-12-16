@@ -77,14 +77,21 @@ export default function FormRenderer({
   
   // Validate and normalize template.questions to ensure it's always an array
   const normalizedTemplate = useMemo(() => {
-    if (!template) return null;
+    console.log('[FormRenderer] Template received:', template);
+    
+    if (!template) {
+      console.error('[FormRenderer] No template provided');
+      return null;
+    }
     
     let questions = template.questions;
+    console.log('[FormRenderer] Raw questions:', questions);
     
     // If questions is a string, try to parse it
     if (typeof questions === 'string') {
       try {
         questions = JSON.parse(questions);
+        console.log('[FormRenderer] Parsed questions from string:', questions);
       } catch (error) {
         console.error('[FormRenderer] Failed to parse questions:', error);
         questions = [];
@@ -97,8 +104,18 @@ export default function FormRenderer({
       questions = [];
     }
     
+    console.log('[FormRenderer] Questions before filtering:', questions);
+    
     // Filter out any null or undefined questions
-    questions = questions.filter((q: any) => q && typeof q === 'object' && q.id && q.label);
+    questions = questions.filter((q: any) => {
+      const isValid = q && typeof q === 'object' && q.id && q.label;
+      if (!isValid) {
+        console.warn('[FormRenderer] Filtered out invalid question:', q);
+      }
+      return isValid;
+    });
+    
+    console.log('[FormRenderer] Final normalized questions:', questions);
     
     return {
       ...template,
@@ -106,11 +123,24 @@ export default function FormRenderer({
     };
   }, [template]);
   
-  if (!normalizedTemplate || !normalizedTemplate.questions || normalizedTemplate.questions.length === 0) {
+  if (!normalizedTemplate) {
+    console.error('[FormRenderer] normalizedTemplate is null');
     return (
       <Card>
         <CardContent className="p-6">
-          <p className="text-center text-gray-500">Invalid or empty form template</p>
+          <p className="text-center text-gray-500">No form template provided</p>
+        </CardContent>
+      </Card>
+    );
+  }
+  
+  if (!normalizedTemplate.questions || normalizedTemplate.questions.length === 0) {
+    console.error('[FormRenderer] No valid questions in template');
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <p className="text-center text-gray-500">Form template has no valid questions</p>
+          <pre className="mt-2 text-xs">{JSON.stringify(template, null, 2)}</pre>
         </CardContent>
       </Card>
     );
