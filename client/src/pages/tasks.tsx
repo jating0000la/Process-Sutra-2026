@@ -152,7 +152,14 @@ export default function Tasks() {
     
     // Get form template for better field labeling
     const template = formTemplates ? (formTemplates as any[])?.find((t: any) => t.formId === formId) : null;
-    const questions = template ? (typeof template.questions === 'string' ? JSON.parse(template.questions) : template.questions) : null;
+    let questions = template ? (typeof template.questions === 'string' ? JSON.parse(template.questions) : template.questions) : null;
+    
+    // Ensure questions is an array and filter out invalid entries
+    if (questions && Array.isArray(questions)) {
+      questions = questions.filter((q: any) => q && typeof q === 'object' && q.id);
+    } else {
+      questions = null;
+    }
     
     Object.entries(formData).forEach(([key, value]) => {
       // Check if this is the new format with questionTitle and answer
