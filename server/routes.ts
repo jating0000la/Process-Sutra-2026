@@ -5,7 +5,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./firebaseAuth";
 import { db } from "./db";
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import helmet from 'helmet';
 import NodeCache from 'node-cache';
 import { healthCheck } from './health';
@@ -88,10 +88,10 @@ const exportLimiter = rateLimit({
   legacyHeaders: false,
   skipSuccessfulRequests: false,
   skipFailedRequests: false,
-  // Use authenticated user as key instead of IP to avoid trust proxy issues
+  // Use authenticated user as key, fallback to IPv6-safe IP
   keyGenerator: (req) => {
     const user = (req as any).currentUser;
-    return user?.email || req.ip || 'anonymous';
+    return user?.email || (req as any).sessionID || ipKeyGenerator(req);
   },
 });
 
@@ -104,7 +104,7 @@ const flowRuleLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => {
     const user = (req as any).currentUser;
-    return user?.email || req.ip || 'anonymous';
+    return user?.email || (req as any).sessionID || ipKeyGenerator(req);
   },
 });
 
@@ -116,7 +116,7 @@ const bulkFlowRuleLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => {
     const user = (req as any).currentUser;
-    return user?.email || req.ip || 'anonymous';
+    return user?.email || (req as any).sessionID || ipKeyGenerator(req);
   },
 });
 
@@ -134,12 +134,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const globalLimiter = rateLimit({
       windowMs: 15 * 60 * 1000, // 15 minutes
       max: 1000, // limit each user to 1000 requests per windowMs
-      message: 'Too many requests from this IP',
+      message: 'Too many requests',
       standardHeaders: true,
       legacyHeaders: false,
       keyGenerator: (req) => {
         const user = (req as any).currentUser;
-        return user?.email || (req as any).sessionID || req.ip || 'anonymous';
+        return user?.email || (req as any).sessionID || ipKeyGenerator(req);
       },
     });
     app.use('/api', globalLimiter);
