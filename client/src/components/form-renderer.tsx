@@ -75,6 +75,14 @@ export default function FormRenderer({
   const [isFormSubmitted, setIsFormSubmitted] = useState(false);
   const [submittedFormData, setSubmittedFormData] = useState<Record<string, any>>({});
   
+  // Parse questions if they're stored as a string
+  const parsedQuestions = useMemo(() => {
+    if (!template.questions) return [];
+    return typeof template.questions === 'string' 
+      ? JSON.parse(template.questions) 
+      : template.questions;
+  }, [template.questions]);
+  
   // Fetch previous form responses from the same flow for auto-prefill
   const { data: flowResponses, error: prefillError, isLoading: prefillLoading } = useQuery({
     queryKey: ["/api/flows", flowId, "responses"],
@@ -111,7 +119,7 @@ export default function FormRenderer({
       }
 
       // For each question in current template, search for matching label in previous responses
-      template.questions.forEach((question) => {
+      parsedQuestions.forEach((question) => {
         // Skip if we already found a value for this question
         if (prefillData[question.id] !== undefined) {
           return;
@@ -210,7 +218,7 @@ export default function FormRenderer({
     });
 
     return prefillData;
-  }, [flowResponses, template.questions, flowId]);
+  }, [flowResponses, parsedQuestions, flowId]);
 
   // Auto-prefill success notification
   useEffect(() => {
@@ -425,7 +433,7 @@ export default function FormRenderer({
   const createFormSchema = () => {
     const schemaFields: Record<string, z.ZodTypeAny> = {};
     
-    template.questions.forEach((question) => {
+    parsedQuestions.forEach((question) => {
       let fieldSchema: z.ZodTypeAny;
       
       switch (question.type) {
@@ -474,7 +482,7 @@ export default function FormRenderer({
   // Create proper default values for all form fields with auto-prefill
   const getDefaultValues = useCallback(() => {
     const defaults: Record<string, any> = {};
-    template.questions.forEach((question) => {
+    parsedQuestions.forEach((question) => {
       // Priority: initialData > autoPrefillData > default empty values
       const existingValue = initialData[question.id];
       const prefillValue = autoPrefillData[question.id]; // Use question ID for matching
@@ -508,7 +516,7 @@ export default function FormRenderer({
       }
     });
     return defaults;
-  }, [initialData, autoPrefillData, template.questions]);
+  }, [initialData, autoPrefillData, parsedQuestions]);
 
   const form = useForm({
     resolver: zodResolver(formSchema),
@@ -528,7 +536,7 @@ export default function FormRenderer({
     if (!isFormInitialized && Object.keys(autoPrefillData).length > 0) {
       // Set individual field values instead of resetting entire form
       // This approach maintains field editability better
-      template.questions.forEach((question) => {
+      parsedQuestions.forEach((question) => {
         const initialValue = initialData[question.id];
         const prefillValue = autoPrefillData[question.id];
         
@@ -545,13 +553,13 @@ export default function FormRenderer({
       
       setIsFormInitialized(true);
     }
-  }, [autoPrefillData, initialData, template.questions, form, isFormInitialized]);
+  }, [autoPrefillData, initialData, parsedQuestions, form, isFormInitialized]);
 
   const handleSubmit = (data: any) => {
     // Clean up the data by removing empty optional fields
     const cleanedData: Record<string, any> = {};
     
-    template.questions.forEach((question) => {
+    parsedQuestions.forEach((question) => {
       const value = data[question.id];
       
       // Only include the field if it has a meaningful value or is required
@@ -750,7 +758,7 @@ export default function FormRenderer({
       <CardContent>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-            {template.questions.map((question) => renderField(question))}
+            {parsedQuestions.map((question) => renderField(question))}
             
             {!readonly && !isFormSubmitted && (
               <div className="flex justify-end space-x-3 pt-4">
