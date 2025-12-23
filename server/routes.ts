@@ -1,14 +1,14 @@
 
 import type { Express } from "express";
-import { addClient, removeClient, sendToEmail } from './notifications';
+import { addClient, removeClient, sendToEmail } from './notifications.js';
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./firebaseAuth";
-import { db } from "./db";
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { storage } from "./storage.js";
+import { setupAuth, isAuthenticated } from "./firebaseAuth.js";
+import { db } from "./db.js";
+import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import NodeCache from 'node-cache';
-import { healthCheck } from './health';
+import { healthCheck } from './health.js';
 import {
   insertFlowRuleSchema,
   insertTaskSchema,
@@ -21,13 +21,13 @@ import {
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { randomBytes } from "crypto";
-import { calculateTAT, TATConfig } from "./tatCalculator";
+import { calculateTAT, TATConfig } from "./tatCalculator.js";
 import uploadsRouter from './uploads.js';
 import oauthRouter from './oauthRoutes.js';
 import * as crypto from 'crypto';
-import { sanitizeFlowRule, sanitizeFlowRules } from './inputSanitizer';
+import { sanitizeFlowRule, sanitizeFlowRules } from './inputSanitizer.js';
 import archiver from 'archiver';
-import { registerSuperAdminRoutes } from './superAdminRoutes';
+import { registerSuperAdminRoutes } from './superAdminRoutes.js';
 
 
 // Analytics cache - 5 minute TTL to reduce database load
@@ -88,10 +88,10 @@ const exportLimiter = rateLimit({
   legacyHeaders: false,
   skipSuccessfulRequests: false,
   skipFailedRequests: false,
-  // Use authenticated user as key, fallback to IPv6-safe IP
+  // Use authenticated user as key instead of IP to avoid trust proxy issues
   keyGenerator: (req) => {
     const user = (req as any).currentUser;
-    return user?.email || (req as any).sessionID || ipKeyGenerator(req);
+    return user?.email || req.ip || 'anonymous';
   },
 });
 
@@ -104,7 +104,7 @@ const flowRuleLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => {
     const user = (req as any).currentUser;
-    return user?.email || (req as any).sessionID || ipKeyGenerator(req);
+    return user?.email || req.ip || 'anonymous';
   },
 });
 
@@ -116,7 +116,7 @@ const bulkFlowRuleLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => {
     const user = (req as any).currentUser;
-    return user?.email || (req as any).sessionID || ipKeyGenerator(req);
+    return user?.email || req.ip || 'anonymous';
   },
 });
 
@@ -134,12 +134,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const globalLimiter = rateLimit({
       windowMs: 15 * 60 * 1000, // 15 minutes
       max: 1000, // limit each user to 1000 requests per windowMs
-      message: 'Too many requests',
+      message: 'Too many requests from this IP',
       standardHeaders: true,
       legacyHeaders: false,
       keyGenerator: (req) => {
         const user = (req as any).currentUser;
-        return user?.email || (req as any).sessionID || ipKeyGenerator(req);
+        return user?.email || (req as any).sessionID || req.ip || 'anonymous';
       },
     });
     app.use('/api', globalLimiter);
@@ -156,7 +156,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/health/db', async (_req, res) => {
     try {
       // Import isDatabaseConnected function
-      const { isDatabaseConnected } = await import('./db');
+      const { isDatabaseConnected } = await import('./db.js');
       
       if (!isDatabaseConnected()) {
         return res.status(503).json({ 
@@ -293,7 +293,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       
       // Check if adding this rule creates a cycle (log warning but allow it)
-      const { detectCycle } = await import('./cycleDetector');
+      const { detectCycle } = await import('./cycleDetector.js');
       const cycleResult = detectCycle(existingRules as any[], {
         currentTask: validatedData.currentTask || "",
         nextTask: validatedData.nextTask,
@@ -970,7 +970,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Fire webhooks (non-blocking with proper logging and retry)
       (async () => {
-        const { fireWebhooksForEvent } = await import('./webhookUtils');
+        const { fireWebhooksForEvent } = await import('./webhookUtils.js');
         await fireWebhooksForEvent(user.organizationId, 'flow.started', {
           flowId,
           orderNumber,
@@ -1159,7 +1159,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Fire webhooks (non-blocking with proper logging and retry)
       (async () => {
-        const { fireWebhooksForEvent } = await import('./webhookUtils');
+        const { fireWebhooksForEvent } = await import('./webhookUtils.js');
         await fireWebhooksForEvent(user.organizationId, 'flow.resumed', {
           flowId,
           orderNumber: firstTask.orderNumber,
@@ -1842,7 +1842,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       // Fire webhooks (non-blocking with proper logging and retry)
       (async () => {
         try {
-          const { fireWebhooksForEvent } = await import('./webhookUtils');
+          const { fireWebhooksForEvent } = await import('./webhookUtils.js');
           
           // Check if webhooks already fired for this responseId (prevent duplicates)
           const existingDeliveries = await storage.getWebhookDeliveriesByPayloadId(response.responseId);
@@ -1920,7 +1920,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       if (!event || !targetUrl || !secret) return res.status(400).json({ message: 'event, targetUrl, secret required' });
       
       // Validate webhook URL safety
-      const { isSafeWebhookUrl, validateWebhookSecret } = await import('./webhookUtils');
+      const { isSafeWebhookUrl, validateWebhookSecret } = await import('./webhookUtils.js');
       
       if (!isSafeWebhookUrl(targetUrl)) {
         return res.status(400).json({ 
@@ -3125,7 +3125,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       const bypassCache = req.query.nocache === '1';
       
       // Import cache utilities
-      const { getCachedOrCompute, getUsageSummaryCacheKey, usageCache } = await import('./usageCache');
+      const { getCachedOrCompute, getUsageSummaryCacheKey, usageCache } = await import('./usageCache.js');
       const cacheKey = getUsageSummaryCacheKey(organizationId, dateRange);
       
       // Clear cache if requested
@@ -3142,7 +3142,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           getFormsByType,
           getUserStats,
           getStorageStats
-        } = await import('./usageQueries');
+        } = await import('./usageQueries.js');
         
         // Calculate date ranges
         const now = new Date();
@@ -3311,7 +3311,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       const bypassCache = req.query.nocache === '1';
       
       // Import cache utilities
-      const { getCachedOrCompute, getUsageTrendsCacheKey, usageCache } = await import('./usageCache');
+      const { getCachedOrCompute, getUsageTrendsCacheKey, usageCache } = await import('./usageCache.js');
       const cacheKey = getUsageTrendsCacheKey(organizationId);
       
       // Clear cache if requested
@@ -3326,7 +3326,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           getDailyTrends,
           getFlowsBySystem,
           getTopForms
-        } = await import('./usageQueries');
+        } = await import('./usageQueries.js');
         
         // Fetch all data in parallel
         const [trendsData, flowsBySystem, topForms] = await Promise.all([

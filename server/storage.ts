@@ -33,7 +33,7 @@ import {
   type AuditLog,
   type InsertAuditLog,
 } from "@shared/schema";
-import { db } from "./db";
+import { db } from "./db.js";
 import { eq, and, desc, asc, count, sql, lte } from "drizzle-orm";
 import { 
   webhooks, 
@@ -49,7 +49,7 @@ import {
   type InsertApiKey,
   type ApiKey,
 } from "@shared/schema";
-import { transformFormDataToReadableNames } from "./formDataTransformer";
+import { transformFormDataToReadableNames } from "./formDataTransformer.js";
 import NodeCache from 'node-cache';
 
 // Form template cache - 10 minute TTL to reduce database load

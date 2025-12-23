@@ -258,23 +258,51 @@ export default function FormBuilder() {
       type: 'text',
       options: [],
     };
-    setTableColumns([...tableColumns, newColumn]);
+    const newColumns = [...tableColumns, newColumn];
+    setTableColumns(newColumns);
+    // Sync table columns to the selected question immediately
+    if (selectedQuestion?.type === "table") {
+      setQuestions(questions.map(q => 
+        q.id === selectedQuestion.id ? { ...q, tableColumns: newColumns } : q
+      ));
+    }
   };
 
   const updateTableColumn = (id: string, field: string, value: string) => {
-    setTableColumns(tableColumns.map(col => 
+    const newColumns = tableColumns.map(col => 
       col.id === id ? { ...col, [field]: value } : col
-    ));
+    );
+    setTableColumns(newColumns);
+    // Sync table columns to the selected question immediately
+    if (selectedQuestion?.type === "table") {
+      setQuestions(questions.map(q => 
+        q.id === selectedQuestion.id ? { ...q, tableColumns: newColumns } : q
+      ));
+    }
   };
 
   const updateTableColumnOptions = (columnId: string, options: string[]) => {
-    setTableColumns(tableColumns.map(col => 
+    const newColumns = tableColumns.map(col => 
       col.id === columnId ? { ...col, options } : col
-    ));
+    );
+    setTableColumns(newColumns);
+    // Sync table columns to the selected question immediately
+    if (selectedQuestion?.type === "table") {
+      setQuestions(questions.map(q => 
+        q.id === selectedQuestion.id ? { ...q, tableColumns: newColumns } : q
+      ));
+    }
   };
 
   const removeTableColumn = (id: string) => {
-    setTableColumns(tableColumns.filter(col => col.id !== id));
+    const newColumns = tableColumns.filter(col => col.id !== id);
+    setTableColumns(newColumns);
+    // Sync table columns to the selected question immediately
+    if (selectedQuestion?.type === "table") {
+      setQuestions(questions.map(q => 
+        q.id === selectedQuestion.id ? { ...q, tableColumns: newColumns } : q
+      ));
+    }
   };
 
   const addQuestion = (type: string) => {

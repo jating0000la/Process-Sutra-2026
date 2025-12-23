@@ -339,20 +339,59 @@ export default function Tasks() {
         readableData[displayTitle] = formattedAnswer;
       } else {
         // Legacy format - handle all field types dynamically
-        if (!questions || !Array.isArray(questions)) {
-          // Simple formatting without template
-          if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
-            const tableRows = value.map((row: any, index: number) => {
-              const rowEntries = Object.entries(row).map(([colKey, colValue]) => {
-                const colLabel = colKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
-                return `${colLabel}: ${colValue}`;
-              });
-              return `Item ${index + 1} - ${rowEntries.join(', ')}`;
+        
+        // First check if it's an array of objects without a template (table data)
+        if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' && !Array.isArray(value[0])) {
+          // Check if this looks like table data (array of objects with consistent keys)
+          const firstRow = value[0];
+          // Filter out metadata fields (keys starting with _)
+          const dataColumnKeys = Object.keys(firstRow).filter(k => !k.startsWith('_'));
+          
+          if (dataColumnKeys.length > 0) {
+            // Get column headers from _columnHeaders if available, otherwise format the keys
+            const hasColumnHeaders = firstRow._columnHeaders;
+            
+            let columns = dataColumnKeys.map(colKey => {
+              let label = colKey.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
+              // Capitalize first letter
+              label = label.charAt(0).toUpperCase() + label.slice(1);
+              
+              if (hasColumnHeaders && firstRow._columnHeaders[colKey]) {
+                label = firstRow._columnHeaders[colKey];
+              }
+              
+              return { id: colKey, label };
             });
-            readableData[key] = tableRows.join(' • ');
-          } else {
-            readableData[key] = value;
+            
+            // Build HTML table
+            let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full border border-gray-300 text-xs">';
+            tableHtml += '<thead class="bg-gray-50"><tr>';
+            columns.forEach((col: any) => {
+              tableHtml += `<th class="border border-gray-300 px-2 py-1 text-left font-medium">${col.label}</th>`;
+            });
+            tableHtml += '</tr></thead><tbody>';
+            value.forEach((row: any, index: number) => {
+              tableHtml += `<tr class="${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">`;
+              columns.forEach((col: any) => {
+                const cellValue = row[col.id] !== undefined ? row[col.id] : '';
+                tableHtml += `<td class="border border-gray-300 px-2 py-1">${cellValue}</td>`;
+              });
+              tableHtml += '</tr>';
+            });
+            tableHtml += '</tbody></table></div>';
+            
+            // Use the key as the label, or try to format it nicely
+            const displayKey = key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
+            const formattedKey = displayKey.charAt(0).toUpperCase() + displayKey.slice(1);
+            readableData[formattedKey] = tableHtml;
+            return; // Continue to next field
           }
+        }
+        
+        // If we have a template with questions, use it for legacy format
+        if (!questions || !Array.isArray(questions)) {
+          // No template available - use simple formatting
+          readableData[key] = value;
           return;
         }
         
@@ -2450,18 +2489,42 @@ export default function Tasks() {
                                         {typeof value === 'string' ? (
                                           <span className="break-words">{value}</span>
                                         ) : Array.isArray(value) ? (
-                                          <div className="space-y-1">
-                                            {value.map((item, idx) => (
-                                              <div key={idx} className="bg-purple-50 dark:bg-purple-700 p-2 rounded text-xs">
-                                                {typeof item === 'object' ? 
-                                                  Object.entries(item).map(([k, v]) => (
-                                                    <div key={k}><span className="font-medium">{k}:</span> {String(v)}</div>
-                                                  )) : 
-                                                  String(item)
-                                                }
-                                              </div>
-                                            ))}
-                                          </div>
+                                          // Check if it's an array of objects (table data)
+                                          value.length > 0 && typeof value[0] === 'object' && value[0] !== null ? (
+                                            <div className="overflow-x-auto">
+                                              <table className="min-w-full border border-purple-200 text-xs bg-white dark:bg-gray-800 rounded">
+                                                <thead className="bg-purple-100 dark:bg-purple-900">
+                                                  <tr>
+                                                    {Object.keys(value[0]).filter(k => !k.startsWith('_')).map((col) => (
+                                                      <th key={col} className="border border-purple-200 dark:border-purple-700 px-2 py-1 text-left font-medium text-purple-900 dark:text-purple-100">
+                                                        {col.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim().charAt(0).toUpperCase() + col.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim().slice(1)}
+                                                      </th>
+                                                    ))}
+                                                  </tr>
+                                                </thead>
+                                                <tbody>
+                                                  {value.map((row: any, idx: number) => (
+                                                    <tr key={idx} className={idx % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-purple-50 dark:bg-purple-900/20'}>
+                                                      {Object.keys(value[0]).filter(k => !k.startsWith('_')).map((col) => (
+                                                        <td key={col} className="border border-purple-200 dark:border-purple-700 px-2 py-1">
+                                                          {String(row[col] !== undefined ? row[col] : '')}
+                                                        </td>
+                                                      ))}
+                                                    </tr>
+                                                  ))}
+                                                </tbody>
+                                              </table>
+                                            </div>
+                                          ) : (
+                                            // Simple array of strings/numbers
+                                            <div className="space-y-1">
+                                              {value.map((item, idx) => (
+                                                <div key={idx} className="bg-purple-50 dark:bg-purple-700 p-2 rounded text-xs">
+                                                  {String(item)}
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )
                                         ) : typeof value === 'object' && value !== null ? (
                                           <div className="bg-purple-50 dark:bg-purple-700 p-2 rounded text-xs font-mono max-h-32 overflow-y-auto">
                                             {JSON.stringify(value, null, 2)}
@@ -2548,8 +2611,11 @@ export default function Tasks() {
                                             <div key={key} className="border-b border-gray-100 dark:border-gray-600 pb-2 last:border-b-0">
                                               <Label className="text-xs font-medium text-gray-600 dark:text-gray-400 block">{key}</Label>
                                               <div className="text-sm text-gray-800 dark:text-gray-200 mt-1">
-                                                {typeof value === 'string' && (value.includes('<table') || value.includes('<a href')) ? (
-                                                  <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(value) }} />
+                                                {typeof value === 'string' && (value.includes('<table') || value.includes('<a href') || value.includes('</a>')) ? (
+                                                  <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(value, { 
+                                                    ALLOWED_TAGS: ['table', 'thead', 'tbody', 'tr', 'th', 'td', 'div', 'a', 'span', 'svg', 'path'],
+                                                    ALLOWED_ATTR: ['class', 'href', 'target', 'rel', 'style', 'viewBox', 'fill', 'stroke', 'strokeLinecap', 'strokeLinejoin', 'strokeWidth', 'd']
+                                                  }) }} />
                                                 ) : Array.isArray(value) ? (
                                                   <div className="space-y-1">
                                                     {value.map((item, idx) => (
