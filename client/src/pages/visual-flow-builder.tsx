@@ -28,7 +28,11 @@ import {
   Edit,
   Trash2,
   Save,
-  X
+  X,
+  Download,
+  Search,
+  Keyboard,
+  Loader2
 } from "lucide-react";
 
 interface FlowRule {
@@ -86,6 +90,13 @@ export default function VisualFlowBuilder() {
   const [draggingNode, setDraggingNode] = useState<string | null>(null);
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
   const [isFormBuilderOpen, setIsFormBuilderOpen] = useState(false);
   const [pendingFormId, setPendingFormId] = useState<string>("");
   const [formIdDebounceTimer, setFormIdDebounceTimer] = useState<NodeJS.Timeout | null>(null);
@@ -478,7 +489,194 @@ export default function VisualFlowBuilder() {
 
   const handleZoomIn = () => setZoomLevel((prev) => Math.min(prev + 0.1, 2));
   const handleZoomOut = () => setZoomLevel((prev) => Math.max(prev - 0.1, 0.5));
-  const handleResetZoom = () => setZoomLevel(1);
+  const handleResetZoom = () => {
+    setZoomLevel(1);
+    setPanOffset({ x: 0, y: 0 });
+  };
+
+  // Mouse wheel zoom
+  const handleWheel = (e: React.WheelEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      setZoomLevel((prev) => Math.max(0.5, Math.min(2, prev + delta)));
+    }
+  };
+
+  // Canvas panning
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 1 || (e.button === 0 && e.shiftKey)) { // Middle click or Shift + Left click
+      e.preventDefault();
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
+    }
+  };
+
+  const handleCanvasMouseMove = (e: React.MouseEvent) => {
+    if (isPanning) {
+      setPanOffset({
+        x: e.clientX - panStart.x,
+        y: e.clientY - panStart.y,
+      });
+    }
+  };
+
+  const handleCanvasMouseUp = () => {
+    setIsPanning(false);
+  };
+
+  // Export as PNG using dom-to-image-more
+  const handleExportPNG = async () => {
+    try {
+      if (nodes.length === 0) {
+        toast({
+          title: "No Content",
+          description: "There are no nodes to export",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const canvasContainer = document.querySelector('#flow-canvas-container') as HTMLElement;
+      if (!canvasContainer) {
+        toast({
+          title: "Export Failed",
+          description: "Could not find canvas element",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Dynamically import dom-to-image-more
+      const domtoimage = (await import('dom-to-image-more')).default;
+      
+      // Store original styles
+      const originalTransform = canvasContainer.style.transform;
+      const originalTransition = canvasContainer.style.transition;
+      
+      // Reset transform for capture
+      canvasContainer.style.transform = 'scale(1) translate(0px, 0px)';
+      canvasContainer.style.transition = 'none';
+      
+      // Wait for DOM to update
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Calculate bounds
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      nodes.forEach(node => {
+        const x = (nodePositions[node.id]?.x ?? node.x) + 100;
+        const y = (nodePositions[node.id]?.y ?? node.y) + 100;
+        const width = 220;
+        const height = 100;
+        
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x + width);
+        maxY = Math.max(maxY, y + height);
+      });
+
+      const padding = 100;
+      minX -= padding;
+      minY -= padding;
+      maxX += padding;
+      maxY += padding;
+      
+      // Generate PNG
+      const dataUrl = await domtoimage.toPng(canvasContainer, {
+        width: maxX - minX,
+        height: maxY - minY,
+        style: {
+          transform: 'scale(1) translate(0px, 0px)',
+          transformOrigin: 'center center',
+        },
+        quality: 1.0,
+        bgcolor: '#f9fafb',
+      });
+      
+      // Restore original styles
+      canvasContainer.style.transform = originalTransform;
+      canvasContainer.style.transition = originalTransition;
+      
+      // Download the image
+      const link = document.createElement('a');
+      link.download = `${selectedSystem}-flow.png`;
+      link.href = dataUrl;
+      link.click();
+      
+      toast({
+        title: "Success",
+        description: "Flow exported as PNG successfully",
+      });
+    } catch (error) {
+      console.error('Export error:', error);
+      toast({
+        title: "Export Failed",
+        description: "An error occurred while exporting the flow",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger shortcuts when typing in inputs
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      switch (e.key) {
+        case 'Delete':
+        case 'Backspace':
+          if (selectedNode) {
+            handleDeleteStep();
+          } else if (selectedEdge && editingRule) {
+            handleDeleteEdge();
+          }
+          break;
+        case 'Escape':
+          setSelectedNode(null);
+          setSelectedEdge(null);
+          setEditingRule(null);
+          setSearchQuery("");
+          break;
+        case '+':
+        case '=':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            handleZoomIn();
+          }
+          break;
+        case '-':
+        case '_':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            handleZoomOut();
+          }
+          break;
+        case '0':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            handleResetZoom();
+          }
+          break;
+        case '?':
+          if (e.shiftKey) {
+            setShowKeyboardHelp((prev) => !prev);
+          }
+          break;
+        case 'f':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            document.getElementById('flow-search-input')?.focus();
+          }
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNode, selectedEdge, editingRule]);
 
   const handleNodeClick = (node: FlowChartNode) => {
     if (!draggingNode) {
@@ -751,9 +949,19 @@ export default function VisualFlowBuilder() {
       });
       return;
     }
+
+    // Check for duplicate flow name
+    if (availableSystems.includes(newFlowName.trim())) {
+      toast({
+        title: "Duplicate Flow Name",
+        description: `A flow named "${newFlowName}" already exists. Please choose a different name.`,
+        variant: "destructive",
+      });
+      return;
+    }
     
     // Set the new system as selected
-    setSelectedSystem(newFlowName);
+    setSelectedSystem(newFlowName.trim());
     setIsNewFlowDialogOpen(false);
     setNewFlowName("");
     
@@ -764,6 +972,16 @@ export default function VisualFlowBuilder() {
   };
 
   const handleFormIdChange = (formId: string) => {
+    // Check if the nextTask is already configured in another step
+    if (availableTasks.includes(newRule.nextTask)) {
+      toast({
+        title: "Form ID Not Allowed",
+        description: "This task is already configured in another step. Form ID cannot be set.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setNewRule({ ...newRule, formId });
     
     // Clear existing timer if user is still typing
@@ -880,24 +1098,71 @@ export default function VisualFlowBuilder() {
                   </SelectContent>
                 </Select>
               </div>
-              <Button variant="outline" size="sm" onClick={handleZoomOut}>
+              {selectedSystem && (
+                <div className="flex items-center space-x-2 bg-white rounded-lg px-3 py-2 border">
+                  <Search className="w-4 h-4 text-gray-500" />
+                  <Input
+                    id="flow-search-input"
+                    type="text"
+                    placeholder="Search nodes... (Ctrl+F)"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-48 border-0 focus-visible:ring-0 h-7 px-0"
+                  />
+                  {searchQuery && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSearchQuery("")}
+                      className="h-6 w-6 p-0"
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  )}
+                </div>
+              )}
+              <Button variant="outline" size="sm" onClick={handleZoomOut} title="Zoom Out (Ctrl+-)">
                 <ZoomOut className="w-4 h-4" />
               </Button>
               <span className="text-sm font-medium">{Math.round(zoomLevel * 100)}%</span>
-              <Button variant="outline" size="sm" onClick={handleZoomIn}>
+              <Button variant="outline" size="sm" onClick={handleZoomIn} title="Zoom In (Ctrl++)">
                 <ZoomIn className="w-4 h-4" />
               </Button>
-              <Button variant="outline" size="sm" onClick={handleResetZoom}>
+              <Button variant="outline" size="sm" onClick={handleResetZoom} title="Reset View (Ctrl+0)">
                 <Maximize2 className="w-4 h-4" />
               </Button>
+              {selectedSystem && (
+                <>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleExportPNG}
+                    title="Export as PNG"
+                  >
+                    <Download className="w-4 h-4" />
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setShowKeyboardHelp(true)}
+                    title="Keyboard Shortcuts (?)"
+                  >
+                    <Keyboard className="w-4 h-4" />
+                  </Button>
+                </>
+              )}
               <Button 
                 variant="outline" 
                 size="sm" 
-                onClick={() => setNodePositions({})}
-                disabled={Object.keys(nodePositions).length === 0}
+                onClick={() => {
+                  setNodePositions({});
+                  setPanOffset({ x: 0, y: 0 });
+                }}
+                disabled={Object.keys(nodePositions).length === 0 && panOffset.x === 0 && panOffset.y === 0}
                 className="ml-2"
+                title="Reset Layout"
               >
-                Reset Positions
+                Reset Layout
               </Button>
             </div>
           }
@@ -937,35 +1202,57 @@ export default function VisualFlowBuilder() {
                       </div>
                       <div className="flex items-center gap-3">
                         <Badge variant="secondary" className="text-xs">
-                          💡 Drag boxes to reposition
+                          {isPanning ? "🖐️ Panning..." : "💡 Drag boxes to reposition"}
+                        </Badge>
+                        <Badge variant="outline" className="text-xs">
+                          🖱️ Middle-click or Shift+Drag to pan
                         </Badge>
                         <Badge variant="outline">
-                          {nodes.length} Steps
+                          {nodes.filter((node) => 
+                            !searchQuery || 
+                            node.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            node.doer?.toLowerCase().includes(searchQuery.toLowerCase())
+                          ).length} / {nodes.length} Steps
                         </Badge>
                       </div>
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="p-0">
-                    <div className="relative bg-gray-50 overflow-auto" style={{ height: "calc(100vh - 280px)" }}>
+                    <div 
+                      className="relative bg-gray-50 overflow-hidden" 
+                      style={{ height: "calc(100vh - 280px)" }}
+                      onWheel={handleWheel}
+                      onMouseDown={handleCanvasMouseDown}
+                      onMouseMove={handleCanvasMouseMove}
+                      onMouseUp={handleCanvasMouseUp}
+                      onMouseLeave={handleCanvasMouseUp}
+                    >
                       <div
-                        className="absolute inset-0"
+                        className="absolute inset-0 pointer-events-none"
                         style={{
                           backgroundImage: "radial-gradient(circle, #d1d5db 1px, transparent 1px)",
-                          backgroundSize: "20px 20px",
+                          backgroundSize: `${20 * zoomLevel}px ${20 * zoomLevel}px`,
+                          backgroundPosition: `${panOffset.x}px ${panOffset.y}px`,
+                          cursor: isPanning ? 'grabbing' : 'default',
                         }}
                       />
                       
                       <div
-                        className="w-full h-full flex items-start justify-center overflow-auto"
+                        className="w-full h-full overflow-auto"
                         style={{
-                          transform: `scale(${zoomLevel})`,
-                          transformOrigin: "center top",
-                          transition: "transform 0.2s",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: isPanning ? 'grabbing' : 'grab',
                         }}
                       >
                         <div
-                          className="relative"
+                          id="flow-canvas-container"
+                          className="relative pointer-events-auto"
                           style={{
+                            transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
+                            transformOrigin: "center center",
+                            transition: isPanning ? 'none' : 'transform 0.2s ease-out',
                             padding: "100px",
                             minWidth: "max-content",
                             minHeight: "max-content",
@@ -976,6 +1263,7 @@ export default function VisualFlowBuilder() {
                         >
                         {/* SVG for connections */}
                         <svg
+                          id="flow-canvas-svg"
                           className="absolute top-0 left-0"
                           style={{
                             width: "100%",
@@ -1046,6 +1334,8 @@ export default function VisualFlowBuilder() {
                             const isSelected = selectedEdge?.from === edge.from && 
                                              selectedEdge?.to === edge.to && 
                                              selectedEdge?.label === edge.label;
+                            const edgeKey = `${edge.from}-${edge.to}-${edge.label}`;
+                            const isHovered = hoveredEdge === edgeKey;
                             const isDecision = fromNode.type === "decision" || fromNode.childIds.length > 1;
                             
                             const statusLower = edge.label?.toLowerCase() || "";
@@ -1119,15 +1409,18 @@ export default function VisualFlowBuilder() {
                                   e.stopPropagation();
                                   handleEdgeClick(edge);
                                 }}
+                                onMouseEnter={() => setHoveredEdge(edgeKey)}
+                                onMouseLeave={() => setHoveredEdge(null)}
                               >
                                 <path
                                   d={pathD}
                                   stroke={strokeColor}
-                                  strokeWidth={isSelected ? 3 : 2}
+                                  strokeWidth={isSelected ? 4 : isHovered ? 3 : 2}
                                   fill="none"
                                   markerEnd={markerEnd}
-                                  opacity={isSelected ? 1 : 0.85}
+                                  opacity={isSelected || isHovered ? 1 : 0.85}
                                   strokeLinecap="round"
+                                  style={{ transition: 'all 0.2s ease' }}
                                 />
                                 {edge.label && edge.label.trim() !== "" && (
                                   <g>
@@ -1138,9 +1431,10 @@ export default function VisualFlowBuilder() {
                                       height={labelHeight}
                                       fill="white"
                                       stroke={strokeColor}
-                                      strokeWidth={isSelected ? 2.5 : 1.5}
+                                      strokeWidth={isSelected || isHovered ? 2.5 : 1.5}
                                       rx="8"
                                       filter="drop-shadow(0 2px 6px rgba(0,0,0,0.15))"
+                                      style={{ transition: 'all 0.2s ease' }}
                                     />
                                     <text
                                       x={(x1 + x2) / 2}
@@ -1163,29 +1457,51 @@ export default function VisualFlowBuilder() {
                         </svg>
 
                         {/* Nodes */}
-                        {nodes.map((node) => (
+                        {nodes
+                          .filter((node) => 
+                            !searchQuery || 
+                            node.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            node.doer?.toLowerCase().includes(searchQuery.toLowerCase())
+                          )
+                          .map((node) => {
+                            const isSearchMatch = searchQuery && (
+                              node.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                              node.doer?.toLowerCase().includes(searchQuery.toLowerCase())
+                            );
+                            
+                            return (
                           <div
                             key={node.id}
-                            className={`absolute border-2 rounded-lg shadow-md transition-all hover:shadow-lg ${getNodeColor(
+                            className={`absolute border-2 rounded-lg shadow-md transition-all ${getNodeColor(
                               node
                             )} ${
                               selectedNode?.id === node.id
-                                ? "ring-4 ring-primary ring-offset-2"
+                                ? "ring-4 ring-primary ring-offset-2 shadow-xl"
                                 : ""
+                            } ${
+                              hoveredNode === node.id
+                                ? "shadow-xl scale-105"
+                                : "hover:shadow-lg hover:scale-[1.02]"
                             } ${
                               draggingNode === node.id
                                 ? "cursor-grabbing opacity-75"
-                                : "cursor-grab hover:scale-105"
+                                : "cursor-grab"
+                            } ${
+                              isSearchMatch
+                                ? "ring-2 ring-yellow-400 ring-offset-1"
+                                : ""
                             }`}
                             style={{
                               left: node.x + 100,
                               top: node.y + 100,
                               width: "220px",
                               minHeight: "100px",
-                              zIndex: draggingNode === node.id ? 999 : 2,
+                              zIndex: draggingNode === node.id ? 999 : (selectedNode?.id === node.id ? 10 : 2),
                             }}
                             onClick={() => handleNodeClick(node)}
                             onMouseDown={(e) => handleMouseDown(e, node.id)}
+                            onMouseEnter={() => setHoveredNode(node.id)}
+                            onMouseLeave={() => setHoveredNode(null)}
                           >
                             <div className="p-4">
                               <div className="flex items-start space-x-2 mb-2">
@@ -1236,7 +1552,8 @@ export default function VisualFlowBuilder() {
                               )}
                             </div>
                           </div>
-                        ))}
+                        );
+                          })}
                         </div>
                       </div>
                     </div>
@@ -1491,7 +1808,15 @@ export default function VisualFlowBuilder() {
                 <Label>Next Task (To) *</Label>
                 <Input
                   value={newRule.nextTask}
-                  onChange={(e) => setNewRule({ ...newRule, nextTask: e.target.value })}
+                  onChange={(e) => {
+                    const newNextTask = e.target.value;
+                    // Clear formId if the new task name is already configured
+                    if (availableTasks.includes(newNextTask)) {
+                      setNewRule({ ...newRule, nextTask: newNextTask, formId: "" });
+                    } else {
+                      setNewRule({ ...newRule, nextTask: newNextTask });
+                    }
+                  }}
                   placeholder="Enter next task name"
                   list="task-suggestions"
                 />
@@ -1500,9 +1825,15 @@ export default function VisualFlowBuilder() {
                     <option key={task} value={task} />
                   ))}
                 </datalist>
-                <p className="text-xs text-gray-500 mt-1">
-                  Task that will be created after this condition
-                </p>
+                {availableTasks.includes(newRule.nextTask) ? (
+                  <p className="text-xs text-amber-600 mt-1">
+                    ⚠️ This task already exists - connecting to existing step
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Task that will be created after this condition
+                  </p>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1570,10 +1901,18 @@ export default function VisualFlowBuilder() {
                   value={newRule.formId}
                   onChange={(e) => handleFormIdChange(e.target.value)}
                   placeholder="e.g., f001, sales-form"
+                  disabled={availableTasks.includes(newRule.nextTask)}
+                  className={availableTasks.includes(newRule.nextTask) ? "bg-gray-100 cursor-not-allowed" : ""}
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  💡 Type complete Form ID - builder will auto-open after you finish typing
-                </p>
+                {availableTasks.includes(newRule.nextTask) ? (
+                  <p className="text-xs text-red-500 mt-1">
+                    🚫 Form ID is disabled - This task is already configured in another step
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-500 mt-1">
+                    💡 Type complete Form ID - builder will auto-open after you finish typing
+                  </p>
+                )}
               </div>
               <div>
                 <Label>Merge Condition (For Parallel Steps)</Label>
@@ -1599,12 +1938,16 @@ export default function VisualFlowBuilder() {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsAddRuleDialogOpen(false)}>
+              <Button variant="outline" onClick={() => setIsAddRuleDialogOpen(false)} disabled={createRuleMutation.isPending}>
                 Cancel
               </Button>
-              <Button onClick={handleSaveNewRule}>
-                <Save className="w-4 h-4 mr-2" />
-                Save Rule
+              <Button onClick={handleSaveNewRule} disabled={createRuleMutation.isPending}>
+                {createRuleMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4 mr-2" />
+                )}
+                {createRuleMutation.isPending ? "Saving..." : "Save Rule"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1765,12 +2108,16 @@ export default function VisualFlowBuilder() {
               </div>
             )}
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsEditRuleDialogOpen(false)}>
+              <Button variant="outline" onClick={() => setIsEditRuleDialogOpen(false)} disabled={updateRuleMutation.isPending}>
                 Cancel
               </Button>
-              <Button onClick={handleSaveEditRule}>
-                <Save className="w-4 h-4 mr-2" />
-                Update Rule
+              <Button onClick={handleSaveEditRule} disabled={updateRuleMutation.isPending}>
+                {updateRuleMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4 mr-2" />
+                )}
+                {updateRuleMutation.isPending ? "Updating..." : "Update Rule"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1905,6 +2252,101 @@ export default function VisualFlowBuilder() {
               >
                 <Save className="w-4 h-4 mr-2" />
                 Create Template
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Keyboard Shortcuts Help Dialog */}
+        <Dialog open={showKeyboardHelp} onOpenChange={setShowKeyboardHelp}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Keyboard className="w-5 h-5" />
+                Keyboard Shortcuts
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-3">
+                  <h4 className="font-semibold text-sm text-gray-700">Navigation</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600">Mouse Wheel + Ctrl</span>
+                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Zoom</kbd>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600">Middle Click Drag</span>
+                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Pan</kbd>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600">Shift + Left Drag</span>
+                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Pan</kbd>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-semibold text-sm text-gray-700">Zoom Controls</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600">Zoom In</span>
+                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Ctrl + +</kbd>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600">Zoom Out</span>
+                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Ctrl + -</kbd>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600">Reset Zoom</span>
+                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Ctrl + 0</kbd>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-semibold text-sm text-gray-700">Actions</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600">Delete Selected</span>
+                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Del / Backspace</kbd>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600">Deselect All</span>
+                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Esc</kbd>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600">Search Nodes</span>
+                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Ctrl + F</kbd>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-semibold text-sm text-gray-700">Help</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-600">Show Shortcuts</span>
+                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Shift + ?</kbd>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <h4 className="font-semibold text-sm text-blue-900 mb-2">💡 Pro Tips</h4>
+                <ul className="text-xs text-blue-700 space-y-1">
+                  <li>• Drag nodes to reposition them manually</li>
+                  <li>• Hold Ctrl while scrolling to zoom in/out smoothly</li>
+                  <li>• Use middle mouse button to pan around large flows</li>
+                  <li>• Click on edges to view and edit flow rules</li>
+                  <li>• Search for nodes by name or doer using Ctrl+F</li>
+                </ul>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setShowKeyboardHelp(false)}>
+                Got it!
               </Button>
             </DialogFooter>
           </DialogContent>

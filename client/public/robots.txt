@@ -1,19 +1,43 @@
-# robots.txt for Process Sutra
+# robots.txt for ProcessSutra
+# https://www.processsutra.com
+
 User-agent: *
 Allow: /
 
 # Sitemaps
 Sitemap: https://www.processsutra.com/sitemap.xml
 
-# Disallow admin areas
+# Allow important public pages
+Allow: /welcome
+Allow: /login
+Allow: /visual-flow-builder
+Allow: /analytics
+Allow: /tasks
+Allow: /flows
+Allow: /form-builder
+
+# Disallow admin and API areas
 Disallow: /admin
 Disallow: /api/
 Disallow: /*.json$
+Disallow: /user-management
+Disallow: /organization-settings
+Disallow: /settings
+Disallow: /profile
+Disallow: /nda-security
 
-# Allow important pages
-Allow: /welcome
-Allow: /login
-Allow: /dashboard
+# Disallow dynamic content that shouldn't be indexed
+Disallow: /*?*
+Disallow: /form-responses
+Disallow: /flow-data
+Disallow: /data-management
 
-# Crawl delay
+# Googlebot specific
+User-agent: Googlebot
+Allow: /
 Crawl-delay: 1
+
+# Bingbot specific  
+User-agent: Bingbot
+Allow: /
+Crawl-delay: 2
