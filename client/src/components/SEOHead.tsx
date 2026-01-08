@@ -12,9 +12,9 @@ interface SEOHeadProps {
 }
 
 const defaultMeta = {
-  title: 'ProcessSutra - Visual Workflow Builder & Business Process Automation',
-  description: 'Create powerful workflows visually with drag-and-drop. Automate business processes, track productivity in real-time, and scale your operations effortlessly.',
-  keywords: 'visual flow builder, workflow automation, business process management, BPM software, drag-and-drop workflow, process automation',
+  title: 'ProcessSutra - Business Workflow Builder & Automation Platform',
+  description: 'Create flow chart with drag-and-drop. Automate processes, track productivity in real-time, and scale operations effortlessly.',
+  keywords: 'FMS, Business Automation, Flowchart management tools, BAS Tool, CRM, Muxro, Jatin Gola, Business Simulator, Business Technology',
   siteUrl: 'https://www.processsutra.com',
   ogImage: 'https://www.processsutra.com/og-image.png',
 };
@@ -63,7 +63,7 @@ export default function SEOHead({
       <meta property="og:image" content={ogImage} />
       <meta property="og:site_name" content="ProcessSutra" />
       
-      {/* Twitter */}
+      {/* Twitter
       <meta name="twitter:card" content="summary_large_image" />
       <meta name="twitter:site" content="@MuxroTech" />
       <meta name="twitter:creator" content="@JatinGola" />
@@ -71,7 +71,7 @@ export default function SEOHead({
       <meta name="twitter:title" content={fullTitle} />
       <meta name="twitter:description" content={description} />
       <meta name="twitter:image" content={ogImage} />
-      <meta name="twitter:image:alt" content="ProcessSutra - Visual Workflow Builder" />
+      <meta name="twitter:image:alt" content="ProcessSutra - Visual Workflow Builder" /> */}
       
       {/* Structured Data */}
       {structuredData && (
