@@ -48,6 +48,8 @@ import { format } from "date-fns";
 import { useOrganizationCheck } from "@/hooks/useOrganizationCheck";
 import { useGoogleDriveCheck } from "@/hooks/useGoogleDriveCheck";
 import { useLocation } from "wouter";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Eye, X } from "lucide-react";
 
 export default function Analytics() {
   const { toast } = useToast();
@@ -61,11 +63,15 @@ export default function Analytics() {
   // Check Google Drive connection for admin users
   const { isConnected: isDriveConnected } = useGoogleDriveCheck();
   
+  // Selected user for drill-down view
+  const [selectedDoer, setSelectedDoer] = useState<{ email: string; name: string } | null>(null);
+  
   const [doerFilters, setDoerFilters] = useState({
     startDate: "",
     endDate: "",
     doerName: "",
     doerEmail: "",
+    performanceLevel: "", // 'excellent' (>=80), 'good' (60-79), 'needs-improvement' (<60)
   });
 
   // Reporting state
@@ -178,6 +184,20 @@ export default function Analytics() {
     gcTime: 10 * 60 * 1000, // 10 minutes
   });
 
+  // Admin-only: Individual doer weekly performance (for drill-down)
+  const { data: doerWeeklyData, isLoading: doerWeeklyLoading } = useQuery({
+    queryKey: ["/api/analytics/doer-weekly", selectedDoer?.email],
+    queryFn: async () => {
+      if (!selectedDoer?.email) return null;
+      const response = await fetch(`/api/analytics/doer-weekly/${encodeURIComponent(selectedDoer.email)}?weeks=12`);
+      if (!response.ok) throw new Error('Failed to fetch doer weekly data');
+      return response.json();
+    },
+    enabled: !!selectedDoer?.email && (user as any)?.role === 'admin',
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+  });
+
   const handleFilterChange = (key: string, value: string) => {
     setDoerFilters(prev => ({ ...prev, [key]: value }));
   };
@@ -251,6 +271,50 @@ export default function Analytics() {
     { name: 'Pending', value: Math.floor((metrics?.totalTasks || 0) * 0.4), color: '#F59E0B' },
     { name: 'Overdue', value: metrics?.overdueTasks || 0, color: '#EF4444' },
   ];
+
+  // Helper function to get performance color
+  const getPerformanceColor = (rate: number) => {
+    if (rate >= 80) return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+    if (rate >= 60) return 'bg-amber-100 text-amber-700 border-amber-200';
+    return 'bg-red-100 text-red-700 border-red-200';
+  };
+
+  // Helper function to get performance badge
+  const getPerformanceBadge = (rate: number) => {
+    if (rate >= 80) return { label: 'Excellent', color: 'bg-emerald-500' };
+    if (rate >= 60) return { label: 'Good', color: 'bg-amber-500' };
+    return { label: 'Needs Improvement', color: 'bg-red-500' };
+  };
+
+  // Clear filters function
+  const clearDoerFilters = () => {
+    setDoerFilters({
+      startDate: "",
+      endDate: "",
+      doerName: "",
+      doerEmail: "",
+      performanceLevel: "",
+    });
+  };
+
+  // Filter doers by performance level (client-side)
+  const filteredDoersPerformance = doersPerformance?.filter((doer: any) => {
+    if (!doerFilters.performanceLevel) return true;
+    if (doerFilters.performanceLevel === 'excellent') return doer.onTimeRate >= 80;
+    if (doerFilters.performanceLevel === 'good') return doer.onTimeRate >= 60 && doer.onTimeRate < 80;
+    if (doerFilters.performanceLevel === 'needs-improvement') return doer.onTimeRate < 60;
+    return true;
+  });
+
+  // Compute aggregate stats for filtered doers
+  const doersSummaryStats = filteredDoersPerformance?.reduce((acc: any, doer: any) => {
+    return {
+      totalUsers: acc.totalUsers + 1,
+      totalTasks: acc.totalTasks + (doer.totalTasks || 0),
+      totalCompleted: acc.totalCompleted + (doer.completedTasks || 0),
+      sumOnTimeRate: acc.sumOnTimeRate + (doer.onTimeRate || 0),
+    };
+  }, { totalUsers: 0, totalTasks: 0, totalCompleted: 0, sumOnTimeRate: 0 }) || { totalUsers: 0, totalTasks: 0, totalCompleted: 0, sumOnTimeRate: 0 };
 
   if (loading || !user) {
     return (
@@ -644,10 +708,23 @@ export default function Analytics() {
                   </CardHeader>
                   <CardContent className="pt-6">
                     {/* Filters */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-6 bg-gradient-to-br from-gray-50 to-blue-50 rounded-xl border border-gray-200">
-                      <div className="flex items-center gap-2 text-sm font-medium text-gray-700 md:col-span-4 mb-2">
-                        <Filter className="h-4 w-4 text-blue-600" />
-                        Filter Results
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6 p-6 bg-gradient-to-br from-gray-50 to-blue-50 rounded-xl border border-gray-200">
+                      <div className="flex items-center justify-between text-sm font-medium text-gray-700 sm:col-span-2 lg:col-span-5 mb-2">
+                        <div className="flex items-center gap-2">
+                          <Filter className="h-4 w-4 text-blue-600" />
+                          Filter Results
+                        </div>
+                        {(doerFilters.startDate || doerFilters.endDate || doerFilters.doerName || doerFilters.doerEmail || doerFilters.performanceLevel) && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={clearDoerFilters}
+                            className="text-gray-500 hover:text-gray-700"
+                          >
+                            <X className="h-4 w-4 mr-1" />
+                            Clear Filters
+                          </Button>
+                        )}
                       </div>
                       <div>
                         <Label htmlFor="startDate" className="text-gray-700 font-medium">Start Date</Label>
@@ -689,7 +766,57 @@ export default function Analytics() {
                           className="mt-1 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
+                      <div>
+                        <Label htmlFor="performanceLevel" className="text-gray-700 font-medium">Performance Level</Label>
+                        <select
+                          id="performanceLevel"
+                          className="w-full border border-gray-300 rounded-lg h-10 px-3 mt-1 focus:border-blue-500 focus:ring-blue-500 bg-white"
+                          value={doerFilters.performanceLevel}
+                          onChange={(e) => handleFilterChange('performanceLevel', e.target.value)}
+                        >
+                          <option value="">All Levels</option>
+                          <option value="excellent">Excellent (≥80%)</option>
+                          <option value="good">Good (60-79%)</option>
+                          <option value="needs-improvement">Needs Improvement (&lt;60%)</option>
+                        </select>
+                      </div>
                     </div>
+
+                    {/* Summary Stats Cards */}
+                    {filteredDoersPerformance && filteredDoersPerformance.length > 0 && (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Users className="h-4 w-4 text-purple-600" />
+                            <span className="text-sm text-gray-600">Total Users</span>
+                          </div>
+                          <div className="text-2xl font-bold text-purple-700">{doersSummaryStats.totalUsers}</div>
+                        </div>
+                        <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Target className="h-4 w-4 text-blue-600" />
+                            <span className="text-sm text-gray-600">Total Tasks</span>
+                          </div>
+                          <div className="text-2xl font-bold text-blue-700">{doersSummaryStats.totalTasks}</div>
+                        </div>
+                        <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
+                          <div className="flex items-center gap-2 mb-2">
+                            <CheckCircle className="h-4 w-4 text-emerald-600" />
+                            <span className="text-sm text-gray-600">Total Completed</span>
+                          </div>
+                          <div className="text-2xl font-bold text-emerald-700">{doersSummaryStats.totalCompleted}</div>
+                        </div>
+                        <div className="bg-amber-50 rounded-xl p-4 border border-amber-100">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Clock className="h-4 w-4 text-amber-600" />
+                            <span className="text-sm text-gray-600">Avg On-Time Rate</span>
+                          </div>
+                          <div className="text-2xl font-bold text-amber-700">
+                            {doersSummaryStats.totalUsers > 0 ? Math.round(doersSummaryStats.sumOnTimeRate / doersSummaryStats.totalUsers) : 0}%
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Doers Performance Table */}
                     {doersLoading ? (
@@ -710,10 +837,11 @@ export default function Analytics() {
                               <TableHead className="font-semibold text-gray-700">On-Time Rate</TableHead>
                               <TableHead className="font-semibold text-gray-700">Avg Days</TableHead>
                               <TableHead className="font-semibold text-gray-700">Last Task</TableHead>
+                              <TableHead className="font-semibold text-gray-700 text-center">Actions</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {doersPerformance?.map((doer: any, index: number) => (
+                            {filteredDoersPerformance?.map((doer: any, index: number) => (
                               <TableRow key={index} className="hover:bg-purple-50/50 transition-colors">
                                 <TableCell>
                                   <div className="flex items-center gap-3">
@@ -752,10 +880,21 @@ export default function Analytics() {
                                     {doer.lastTaskDate ? format(new Date(doer.lastTaskDate), "MMM dd, yyyy") : 'Never'}
                                   </span>
                                 </TableCell>
+                                <TableCell className="text-center">
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm"
+                                    onClick={() => setSelectedDoer({ email: doer.doerEmail, name: doer.doerName })}
+                                    className="hover:bg-purple-100"
+                                  >
+                                    <Eye className="h-4 w-4 mr-1 text-purple-600" />
+                                    View
+                                  </Button>
+                                </TableCell>
                               </TableRow>
                             )) || (
                               <TableRow>
-                                <TableCell colSpan={6} className="text-center py-16">
+                                <TableCell colSpan={7} className="text-center py-16">
                                   <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
                                     <Users className="h-8 w-8 text-gray-400" />
                                   </div>
@@ -845,37 +984,34 @@ export default function Analytics() {
                     </div>
                   </div>
 
-                  {/* KPI Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                    <div className="transform transition-all duration-300 hover:scale-105">
-                      <MetricCard 
-                        title="Total Tasks" 
-                        value={report?.metrics?.totalTasks || 0} 
-                        icon={<Target className="text-blue-600" />} 
-                      />
+                  {/* Filtered Report Summary - Compact inline stats instead of duplicate cards */}
+                  {(reportFilters.system || reportFilters.taskName || reportFilters.startDate || reportFilters.endDate) && (
+                    <div className="flex flex-wrap gap-4 mb-6 p-4 bg-white/60 rounded-xl border border-gray-200">
+                      <div className="flex items-center gap-2">
+                        <Target className="h-4 w-4 text-blue-600" />
+                        <span className="text-sm text-gray-600">Tasks:</span>
+                        <span className="font-semibold text-gray-800">{report?.metrics?.totalTasks || 0}</span>
+                      </div>
+                      <div className="w-px h-6 bg-gray-300" />
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="h-4 w-4 text-emerald-600" />
+                        <span className="text-sm text-gray-600">Completion:</span>
+                        <span className="font-semibold text-gray-800">{report?.metrics?.completionRate || 0}%</span>
+                      </div>
+                      <div className="w-px h-6 bg-gray-300" />
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-4 w-4 text-amber-600" />
+                        <span className="text-sm text-gray-600">On-Time:</span>
+                        <span className="font-semibold text-gray-800">{report?.metrics?.onTimeRate || 0}%</span>
+                      </div>
+                      <div className="w-px h-6 bg-gray-300" />
+                      <div className="flex items-center gap-2">
+                        <Zap className="h-4 w-4 text-violet-600" />
+                        <span className="text-sm text-gray-600">Avg:</span>
+                        <span className="font-semibold text-gray-800">{report?.metrics?.avgCompletionDays || 0} days</span>
+                      </div>
                     </div>
-                    <div className="transform transition-all duration-300 hover:scale-105">
-                      <MetricCard 
-                        title="Completion Rate" 
-                        value={`${report?.metrics?.completionRate || 0}%`} 
-                        icon={<CheckCircle className="text-emerald-600" />} 
-                      />
-                    </div>
-                    <div className="transform transition-all duration-300 hover:scale-105">
-                      <MetricCard 
-                        title="On-Time Rate" 
-                        value={`${report?.metrics?.onTimeRate || 0}%`} 
-                        icon={<Clock className="text-amber-600" />} 
-                      />
-                    </div>
-                    <div className="transform transition-all duration-300 hover:scale-105">
-                      <MetricCard 
-                        title="Avg Completion" 
-                        value={`${report?.metrics?.avgCompletionDays || 0} days`} 
-                        icon={<Zap className="text-violet-600" />} 
-                      />
-                    </div>
-                  </div>
+                  )}
 
                   {/* Timeseries Chart */}
                   <div className="bg-gradient-to-br from-gray-50 to-cyan-50 rounded-xl p-6 border border-gray-200">
@@ -959,6 +1095,171 @@ export default function Analytics() {
             </TabsContent>
           </Tabs>
         </div>
+
+        {/* User Performance Drill-Down Dialog */}
+        <Dialog open={!!selectedDoer} onOpenChange={(open) => !open && setSelectedDoer(null)}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="border-b pb-4">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center text-white text-xl font-bold">
+                  {selectedDoer?.name?.charAt(0).toUpperCase() || '?'}
+                </div>
+                <div>
+                  <DialogTitle className="text-xl text-gray-800">{selectedDoer?.name || 'User'} Performance</DialogTitle>
+                  <DialogDescription className="text-gray-500">{selectedDoer?.email}</DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+            
+            {/* User Performance Summary - Quick Stats */}
+            {doersPerformance && selectedDoer && (() => {
+              const doerData = doersPerformance.find((d: any) => d.doerEmail === selectedDoer.email);
+              if (!doerData) return null;
+              const perfBadge = getPerformanceBadge(doerData.onTimeRate);
+              
+              return (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 my-6">
+                  <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Target className="h-4 w-4 text-blue-600" />
+                      <span className="text-sm text-gray-600">Total Tasks</span>
+                    </div>
+                    <div className="text-2xl font-bold text-blue-700">{doerData.totalTasks}</div>
+                  </div>
+                  <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
+                    <div className="flex items-center gap-2 mb-2">
+                      <CheckCircle className="h-4 w-4 text-emerald-600" />
+                      <span className="text-sm text-gray-600">Completed</span>
+                    </div>
+                    <div className="text-2xl font-bold text-emerald-700">{doerData.completedTasks}</div>
+                  </div>
+                  <div className="bg-amber-50 rounded-xl p-4 border border-amber-100">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Clock className="h-4 w-4 text-amber-600" />
+                      <span className="text-sm text-gray-600">On-Time Rate</span>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-2xl font-bold text-amber-700">{doerData.onTimeRate}%</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${perfBadge.color} text-white`}>{perfBadge.label}</span>
+                    </div>
+                  </div>
+                  <div className="bg-violet-50 rounded-xl p-4 border border-violet-100">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Zap className="h-4 w-4 text-violet-600" />
+                      <span className="text-sm text-gray-600">Avg Days</span>
+                    </div>
+                    <div className="text-2xl font-bold text-violet-700">{doerData.avgCompletionDays.toFixed(1)}</div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Weekly Performance Chart */}
+            <div className="mt-4">
+              <h4 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-purple-600" />
+                Weekly Performance Trend (Last 12 Weeks)
+              </h4>
+              
+              {doerWeeklyLoading ? (
+                <div className="flex items-center justify-center p-12">
+                  <div className="relative">
+                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-purple-200 border-t-purple-600"></div>
+                    <Activity className="h-6 w-6 text-purple-600 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" />
+                  </div>
+                </div>
+              ) : doerWeeklyData && doerWeeklyData.length > 0 ? (
+                <div className="space-y-6">
+                  {/* Performance Chart */}
+                  <div className="h-64 bg-gradient-to-br from-gray-50 to-purple-50 rounded-xl p-4 border border-gray-100">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={doerWeeklyData}>
+                        <defs>
+                          <linearGradient id="userColorOnTime" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.4}/>
+                          </linearGradient>
+                          <linearGradient id="userColorCompleted" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor="#10B981" stopOpacity={0.4}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                        <XAxis 
+                          dataKey="weekStart" 
+                          tickFormatter={(value) => format(new Date(value), "MMM dd")}
+                          tick={{ fill: '#6B7280' }}
+                        />
+                        <YAxis tick={{ fill: '#6B7280' }} />
+                        <Tooltip 
+                          labelFormatter={(value) => `Week of ${format(new Date(value), "MMM dd, yyyy")}`}
+                          contentStyle={{
+                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                            border: 'none',
+                            borderRadius: '12px',
+                            boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                          }}
+                        />
+                        <Legend />
+                        <Bar dataKey="onTimeRate" fill="url(#userColorOnTime)" name="On-Time Rate %" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="completedTasks" fill="url(#userColorCompleted)" name="Completed Tasks" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Weekly Data Table */}
+                  <div className="rounded-xl border border-gray-200 overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gradient-to-r from-gray-50 to-purple-50">
+                          <TableHead className="font-semibold text-gray-700">Week Period</TableHead>
+                          <TableHead className="font-semibold text-gray-700">Total</TableHead>
+                          <TableHead className="font-semibold text-gray-700">Completed</TableHead>
+                          <TableHead className="font-semibold text-gray-700">On-Time</TableHead>
+                          <TableHead className="font-semibold text-gray-700">Avg Days</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {doerWeeklyData.slice(0, 8).map((week: any, index: number) => (
+                          <TableRow key={index} className="hover:bg-purple-50/50">
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-2">
+                                <Calendar className="h-4 w-4 text-purple-600" />
+                                {format(new Date(week.weekStart), "MMM dd")} - {format(new Date(week.weekEnd), "MMM dd")}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-700 font-medium">{week.totalTasks}</span>
+                            </TableCell>
+                            <TableCell>
+                              <span className="px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium">{week.completedTasks}</span>
+                            </TableCell>
+                            <TableCell>
+                              <Badge 
+                                variant={week.onTimeRate >= 80 ? "default" : week.onTimeRate >= 60 ? "secondary" : "destructive"}
+                                className={week.onTimeRate >= 80 ? "bg-emerald-500" : ""}
+                              >
+                                {week.onTimeRate}%
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <span className="font-semibold text-gray-700">{week.avgCompletionDays?.toFixed(1) || 0}</span>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-12 bg-gray-50 rounded-xl border border-gray-200">
+                  <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500">No weekly performance data available for this user</p>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );
