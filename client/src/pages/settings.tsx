@@ -6,7 +6,6 @@ import {
   Users,
   Building2,
   Activity,
-  BookOpen,
   Shield,
   TrendingUp,
   CreditCard,
@@ -69,12 +68,7 @@ const settingsSections: { title: string; items: SettingCard[] }[] = [
         href: "/api-startflow",
         icon: Activity,
       },
-      {
-        name: "API Documentation",
-        description: "View comprehensive API documentation and examples",
-        href: "/api-documentation",
-        icon: BookOpen,
-      },
+
     ],
   },
   {

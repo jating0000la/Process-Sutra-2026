@@ -22,7 +22,6 @@ import {
   Building2,
   Database,
   Activity,
-  BookOpen,
   Shield,
   TrendingUp,
   CreditCard,
@@ -169,10 +168,7 @@ export default function Header({ title, description, actions }: HeaderProps) {
                         <Activity className="mr-2 h-4 w-4" />
                         Start Flow API
                       </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => setLocation("/api-documentation")}>
-                        <BookOpen className="mr-2 h-4 w-4" />
-                        API Documentation
-                      </DropdownMenuItem>
+
                       
                       <DropdownMenuSeparator />
                       <DropdownMenuLabel>Security & Compliance</DropdownMenuLabel>

@@ -25,7 +25,6 @@ import Profile from "@/pages/profile";
 import Settings from "@/pages/settings";
 import { useNotifications } from "@/hooks/useNotifications";
 import ApiStartFlow from "@/pages/api-startflow";
-import ApiDocumentation from "@/pages/api-documentation";
 import OrganizationControl from "@/pages/organization-control";
 
 import NDASecurityPage from "@/pages/nda-security";
@@ -149,11 +148,7 @@ function Router() {
               <ApiStartFlow />
             </ProtectedRoute>
           </Route>
-          <Route path="/api-documentation">
-            <ProtectedRoute requireAdmin>
-              <ApiDocumentation />
-            </ProtectedRoute>
-          </Route>
+
 
           <Route path="/nda-security">
             <ProtectedRoute requireAdmin>
