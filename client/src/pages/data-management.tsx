@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/app-layout";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Download,
   Trash2,
@@ -10,9 +11,22 @@ import {
   CheckCircle,
   XCircle,
   Loader2,
+  BarChart3,
+  Users,
+  GitBranch,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+
+interface DataCounts {
+  flows: number;
+  forms: number;
+  formTemplates: number;
+  tasks: number;
+  users: number;
+  flowRules: number;
+}
 
 export default function DataManagement() {
   const { dbUser } = useAuth();
@@ -24,6 +38,17 @@ export default function DataManagement() {
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   const isAdmin = dbUser?.role === "admin";
+
+  // Fetch data counts
+  const { data: counts, isLoading: countsLoading } = useQuery<DataCounts>({
+    queryKey: ["/api/data-counts"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/data-counts");
+      return res.json();
+    },
+    enabled: isAdmin,
+    staleTime: 60_000,
+  });
 
   if (!isAdmin) {
     return (
@@ -42,36 +67,53 @@ export default function DataManagement() {
       id: "flows",
       name: "Flow Data",
       description: "Export flow instances and execution history to CSV or delete permanently",
-      icon: Database,
-      color: "blue",
+      icon: GitBranch,
+      bgColor: "bg-blue-50",
+      textColor: "text-blue-600",
+      count: counts?.flows ?? null,
+      countLabel: "flows",
     },
     {
       id: "forms",
       name: "Form Submissions",
-      description: "Export form responses as ZIP with multiple CSV files (one per form) or delete permanently",
+      description: "Export Quick Form responses as ZIP with multiple CSV files (one per form) or delete permanently",
       icon: FileText,
-      color: "green",
+      bgColor: "bg-green-50",
+      textColor: "text-green-600",
+      count: counts?.forms ?? null,
+      countLabel: "submissions",
+      extraCount: counts?.formTemplates ?? null,
+      extraLabel: "form templates",
     },
     {
       id: "tasks",
       name: "Task Data",
       description: "Export task records to CSV or delete all task history permanently",
       icon: CheckCircle,
-      color: "purple",
+      bgColor: "bg-purple-50",
+      textColor: "text-purple-600",
+      count: counts?.tasks ?? null,
+      countLabel: "tasks",
     },
     {
       id: "files",
       name: "Uploaded Files",
       description: "Download all uploaded files and form submissions as ZIP archive or delete permanently",
-      icon: FileText,
-      color: "indigo",
+      icon: Database,
+      bgColor: "bg-indigo-50",
+      textColor: "text-indigo-600",
+      count: null,
+      countLabel: "files in Google Drive",
     },
     {
       id: "users",
       name: "User Data",
       description: "Export user information to CSV (deletion requires individual user removal)",
-      icon: Database,
-      color: "orange",
+      icon: Users,
+      bgColor: "bg-orange-50",
+      textColor: "text-orange-600",
+      count: counts?.users ?? null,
+      countLabel: "users",
       deleteDisabled: true,
     },
   ];
@@ -79,12 +121,10 @@ export default function DataManagement() {
   const handleExport = async (categoryId: string, categoryName: string) => {
     setExportLoading(categoryId);
     try {
-      // Determine file extension based on category
       const isZipCategory = categoryId === 'files' || categoryId === 'forms';
       const fileExtension = isZipCategory ? 'zip' : 'csv';
       const format = isZipCategory ? '' : '?format=csv';
-      
-      // Fetch data
+
       const response = await fetch(`/api/export/${categoryId}${format}`, {
         method: "GET",
         credentials: "include",
@@ -144,13 +184,14 @@ export default function DataManagement() {
         title: "Delete Successful",
         description: `${categoryName} has been permanently deleted.`,
       });
-      
-      // Invalidate all relevant queries to force refresh
-      queryClient.invalidateQueries({ queryKey: ['/api/mongo/form-responses'] });
+
+      // Invalidate all relevant queries
+      queryClient.invalidateQueries({ queryKey: ['/api/data-counts'] });
       queryClient.invalidateQueries({ queryKey: ['/api/quick-forms'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/quick-forms/responses'] });
       queryClient.invalidateQueries({ queryKey: ['/api/flows'] });
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
-      
+
       setDeleteConfirm(null);
       setDeleteInput("");
     } catch (error) {
@@ -164,12 +205,58 @@ export default function DataManagement() {
     }
   };
 
+  const formatCount = (n: number) => {
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+    return n.toString();
+  };
+
   return (
     <AppLayout
       title="Data Management"
       description="Export or delete your organization's data"
     >
       <div className="max-w-6xl mx-auto space-y-6">
+        {/* Summary Cards */}
+        {counts && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="bg-white border border-gray-200 rounded-lg p-4 text-center">
+              <div className="flex items-center justify-center mb-2">
+                <GitBranch className="h-5 w-5 text-blue-500" />
+              </div>
+              <p className="text-2xl font-bold text-gray-900">{formatCount(counts.flows)}</p>
+              <p className="text-xs text-gray-500">Flows</p>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-lg p-4 text-center">
+              <div className="flex items-center justify-center mb-2">
+                <FileText className="h-5 w-5 text-green-500" />
+              </div>
+              <p className="text-2xl font-bold text-gray-900">{formatCount(counts.forms)}</p>
+              <p className="text-xs text-gray-500">Form Submissions</p>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-lg p-4 text-center">
+              <div className="flex items-center justify-center mb-2">
+                <CheckCircle className="h-5 w-5 text-purple-500" />
+              </div>
+              <p className="text-2xl font-bold text-gray-900">{formatCount(counts.tasks)}</p>
+              <p className="text-xs text-gray-500">Tasks</p>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-lg p-4 text-center">
+              <div className="flex items-center justify-center mb-2">
+                <Users className="h-5 w-5 text-orange-500" />
+              </div>
+              <p className="text-2xl font-bold text-gray-900">{formatCount(counts.users)}</p>
+              <p className="text-xs text-gray-500">Users</p>
+            </div>
+          </div>
+        )}
+
+        {countsLoading && (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="h-5 w-5 animate-spin text-gray-400 mr-2" />
+            <span className="text-sm text-gray-500">Loading data summary...</span>
+          </div>
+        )}
+
         {/* Warning Banner */}
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <div className="flex items-start">
@@ -201,12 +288,8 @@ export default function DataManagement() {
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-start space-x-3">
-                    <div
-                      className={`bg-${category.color}-50 p-3 rounded-lg flex-shrink-0`}
-                    >
-                      <IconComponent
-                        className={`h-6 w-6 text-${category.color}-600`}
-                      />
+                    <div className={`${category.bgColor} p-3 rounded-lg flex-shrink-0`}>
+                      <IconComponent className={`h-6 w-6 ${category.textColor}`} />
                     </div>
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900">
@@ -219,8 +302,27 @@ export default function DataManagement() {
                   </div>
                 </div>
 
+                {/* Record count badge */}
+                <div className="flex items-center gap-2 mb-4">
+                  {category.count !== null ? (
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${category.bgColor} ${category.textColor}`}>
+                      <BarChart3 className="h-3 w-3 mr-1" />
+                      {formatCount(category.count)} {category.countLabel}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                      {category.countLabel}
+                    </span>
+                  )}
+                  {(category as any).extraCount != null && (
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${category.bgColor} ${category.textColor}`}>
+                      {formatCount((category as any).extraCount)} {(category as any).extraLabel}
+                    </span>
+                  )}
+                </div>
+
                 {!showDeleteConfirm ? (
-                  <div className="flex items-center space-x-3 mt-4">
+                  <div className="flex items-center space-x-3">
                     <button
                       onClick={() => handleExport(category.id, category.name)}
                       disabled={isExporting}
@@ -241,7 +343,7 @@ export default function DataManagement() {
 
                     <button
                       onClick={() => setDeleteConfirm(category.id)}
-                      disabled={category.deleteDisabled}
+                      disabled={(category as any).deleteDisabled}
                       className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-red-300 rounded-lg text-sm font-medium text-red-700 bg-white hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       <Trash2 className="h-4 w-4 mr-2" />
@@ -249,7 +351,7 @@ export default function DataManagement() {
                     </button>
                   </div>
                 ) : (
-                  <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
                     <div className="flex items-start mb-3">
                       <AlertTriangle className="h-5 w-5 text-red-600 mr-2 flex-shrink-0 mt-0.5" />
                       <div>
@@ -308,7 +410,7 @@ export default function DataManagement() {
                   </div>
                 )}
 
-                {category.deleteDisabled && (
+                {(category as any).deleteDisabled && (
                   <p className="text-xs text-gray-500 mt-2">
                     * User data can only be deleted by removing individual users from
                     User Management
@@ -328,8 +430,14 @@ export default function DataManagement() {
             <div className="flex items-start">
               <CheckCircle className="h-4 w-4 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
               <span>
-                Exported data is provided in CSV format for easy import into Excel,
+                Flow and task data is exported in CSV format for easy import into Excel,
                 Google Sheets, or other tools
+              </span>
+            </div>
+            <div className="flex items-start">
+              <CheckCircle className="h-4 w-4 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
+              <span>
+                Form submissions are exported as ZIP archives containing one CSV file per form template
               </span>
             </div>
             <div className="flex items-start">
@@ -341,14 +449,7 @@ export default function DataManagement() {
             <div className="flex items-start">
               <CheckCircle className="h-4 w-4 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
               <span>
-                Data deletion removes all associated records, including history and
-                attachments
-              </span>
-            </div>
-            <div className="flex items-start">
-              <CheckCircle className="h-4 w-4 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
-              <span>
-                For data retention compliance, consider exporting data regularly
+                Data deletion removes all associated records — ensure you have backups before proceeding
               </span>
             </div>
           </div>

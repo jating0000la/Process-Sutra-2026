@@ -52,9 +52,9 @@ export async function getFlowStats(organizationId: string, thisMonthStart: Date,
 export async function getFormStats(organizationId: string, thisMonthStart: Date, lastMonthStart: Date, lastMonthEnd: Date) {
   const col = await getQuickFormResponsesCollection();
   const [total_forms, month_forms, last_month_forms] = await Promise.all([
-    col.countDocuments({ organizationId }),
-    col.countDocuments({ organizationId, createdAt: { $gte: thisMonthStart } }),
-    col.countDocuments({ organizationId, createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd } }),
+    col.countDocuments({ orgId: organizationId }),
+    col.countDocuments({ orgId: organizationId, createdAt: { $gte: thisMonthStart } }),
+    col.countDocuments({ orgId: organizationId, createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd } }),
   ]);
   return { total_forms, month_forms, last_month_forms };
 }
@@ -65,7 +65,7 @@ export async function getFormStats(organizationId: string, thisMonthStart: Date,
 export async function getFormsByType(organizationId: string) {
   const col = await getQuickFormResponsesCollection();
   const pipeline = [
-    { $match: { organizationId } },
+    { $match: { orgId: organizationId } },
     { $group: { _id: "$formId", count: { $sum: 1 } } },
   ];
   const rows = await col.aggregate(pipeline).toArray();
@@ -115,7 +115,7 @@ export async function getDailyTrends(organizationId: string) {
 
   const col = await getQuickFormResponsesCollection();
   const formPipeline = [
-    { $match: { organizationId, createdAt: { $gte: thirtyDaysAgo } } },
+    { $match: { orgId: organizationId, createdAt: { $gte: thirtyDaysAgo } } },
     {
       $group: {
         _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
@@ -174,7 +174,7 @@ export async function getFlowsBySystem(organizationId: string) {
 export async function getTopForms(organizationId: string, limit: number = 10) {
   const col = await getQuickFormResponsesCollection();
   const pipeline = [
-    { $match: { organizationId } },
+    { $match: { orgId: organizationId } },
     { $group: { _id: "$formId", count: { $sum: 1 } } },
     { $sort: { count: -1 } },
     { $limit: limit },

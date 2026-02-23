@@ -448,46 +448,7 @@ export class DatabaseStorage implements IStorage {
     
     const allTasks = await db.select().from(tasks).where(and(...conditions)).orderBy(desc(tasks.createdAt));
     
-    // For each task, get the first form data from its flow (same enrichment as getTasks)
-    const enrichedTasks = await Promise.all(
-      allTasks.map(async (task) => {
-        try {
-          // Get all tasks in this flow
-          const flowTasks = await db
-            .select()
-            .from(tasks)
-            .where(eq(tasks.flowId, task.flowId))
-            .orderBy(asc(tasks.createdAt));
-
-          // Get the first task
-          const firstTask = flowTasks[0];
-          
-          if (firstTask) {
-            // Get form response for the first task
-            const firstFormResponse = await db
-              .select()
-              .from(formResponses)
-              .where(eq(formResponses.taskId, firstTask.id))
-              .limit(1);
-
-            if (firstFormResponse.length > 0) {
-              return {
-                ...task,
-                // Preserve original initial data from API; fallback to first form response only if missing
-                flowInitialFormData: task.flowInitialFormData ?? firstFormResponse[0].formData
-              };
-            }
-          }
-          
-          return task;
-        } catch (error) {
-          console.error(`Error enriching task ${task.id} with flow data:`, error);
-          return task;
-        }
-      })
-    );
-    
-    return enrichedTasks;
+    return allTasks;
   }
 
   async getUserTasksInOrganization(userEmail: string, organizationId: string, status?: string): Promise<Task[]> {
@@ -502,46 +463,7 @@ export class DatabaseStorage implements IStorage {
     
     const allTasks = await db.select().from(tasks).where(and(...conditions)).orderBy(desc(tasks.createdAt));
     
-    // For each task, get the first form data from its flow (same enrichment as getTasks)
-    const enrichedTasks = await Promise.all(
-      allTasks.map(async (task) => {
-        try {
-          // Get all tasks in this flow
-          const flowTasks = await db
-            .select()
-            .from(tasks)
-            .where(eq(tasks.flowId, task.flowId))
-            .orderBy(asc(tasks.createdAt));
-
-          // Get the first task
-          const firstTask = flowTasks[0];
-          
-          if (firstTask) {
-            // Get form response for the first task
-            const firstFormResponse = await db
-              .select()
-              .from(formResponses)
-              .where(eq(formResponses.taskId, firstTask.id))
-              .limit(1);
-
-            if (firstFormResponse.length > 0) {
-              return {
-                ...task,
-                // Preserve original initial data from API; fallback to first form response only if missing
-                flowInitialFormData: task.flowInitialFormData ?? firstFormResponse[0].formData
-              };
-            }
-          }
-          
-          return task;
-        } catch (error) {
-          console.error(`Error enriching task ${task.id} with flow data:`, error);
-          return task;
-        }
-      })
-    );
-    
-    return enrichedTasks;
+    return allTasks;
   }
 
   async getTasks(userId?: string, status?: string): Promise<Task[]> {
@@ -565,46 +487,7 @@ export class DatabaseStorage implements IStorage {
       ? await db.select().from(tasks).where(whereClause).orderBy(desc(tasks.createdAt))
       : await db.select().from(tasks).orderBy(desc(tasks.createdAt));
     
-    // For each task, get the first form data from its flow
-    const enrichedTasks = await Promise.all(
-      allTasks.map(async (task) => {
-        try {
-          // Get all tasks in this flow
-          const flowTasks = await db
-            .select()
-            .from(tasks)
-            .where(eq(tasks.flowId, task.flowId))
-            .orderBy(asc(tasks.createdAt));
-
-          // Get the first task
-          const firstTask = flowTasks[0];
-          
-          if (firstTask) {
-            // Get form response for the first task
-            const firstFormResponse = await db
-              .select()
-              .from(formResponses)
-              .where(eq(formResponses.taskId, firstTask.id))
-              .limit(1);
-
-            if (firstFormResponse.length > 0) {
-              return {
-                ...task,
-                // Preserve original initial data from API; fallback to first form response only if missing
-                flowInitialFormData: task.flowInitialFormData ?? firstFormResponse[0].formData
-              };
-            }
-          }
-          
-          return task;
-        } catch (error) {
-          console.error(`Error enriching task ${task.id} with flow data:`, error);
-          return task;
-        }
-      })
-    );
-    
-    return enrichedTasks;
+    return allTasks;
   }
 
   async getTaskById(id: string): Promise<Task | undefined> {

@@ -27,7 +27,7 @@ import * as crypto from 'crypto';
 import { sanitizeFlowRule, sanitizeFlowRules } from './inputSanitizer.js';
 import archiver from 'archiver';
 import { registerSuperAdminRoutes } from './superAdminRoutes.js';
-import { createQuickFormResponse, getQuickFormResponsesCollection } from './mongo/quickFormClient.js';
+import { createQuickFormResponse, getQuickFormResponsesCollection, getQuickFormTemplatesCollection } from './mongo/quickFormClient.js';
 
 
 // Analytics cache - 5 minute TTL to reduce database load
@@ -2087,6 +2087,41 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     return csvLines.join('\n');
   }
 
+  // Data Management: Get counts for each data category
+  app.get("/api/data-counts", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      const orgId = user.organizationId;
+
+      const [taskCount, flowRules, formResponsesCol, formTemplatesCol, usersList] = await Promise.all([
+        storage.getTasksByOrganization(orgId),
+        storage.getFlowRulesByOrganization(orgId),
+        getQuickFormResponsesCollection(),
+        getQuickFormTemplatesCollection(),
+        storage.getUsersByOrganization(orgId),
+      ]);
+
+      const [formResponseCount, formTemplateCount] = await Promise.all([
+        formResponsesCol.countDocuments({ orgId }),
+        formTemplatesCol.countDocuments({ orgId }),
+      ]);
+
+      const uniqueFlowIds = new Set(taskCount.map((t: any) => t.flowId));
+
+      res.json({
+        flows: uniqueFlowIds.size,
+        forms: formResponseCount,
+        formTemplates: formTemplateCount,
+        tasks: taskCount.length,
+        users: usersList.length,
+        flowRules: flowRules.length,
+      });
+    } catch (error) {
+      console.error("Error fetching data counts:", error);
+      res.status(500).json({ message: "Failed to fetch data counts" });
+    }
+  });
+
   // Data Management: Export endpoints by category (Organization-specific, Admin only)
   app.get("/api/export/:category", exportLimiter, isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
@@ -2361,18 +2396,11 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           break;
           
         case 'forms':
-          // Delete all form submissions from MongoDB
+          // Delete all form submissions from MongoDB (Quick Forms)
           try {
-            const { MongoClient } = await import('mongodb');
-            const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/processSutra';
-            const client = new MongoClient(mongoUri);
-            await client.connect();
-            const database = client.db();
-            const col = database.collection('formResponses');
-            
-            const deleteResult = await col.deleteMany({ organizationId: user.organizationId });
+            const respCol = await getQuickFormResponsesCollection();
+            const deleteResult = await respCol.deleteMany({ orgId: user.organizationId });
             deletedCount = deleteResult.deletedCount || 0;
-            await client.close();
             message = `Successfully deleted ${deletedCount} form submissions`;
           } catch (mongoError) {
             console.error("MongoDB deletion error:", mongoError);
@@ -3834,7 +3862,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
         storage.getUsersByOrganization(organizationId),
         storage.getTasksByOrganization(organizationId),
         storage.getFlowRulesByOrganization(organizationId),
-        getQuickFormResponsesCollection().then(col => col.find({ organizationId }).toArray()),
+        getQuickFormResponsesCollection().then(col => col.find({ orgId: organizationId }).toArray()),
         storage.getOrganizationLoginLogs(organizationId),
         storage.getOrganizationDevices(organizationId)
       ]);

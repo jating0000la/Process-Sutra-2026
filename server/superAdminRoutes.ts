@@ -211,7 +211,7 @@ export function registerSuperAdminRoutes(
         getQuickFormTemplatesByOrg(organizationId),
       ]);
       const responsesCol = await getQuickFormResponsesCollection();
-      const formResponses = await responsesCol.find({ organizationId }).toArray();
+      const formResponses = await responsesCol.find({ orgId: organizationId }).toArray();
 
       const archiveData = {
         organization,
@@ -356,7 +356,7 @@ export function registerSuperAdminRoutes(
           const users = await storage.getUsersByOrganization(org.id);
           const tasks = await storage.getTasksByOrganization(org.id);
           const responsesCol = await getQuickFormResponsesCollection();
-          const responses = await responsesCol.find({ organizationId: org.id }).toArray();
+          const responses = await responsesCol.find({ orgId: org.id }).toArray();
           
           // Calculate current usage
           const currentUsers = users.length;
