@@ -125,12 +125,6 @@ export const pageSEO = {
       }
     }
   },
-  flows: {
-    title: 'Workflow Management',
-    description: 'View and manage all your business workflows. Monitor flow status, track progress, and optimize your business processes.',
-    keywords: 'workflow management, business flows, process tracking, workflow status, flow monitoring',
-    canonical: '/flows',
-  },
   formBuilder: {
     title: 'Form Builder - Create Custom Forms',
     description: 'Build custom forms for your workflows with our drag-and-drop form builder. Create surveys, data collection forms, and more.',

@@ -14,7 +14,6 @@ import LandingLogin from "@/pages/landing-login";
 
 // import Dashboard from "@/pages/dashboard";
 import Tasks from "@/pages/tasks";
-import Flows from "@/pages/flows";
 import Analytics from "@/pages/analytics";
 import TATConfig from "@/pages/tat-config";
 import FlowData from "@/pages/flow-data";
@@ -98,11 +97,6 @@ function Router() {
           <Route path="/profile" component={Profile} />
           
           {/* Admin-only routes */}
-          <Route path="/flows">
-            <ProtectedRoute requireAdmin>
-              <Flows />
-            </ProtectedRoute>
-          </Route>
           <Route path="/tat-config">
             <ProtectedRoute requireAdmin>
               <TATConfig />
