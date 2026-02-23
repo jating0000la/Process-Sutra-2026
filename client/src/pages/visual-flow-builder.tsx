@@ -1,23 +1,35 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import Header from "@/components/header";
-import Sidebar from "@/components/sidebar";
+import { AppLayout } from "@/components/app-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { 
-  Play, 
-  CheckCircle, 
-  Clock, 
-  AlertTriangle, 
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Play,
+  CheckCircle,
+  Clock,
+  AlertTriangle,
   ArrowRight,
   Workflow,
   Filter,
@@ -32,8 +44,16 @@ import {
   Download,
   Search,
   Keyboard,
-  Loader2
+  Loader2,
+  Undo2,
+  Redo2,
+  Crosshair,
+  MoreVertical,
+  Copy,
+  GitBranch,
 } from "lucide-react";
+
+/* ═══════════════════ TYPES ═══════════════════ */
 
 interface FlowRule {
   id: string;
@@ -66,6 +86,7 @@ interface FlowChartNode {
   formId?: string;
   status?: string;
   mergeCondition?: "all" | "any";
+  transferable?: boolean;
 }
 
 interface FlowChartEdge {
@@ -75,212 +96,280 @@ interface FlowChartEdge {
   ruleId?: string;
 }
 
+interface UndoAction {
+  type: "create" | "update" | "delete";
+  ruleId: string;
+  before?: FlowRule;
+  after?: FlowRule;
+}
+
+/* ═══════════════════ HELPERS ═══════════════════ */
+
+const NODE_W = 220;
+const NODE_H = 100;
+const H_GAP = 100;
+const V_GAP = 160;
+
+function getNodeColor(node: FlowChartNode) {
+  switch (node.type) {
+    case "start":
+      return "bg-emerald-50 border-emerald-400 text-emerald-800";
+    case "end":
+      return "bg-rose-50 border-rose-400 text-rose-800";
+    case "decision":
+      return "bg-amber-50 border-amber-400 text-amber-800";
+    default:
+      return "bg-sky-50 border-sky-400 text-sky-800";
+  }
+}
+
+function getNodeIcon(node: FlowChartNode) {
+  switch (node.type) {
+    case "start":
+      return <Play className="w-4 h-4" />;
+    case "end":
+      return <CheckCircle className="w-4 h-4" />;
+    case "decision":
+      return <GitBranch className="w-4 h-4" />;
+    default:
+      return <Clock className="w-4 h-4" />;
+  }
+}
+
+/* ═══════════════════ COMPONENT ═══════════════════ */
+
 export default function VisualFlowBuilder() {
   const { toast } = useToast();
   const { user, isAuthenticated, isLoading, handleTokenExpired } = useAuth();
-  const [selectedSystem, setSelectedSystem] = useState<string>("");
-  const [zoomLevel, setZoomLevel] = useState<number>(1);
+
+  /* ── Selection & UI state ── */
+  const [selectedSystem, setSelectedSystem] = useState("");
+  const [zoomLevel, setZoomLevel] = useState(1);
   const [selectedNode, setSelectedNode] = useState<FlowChartNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<FlowChartEdge | null>(null);
-  const [isAddRuleDialogOpen, setIsAddRuleDialogOpen] = useState(false);
-  const [isEditRuleDialogOpen, setIsEditRuleDialogOpen] = useState(false);
-  const [isNewFlowDialogOpen, setIsNewFlowDialogOpen] = useState(false);
-  const [editingRule, setEditingRule] = useState<FlowRule | null>(null);
-  const [newFlowName, setNewFlowName] = useState("");
-  const [draggingNode, setDraggingNode] = useState<string | null>(null);
-  const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = useState(false);
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
-  const [isFormBuilderOpen, setIsFormBuilderOpen] = useState(false);
-  const [pendingFormId, setPendingFormId] = useState<string>("");
-  const [formIdDebounceTimer, setFormIdDebounceTimer] = useState<NodeJS.Timeout | null>(null);
+
+  /* ── Dialogs ── */
+  const [isAddRuleDialogOpen, setIsAddRuleDialogOpen] = useState(false);
+  const [isEditRuleDialogOpen, setIsEditRuleDialogOpen] = useState(false);
+  const [isNewFlowDialogOpen, setIsNewFlowDialogOpen] = useState(false);
+  const [editingRule, setEditingRule] = useState<FlowRule | null>(null);
+  const [inlineFormCreate, setInlineFormCreate] = useState<"add" | "edit" | null>(null);
+  const [newFlowName, setNewFlowName] = useState("");
+
+  /* ── Context menu ── */
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    node?: FlowChartNode;
+    edge?: FlowChartEdge;
+  } | null>(null);
+
+  /* ── Drag ── */
+  const [draggingNode, setDraggingNode] = useState<string | null>(null);
+  const [nodePositions, setNodePositions] = useState<
+    Record<string, { x: number; y: number }>
+  >({});
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
+  /* ── Undo / redo ── */
+  const [undoStack, setUndoStack] = useState<UndoAction[]>([]);
+  const [redoStack, setRedoStack] = useState<UndoAction[]>([]);
+
+  /* ── Inline form builder ── */
   const [formBuilderData, setFormBuilderData] = useState({
     formId: "",
     title: "",
     description: "",
   });
-  
-  // Form state for new rule
-  const [newRule, setNewRule] = useState<{
-    currentTask: string;
-    status: string;
-    nextTask: string;
-    tat: number;
-    tatType: "daytat" | "hourtat" | "beforetat" | "specifytat";
-    doer: string;
-    email: string;
-    formId: string;
-    mergeCondition: "all" | "any";
-  }>({
+
+  /* ── New rule form ── */
+  const [newRule, setNewRule] = useState({
     currentTask: "",
     status: "",
     nextTask: "",
     tat: 1,
-    tatType: "daytat",
+    tatType: "daytat" as
+      | "daytat"
+      | "hourtat"
+      | "beforetat"
+      | "specifytat",
     doer: "",
     email: "",
     formId: "",
-    mergeCondition: "all",
+    mergeCondition: "all" as "all" | "any",
+    transferable: false,
+    transferToEmails: "",
   });
 
-  // Redirect to login if not authenticated
+  const canvasRef = useRef<HTMLDivElement>(null);
+
+  /* ── Auth redirects ── */
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      handleTokenExpired();
-    }
+    if (!isLoading && !isAuthenticated) handleTokenExpired();
   }, [isAuthenticated, isLoading, handleTokenExpired]);
 
-  // Admin-only access check
-  if (isAuthenticated && user?.role !== 'admin') {
-    return (
-      <div className="flex h-screen items-center justify-center bg-neutral">
-        <Card className="max-w-md">
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-600 mb-4">
-              Only administrators can access the Visual Flow Builder.
-            </p>
-            <Button onClick={() => window.location.href = "/"}>
-              Return to Dashboard
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // Cleanup debounce timer on unmount
-  useEffect(() => {
-    return () => {
-      if (formIdDebounceTimer) {
-        clearTimeout(formIdDebounceTimer);
-      }
-    };
-  }, []); // Empty deps - only runs on unmount
-
-  // Fetch flow rules
-  const { data: flowRules = [], isLoading: rulesLoading } = useQuery<FlowRule[]>({
+  /* ── Queries ── */
+  const { data: flowRules = [] } = useQuery<FlowRule[]>({
     queryKey: ["/api/flow-rules"],
     enabled: isAuthenticated,
-    staleTime: 60000, // 1 minute - flow rules change less frequently
+    staleTime: 60000,
   });
 
-  // Fetch users for dropdown
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ["/api/users"],
     enabled: isAuthenticated,
-    staleTime: 120000, // 2 minutes - user list changes infrequently
+    staleTime: 120000,
   });
 
-  // Fetch quick form templates for dropdown
   const { data: quickFormTemplates = [] } = useQuery<any[]>({
     queryKey: ["/api/quick-forms"],
     enabled: isAuthenticated,
     staleTime: 120000,
   });
 
-  // Get unique systems
-  const availableSystems = Array.from(
-    new Set((flowRules as FlowRule[]).map((rule) => rule.system))
-  ).sort();
+  const availableSystems = useMemo(
+    () =>
+      Array.from(new Set(flowRules.map((r) => r.system))).sort(),
+    [flowRules]
+  );
 
-  // Auto-select first system if available
   useEffect(() => {
-    if (availableSystems.length > 0 && !selectedSystem) {
+    if (availableSystems.length > 0 && !selectedSystem)
       setSelectedSystem(availableSystems[0]);
-    }
   }, [availableSystems, selectedSystem]);
 
-  // Create rule mutation
+  /* ── Mutations ── */
   const createRuleMutation = useMutation({
     mutationFn: async (data: any) => {
-      await apiRequest("POST", "/api/flow-rules", {
+      const res = await apiRequest("POST", "/api/flow-rules", {
         ...data,
         system: selectedSystem,
         organizationId: user?.organizationId,
       });
+      return res.json();
     },
-    onSuccess: () => {
-      toast({ title: "Success", description: "Flow rule created successfully" });
+    onSuccess: (_data, variables) => {
+      pushUndo({ type: "create", ruleId: _data?.id || "", after: { ...variables, system: selectedSystem } as any });
+      toast({ title: "Rule created" });
       queryClient.invalidateQueries({ queryKey: ["/api/flow-rules"] });
       setIsAddRuleDialogOpen(false);
       resetNewRuleForm();
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to create flow rule", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to create rule", variant: "destructive" });
     },
   });
 
-  // Update rule mutation
   const updateRuleMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
       await apiRequest("PUT", `/api/flow-rules/${id}`, data);
     },
     onSuccess: () => {
-      toast({ title: "Success", description: "Flow rule updated successfully" });
+      toast({ title: "Rule updated" });
       queryClient.invalidateQueries({ queryKey: ["/api/flow-rules"] });
       setIsEditRuleDialogOpen(false);
       setEditingRule(null);
     },
-    onError: (error: any) => {
-      console.error("Update flow rule error:", error);
-      const errorMessage = error?.message || "Failed to update flow rule";
-      toast({ 
-        title: "Error", 
-        description: errorMessage, 
-        variant: "destructive" 
-      });
+    onError: (err: any) => {
+      toast({ title: "Error", description: err?.message || "Failed to update rule", variant: "destructive" });
     },
   });
 
-  // Delete rule mutation
   const deleteRuleMutation = useMutation({
     mutationFn: async (id: string) => {
       await apiRequest("DELETE", `/api/flow-rules/${id}`);
     },
     onSuccess: () => {
-      toast({ title: "Success", description: "Flow rule deleted successfully" });
+      toast({ title: "Rule deleted" });
       queryClient.invalidateQueries({ queryKey: ["/api/flow-rules"] });
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to delete flow rule", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to delete rule", variant: "destructive" });
     },
   });
 
-  // Create form template mutation (Quick Form — MongoDB)
   const createFormTemplateMutation = useMutation({
     mutationFn: async (data: any) => {
-      // Backend automatically adds organizationId from session
       await apiRequest("POST", "/api/quick-forms", {
         formId: data.formId,
         title: data.title,
         description: data.description || "",
-        fields: [], // Start with empty fields — admin can configure in Form Builder
+        fields: [{ label: "Notes", type: "text", required: false }],
       });
+      return data;
     },
-    onSuccess: () => {
-      toast({ 
-        title: "Success", 
-        description: "Form template created! You can now continue with your flow rule." 
-      });
-      setIsFormBuilderOpen(false);
+    onSuccess: (data) => {
+      toast({ title: "Form template created" });
+      // Auto-select the newly created form in whichever dialog triggered creation
+      if (inlineFormCreate === "add") {
+        setNewRule((prev) => ({ ...prev, formId: data.formId }));
+      } else if (inlineFormCreate === "edit" && editingRule) {
+        setEditingRule({ ...editingRule, formId: data.formId });
+      }
+      setInlineFormCreate(null);
       setFormBuilderData({ formId: "", title: "", description: "" });
       queryClient.invalidateQueries({ queryKey: ["/api/quick-forms"] });
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to create form template", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to create form", variant: "destructive" });
     },
   });
 
-  const resetNewRuleForm = () => {
+  /* ── Undo / Redo helpers ── */
+  const pushUndo = useCallback(
+    (action: UndoAction) => {
+      setUndoStack((prev) => [...prev.slice(-29), action]);
+      setRedoStack([]);
+    },
+    []
+  );
+
+  const handleUndo = useCallback(async () => {
+    const action = undoStack[undoStack.length - 1];
+    if (!action) return;
+    setUndoStack((prev) => prev.slice(0, -1));
+    setRedoStack((prev) => [...prev, action]);
+    try {
+      if (action.type === "create" && action.ruleId) {
+        await apiRequest("DELETE", `/api/flow-rules/${action.ruleId}`);
+      } else if (action.type === "delete" && action.before) {
+        await apiRequest("POST", "/api/flow-rules", action.before);
+      } else if (action.type === "update" && action.before) {
+        await apiRequest("PUT", `/api/flow-rules/${action.ruleId}`, action.before);
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/flow-rules"] });
+      toast({ title: "Undone" });
+    } catch {
+      toast({ title: "Undo failed", variant: "destructive" });
+    }
+  }, [undoStack, toast]);
+
+  const handleRedo = useCallback(async () => {
+    const action = redoStack[redoStack.length - 1];
+    if (!action) return;
+    setRedoStack((prev) => prev.slice(0, -1));
+    setUndoStack((prev) => [...prev, action]);
+    try {
+      if (action.type === "create" && action.after) {
+        await apiRequest("POST", "/api/flow-rules", action.after);
+      } else if (action.type === "delete" && action.ruleId) {
+        await apiRequest("DELETE", `/api/flow-rules/${action.ruleId}`);
+      } else if (action.type === "update" && action.after) {
+        await apiRequest("PUT", `/api/flow-rules/${action.ruleId}`, action.after);
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/flow-rules"] });
+      toast({ title: "Redone" });
+    } catch {
+      toast({ title: "Redo failed", variant: "destructive" });
+    }
+  }, [redoStack, toast]);
+
+  /* ── Reset form ── */
+  const resetNewRuleForm = () =>
     setNewRule({
       currentTask: "",
       status: "",
@@ -291,499 +380,421 @@ export default function VisualFlowBuilder() {
       email: "",
       formId: "",
       mergeCondition: "all",
+      transferable: false,
+      transferToEmails: "",
     });
-  };
 
-  // Build flowchart data structure (same as flow-chart.tsx)
-  const buildFlowChart = (system: string): { nodes: FlowChartNode[]; edges: FlowChartEdge[] } => {
-    const systemRules = flowRules.filter((rule) => rule.system === system);
-    
-    if (systemRules.length === 0) {
-      return { nodes: [], edges: [] };
-    }
+  /* ═══════════════ BUILD FLOW CHART ═══════════════ */
 
-    const edges: FlowChartEdge[] = [];
-    const taskMap = new Map<string, FlowChartNode>();
-    const nodeId = (task: string) => task || "start";
-    const edgeSet = new Set<string>();
+  const buildFlowChart = useCallback(
+    (system: string): { nodes: FlowChartNode[]; edges: FlowChartEdge[] } => {
+      const systemRules = flowRules.filter((r) => r.system === system);
+      if (!systemRules.length) return { nodes: [], edges: [] };
 
-    // First pass: Create all unique nodes
-    systemRules.forEach((rule) => {
-      const currentId = nodeId(rule.currentTask);
-      const nextId = nodeId(rule.nextTask);
+      const edges: FlowChartEdge[] = [];
+      const taskMap: Record<string, FlowChartNode> = {};
+      const nodeId = (task: string) => task || "start";
+      const edgeSet: Record<string, boolean> = {};
 
-      if (!taskMap.has(currentId)) {
-        taskMap.set(currentId, {
-          id: currentId,
-          label: rule.currentTask || "Start",
-          type: rule.currentTask ? "task" : "start",
-          level: 0,
-          x: 0,
-          y: 0,
-          parentIds: [],
-          childIds: [],
-        });
-      }
-
-      if (!taskMap.has(nextId)) {
-        taskMap.set(nextId, {
-          id: nextId,
-          label: rule.nextTask,
-          type: "task",
-          level: 0,
-          x: 0,
-          y: 0,
-          parentIds: [],
-          childIds: [],
-          doer: rule.doer,
-          tat: rule.tat,
-          tatType: rule.tatType,
-          formId: rule.formId,
-          mergeCondition: rule.mergeCondition,
-        });
-      } else {
-        const existingNode = taskMap.get(nextId)!;
-        if (!existingNode.doer) {
-          existingNode.doer = rule.doer;
-          existingNode.tat = rule.tat;
-          existingNode.tatType = rule.tatType;
-          existingNode.formId = rule.formId;
-          existingNode.mergeCondition = rule.mergeCondition;
+      // Pass 1: create unique nodes
+      systemRules.forEach((rule) => {
+        const cId = nodeId(rule.currentTask);
+        const nId = nodeId(rule.nextTask);
+        if (!taskMap[cId])
+          taskMap[cId] = {
+            id: cId,
+            label: rule.currentTask || "Start",
+            type: rule.currentTask ? "task" : "start",
+            level: 0,
+            x: 0,
+            y: 0,
+            parentIds: [],
+            childIds: [],
+          };
+        if (!taskMap[nId])
+          taskMap[nId] = {
+            id: nId,
+            label: rule.nextTask,
+            type: "task",
+            level: 0,
+            x: 0,
+            y: 0,
+            parentIds: [],
+            childIds: [],
+            doer: rule.doer,
+            tat: rule.tat,
+            tatType: rule.tatType,
+            formId: rule.formId,
+            mergeCondition: rule.mergeCondition,
+            transferable: rule.transferable,
+          };
+        else {
+          const n = taskMap[nId];
+          if (!n.doer) {
+            n.doer = rule.doer;
+            n.tat = rule.tat;
+            n.tatType = rule.tatType;
+            n.formId = rule.formId;
+            n.mergeCondition = rule.mergeCondition;
+            n.transferable = rule.transferable;
+          }
         }
-      }
-    });
+      });
 
-    // Second pass: Create relationships and edges
-    systemRules.forEach((rule) => {
-      const currentId = nodeId(rule.currentTask);
-      const nextId = nodeId(rule.nextTask);
-      const currentNode = taskMap.get(currentId)!;
-      const nextNode = taskMap.get(nextId)!;
-      
-      if (!currentNode.childIds.includes(nextId)) {
-        currentNode.childIds.push(nextId);
-      }
-      if (!nextNode.parentIds.includes(currentId)) {
-        nextNode.parentIds.push(currentId);
-      }
+      // Pass 2: edges & relationships
+      systemRules.forEach((rule) => {
+        const cId = nodeId(rule.currentTask);
+        const nId = nodeId(rule.nextTask);
+        const cNode = taskMap[cId];
+        const nNode = taskMap[nId];
+        if (cNode && !cNode.childIds.includes(nId)) cNode.childIds.push(nId);
+        if (nNode && !nNode.parentIds.includes(cId)) nNode.parentIds.push(cId);
+        const key = `${cId}->${nId}:${rule.status}`;
+        if (!edgeSet[key]) {
+          edgeSet[key] = true;
+          edges.push({ from: cId, to: nId, label: rule.status || "", ruleId: rule.id });
+        }
+      });
 
-      const edgeKey = `${currentId}->${nextId}:${rule.status}`;
-      if (!edgeSet.has(edgeKey)) {
-        edgeSet.add(edgeKey);
-        edges.push({
-          from: currentId,
-          to: nextId,
-          label: rule.status || "",
-          ruleId: rule.id,
+      // Topological-sort longest-path leveling (correct for merges)
+      // 1. Compute in-degrees
+      const inDeg: Record<string, number> = {};
+      Object.keys(taskMap).forEach((id) => (inDeg[id] = 0));
+      Object.values(taskMap).forEach((n) =>
+        n.childIds.forEach((c) => {
+          inDeg[c] = (inDeg[c] || 0) + 1;
+        })
+      );
+
+      // 2. Seed queue with all source nodes (in-degree 0)
+      const topoQueue: string[] = [];
+      Object.keys(taskMap).forEach((id) => {
+        if (inDeg[id] === 0) topoQueue.push(id);
+      });
+
+      // 3. Process in topological order; each child level = max(parent levels) + 1
+      const processed: Record<string, boolean> = {};
+      while (topoQueue.length) {
+        const id = topoQueue.shift()!;
+        if (processed[id]) continue;
+        processed[id] = true;
+        const n = taskMap[id];
+        if (!n) continue;
+        n.childIds.forEach((cId: string) => {
+          const child = taskMap[cId];
+          if (child) child.level = Math.max(child.level, n.level + 1);
+          inDeg[cId]--;
+          if (inDeg[cId] <= 0 && !processed[cId]) topoQueue.push(cId);
         });
       }
-    });
 
-    // Calculate levels using BFS
-    const calculateLevels = () => {
-      const visited = new Set<string>();
-      const inProgress = new Set<string>();
-      const queue: Array<{ id: string; level: number }> = [{ id: "start", level: 0 }];
+      // Handle any unvisited nodes (cycles / disconnected) — place after max level
+      const maxLevel = Object.values(taskMap).reduce((m, n) => Math.max(m, n.level), 0);
+      Object.values(taskMap).forEach((n) => {
+        if (!processed[n.id]) n.level = maxLevel + 1;
+      });
 
-      while (queue.length > 0) {
-        const { id, level } = queue.shift()!;
-        if (visited.has(id)) continue;
-        if (inProgress.has(id)) continue;
-        
-        inProgress.add(id);
-        visited.add(id);
+      // Improved layout: Sugiyama-inspired positioning
+      const levelGroups: Record<number, FlowChartNode[]> = {};
+      Object.values(taskMap).forEach((n: FlowChartNode) => {
+        if (!levelGroups[n.level]) levelGroups[n.level] = [];
+        levelGroups[n.level].push(n);
+      });
 
-        const node = taskMap.get(id);
-        if (node) {
-          node.level = Math.max(node.level, level);
-          node.childIds.forEach((childId) => {
-            if (!visited.has(childId)) {
-              queue.push({ id: childId, level: level + 1 });
+      // Sort nodes in each level by average parent X for cleaner crossings
+      const levels: [number, FlowChartNode[]][] = Object.entries(levelGroups)
+        .map(([k, v]) => [Number(k), v] as [number, FlowChartNode[]])
+        .sort((a, b) => a[0] - b[0]);
+      levels.forEach(([, nodesAtLevel]) => {
+        nodesAtLevel.sort((a: FlowChartNode, b: FlowChartNode) => {
+          const avgParentX = (n: FlowChartNode) =>
+            n.parentIds.length
+              ? n.parentIds.reduce(
+                  (s, pid) => s + (taskMap[pid]?.x || 0),
+                  0
+                ) / n.parentIds.length
+              : 0;
+          return avgParentX(a) - avgParentX(b);
+        });
+        const totalW = nodesAtLevel.length * (NODE_W + H_GAP);
+        const startX = -totalW / 2 + NODE_W / 2;
+        nodesAtLevel.forEach((n: FlowChartNode, i: number) => {
+          n.x = startX + i * (NODE_W + H_GAP);
+          n.y = n.level * (NODE_H + V_GAP);
+        });
+      });
+
+      // 2nd pass: center children under parents
+      levels.forEach(([, nodesAtLevel]) => {
+        nodesAtLevel.forEach((n: FlowChartNode) => {
+          if (n.parentIds.length === 1) {
+            const parent = taskMap[n.parentIds[0]];
+            if (parent && parent.childIds.length === 1) {
+              n.x = parent.x; // direct alignment
             }
-          });
-        }
-        inProgress.delete(id);
-      }
-    };
-
-    calculateLevels();
-
-    // Calculate positions
-    const levelGroups = new Map<number, FlowChartNode[]>();
-    taskMap.forEach((node) => {
-      if (!levelGroups.has(node.level)) {
-        levelGroups.set(node.level, []);
-      }
-      levelGroups.get(node.level)!.push(node);
-    });
-
-    const nodeWidth = 220;
-    const nodeHeight = 100;
-    const horizontalSpacing = 80;
-    const verticalSpacing = 180;
-
-    levelGroups.forEach((nodesAtLevel, level) => {
-      nodesAtLevel.sort((a, b) => {
-        const aParentX = a.parentIds.length > 0 
-          ? Math.min(...a.parentIds.map(pid => taskMap.get(pid)?.x || 0))
-          : 0;
-        const bParentX = b.parentIds.length > 0
-          ? Math.min(...b.parentIds.map(pid => taskMap.get(pid)?.x || 0))
-          : 0;
-        return aParentX - bParentX;
+          }
+        });
       });
 
-      const totalWidth = nodesAtLevel.length * (nodeWidth + horizontalSpacing);
-      const startX = -totalWidth / 2 + nodeWidth / 2;
-
-      nodesAtLevel.forEach((node, index) => {
-        node.x = startX + index * (nodeWidth + horizontalSpacing);
-        node.y = level * (nodeHeight + verticalSpacing);
+      // Mark types
+      Object.values(taskMap).forEach((n: FlowChartNode) => {
+        if (n.childIds.length === 0 && n.type !== "start") n.type = "end";
+        if (n.childIds.length > 1) n.type = "decision";
       });
-    });
 
-    // Mark end and decision nodes
-    taskMap.forEach((node) => {
-      if (node.childIds.length === 0 && node.type !== "start") {
-        node.type = "end";
+      // Normalize positions so min x/y = 0
+      const allNodes = Object.values(taskMap);
+      if (allNodes.length) {
+        let minX = Infinity, minY = Infinity;
+        allNodes.forEach((n) => { minX = Math.min(minX, n.x); minY = Math.min(minY, n.y); });
+        allNodes.forEach((n) => { n.x -= minX; n.y -= minY; });
       }
-      if (node.childIds.length > 1) {
-        node.type = "decision";
-      }
-    });
 
+      return { nodes: allNodes, edges };
+    },
+    [flowRules]
+  );
+
+  const { nodes: baseNodes, edges } = useMemo(
+    () => (selectedSystem ? buildFlowChart(selectedSystem) : { nodes: [], edges: [] }),
+    [selectedSystem, buildFlowChart]
+  );
+
+  const nodes = useMemo(
+    () =>
+      baseNodes.map((n) => ({
+        ...n,
+        x: nodePositions[n.id]?.x ?? n.x,
+        y: nodePositions[n.id]?.y ?? n.y,
+      })),
+    [baseNodes, nodePositions]
+  );
+
+  // Compute total content bounds for the canvas container sizing
+  const CANVAS_PAD = 80; // padding around content
+  const contentBounds = useMemo(() => {
+    if (!nodes.length) return { width: 0, height: 0 };
+    let maxX = 0, maxY = 0;
+    nodes.forEach((n) => {
+      maxX = Math.max(maxX, n.x + NODE_W);
+      maxY = Math.max(maxY, n.y + NODE_H);
+    });
     return {
-      nodes: Array.from(taskMap.values()),
-      edges,
+      width: maxX + CANVAS_PAD * 2,
+      height: maxY + CANVAS_PAD * 2,
     };
-  };
+  }, [nodes]);
 
-  const { nodes: baseNodes, edges } = selectedSystem ? buildFlowChart(selectedSystem) : { nodes: [], edges: [] };
+  const availableTasks = useMemo(
+    () =>
+      selectedSystem
+        ? Array.from(
+            new Set(
+              flowRules
+                .filter((r) => r.system === selectedSystem)
+                .flatMap((r) => [r.currentTask, r.nextTask])
+                .filter(Boolean)
+            )
+          ).sort()
+        : [],
+    [selectedSystem, flowRules]
+  );
 
-  // Apply custom positions to nodes
-  const nodes = baseNodes.map(node => ({
-    ...node,
-    x: nodePositions[node.id]?.x ?? node.x,
-    y: nodePositions[node.id]?.y ?? node.y,
-  }));
+  /* ═══════════════ ZOOM / PAN ═══════════════ */
 
-  // Get all available tasks from current system for dropdowns
-  const availableTasks = selectedSystem 
-    ? Array.from(new Set(
-        flowRules
-          .filter(rule => rule.system === selectedSystem)
-          .map(rule => rule.nextTask)
-          .filter(Boolean)
-      )).sort()
-    : [];
-
-  const getNodeColor = (node: FlowChartNode) => {
-    switch (node.type) {
-      case "start": return "bg-green-100 border-green-400 text-green-800";
-      case "end": return "bg-red-100 border-red-400 text-red-800";
-      case "decision": return "bg-yellow-100 border-yellow-400 text-yellow-800";
-      default: return "bg-blue-100 border-blue-400 text-blue-800";
-    }
-  };
-
-  const getNodeIcon = (node: FlowChartNode) => {
-    switch (node.type) {
-      case "start": return <Play className="w-5 h-5" />;
-      case "end": return <CheckCircle className="w-5 h-5" />;
-      case "decision": return <AlertTriangle className="w-5 h-5" />;
-      default: return <Clock className="w-5 h-5" />;
-    }
-  };
-
-  const handleZoomIn = () => setZoomLevel((prev) => Math.min(prev + 0.1, 2));
-  const handleZoomOut = () => setZoomLevel((prev) => Math.max(prev - 0.1, 0.5));
+  const handleZoomIn = () => setZoomLevel((p) => Math.min(p + 0.15, 2.5));
+  const handleZoomOut = () => setZoomLevel((p) => Math.max(p - 0.15, 0.3));
   const handleResetZoom = () => {
     setZoomLevel(1);
-    setPanOffset({ x: 0, y: 0 });
+    if (canvasRef.current) {
+      canvasRef.current.scrollTop = 0;
+      canvasRef.current.scrollLeft = 0;
+    }
   };
 
-  // Mouse wheel zoom
+  const handleFitToScreen = useCallback(() => {
+    if (!nodes.length || !canvasRef.current) return;
+    const container = canvasRef.current;
+    const rect = container.getBoundingClientRect();
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+    nodes.forEach((n) => {
+      const nx = n.x + CANVAS_PAD;
+      const ny = n.y + CANVAS_PAD;
+      minX = Math.min(minX, nx);
+      minY = Math.min(minY, ny);
+      maxX = Math.max(maxX, nx + NODE_W);
+      maxY = Math.max(maxY, ny + NODE_H);
+    });
+    const padding = 80;
+    const contentW = maxX - minX + padding * 2;
+    const contentH = maxY - minY + padding * 2;
+    const scaleX = rect.width / contentW;
+    const scaleY = rect.height / contentH;
+    const zoom = Math.min(Math.max(Math.min(scaleX, scaleY), 0.3), 1.5);
+    setZoomLevel(zoom);
+    // scroll to top-left of content
+    container.scrollTop = 0;
+    container.scrollLeft = 0;
+  }, [nodes]);
+
   const handleWheel = (e: React.WheelEvent) => {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      setZoomLevel((prev) => Math.max(0.5, Math.min(2, prev + delta)));
+      setZoomLevel((p) => Math.max(0.3, Math.min(2.5, p + delta)));
     }
+    // Otherwise normal scroll (native scrollbar handles it)
   };
 
-  // Canvas panning
+  /* ── Canvas mouse handlers (context menu close, etc.) ── */
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1 || (e.button === 0 && e.shiftKey)) { // Middle click or Shift + Left click
-      e.preventDefault();
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
+    if (contextMenu) {
+      setContextMenu(null);
+      return;
     }
   };
+  const handleCanvasMouseMove = (_e: React.MouseEvent) => {};
+  const handleCanvasMouseUp = () => {};
 
-  const handleCanvasMouseMove = (e: React.MouseEvent) => {
-    if (isPanning) {
-      setPanOffset({
-        x: e.clientX - panStart.x,
-        y: e.clientY - panStart.y,
-      });
-    }
+  /* ── Node drag ── */
+  const handleMouseDown = (e: React.MouseEvent, nodeId: string) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const node = nodes.find((n) => n.id === nodeId);
+    if (!node) return;
+    const target = e.currentTarget as HTMLElement;
+    const container = target.parentElement;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const cx = (e.clientX - rect.left) / zoomLevel;
+    const cy = (e.clientY - rect.top) / zoomLevel;
+    setDragOffset({ x: cx - (node.x + CANVAS_PAD), y: cy - (node.y + CANVAS_PAD) });
+    setDraggingNode(nodeId);
   };
 
-  const handleCanvasMouseUp = () => {
-    setIsPanning(false);
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!draggingNode) return;
+    const container = e.currentTarget;
+    const rect = container.getBoundingClientRect();
+    const newX = (e.clientX - rect.left) / zoomLevel - dragOffset.x - CANVAS_PAD;
+    const newY = (e.clientY - rect.top) / zoomLevel - dragOffset.y - CANVAS_PAD;
+    setNodePositions((prev) => ({
+      ...prev,
+      [draggingNode]: { x: newX, y: newY },
+    }));
   };
 
-  // Export as PNG using dom-to-image-more
+  const handleMouseUp = () => setDraggingNode(null);
+
+  /* ── Context menu ── */
+  const handleContextMenu = (
+    e: React.MouseEvent,
+    node?: FlowChartNode,
+    edge?: FlowChartEdge
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, node, edge });
+  };
+
+  /* ── Export PNG ── */
   const handleExportPNG = async () => {
+    if (!nodes.length) return toast({ title: "Nothing to export", variant: "destructive" });
+    const canvasContainer = document.querySelector("#flow-canvas-container") as HTMLElement;
+    if (!canvasContainer) return;
     try {
-      if (nodes.length === 0) {
-        toast({
-          title: "No Content",
-          description: "There are no nodes to export",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const canvasContainer = document.querySelector('#flow-canvas-container') as HTMLElement;
-      if (!canvasContainer) {
-        toast({
-          title: "Export Failed",
-          description: "Could not find canvas element",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Dynamically import dom-to-image-more
-      const domtoimage = (await import('dom-to-image-more')).default;
-      
-      // Store original styles
-      const originalTransform = canvasContainer.style.transform;
-      const originalTransition = canvasContainer.style.transition;
-      
-      // Reset transform for capture
-      canvasContainer.style.transform = 'scale(1) translate(0px, 0px)';
-      canvasContainer.style.transition = 'none';
-      
-      // Wait for DOM to update
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
-      // Calculate bounds
+      const domtoimage = (await import("dom-to-image-more")).default;
+      const orig = canvasContainer.style.transform;
+      const origT = canvasContainer.style.transition;
+      canvasContainer.style.transform = "scale(1) translate(0px, 0px)";
+      canvasContainer.style.transition = "none";
+      await new Promise((r) => setTimeout(r, 200));
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      nodes.forEach(node => {
-        const x = (nodePositions[node.id]?.x ?? node.x) + 100;
-        const y = (nodePositions[node.id]?.y ?? node.y) + 100;
-        const width = 220;
-        const height = 100;
-        
-        minX = Math.min(minX, x);
-        minY = Math.min(minY, y);
-        maxX = Math.max(maxX, x + width);
-        maxY = Math.max(maxY, y + height);
+      nodes.forEach((n) => {
+        const x = n.x + CANVAS_PAD, y = n.y + CANVAS_PAD;
+        minX = Math.min(minX, x); minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x + NODE_W); maxY = Math.max(maxY, y + NODE_H);
       });
-
-      const padding = 100;
-      minX -= padding;
-      minY -= padding;
-      maxX += padding;
-      maxY += padding;
-      
-      // Generate PNG
-      const dataUrl = await domtoimage.toPng(canvasContainer, {
-        width: maxX - minX,
-        height: maxY - minY,
-        style: {
-          transform: 'scale(1) translate(0px, 0px)',
-          transformOrigin: 'center center',
-        },
-        quality: 1.0,
-        bgcolor: '#f9fafb',
+      const pad = 100;
+      const url = await domtoimage.toPng(canvasContainer, {
+        width: maxX - minX + pad * 2,
+        height: maxY - minY + pad * 2,
+        quality: 1,
+        bgcolor: "#f8fafc",
       });
-      
-      // Restore original styles
-      canvasContainer.style.transform = originalTransform;
-      canvasContainer.style.transition = originalTransition;
-      
-      // Download the image
-      const link = document.createElement('a');
+      canvasContainer.style.transform = orig;
+      canvasContainer.style.transition = origT;
+      const link = document.createElement("a");
       link.download = `${selectedSystem}-flow.png`;
-      link.href = dataUrl;
+      link.href = url;
       link.click();
-      
-      toast({
-        title: "Success",
-        description: "Flow exported as PNG successfully",
-      });
-    } catch (error) {
-      console.error('Export error:', error);
-      toast({
-        title: "Export Failed",
-        description: "An error occurred while exporting the flow",
-        variant: "destructive",
-      });
+      toast({ title: "Exported as PNG" });
+    } catch {
+      toast({ title: "Export failed", variant: "destructive" });
     }
   };
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger shortcuts when typing in inputs
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
-      }
-
-      switch (e.key) {
-        case 'Delete':
-        case 'Backspace':
-          if (selectedNode) {
-            handleDeleteStep();
-          } else if (selectedEdge && editingRule) {
-            handleDeleteEdge();
-          }
-          break;
-        case 'Escape':
-          setSelectedNode(null);
-          setSelectedEdge(null);
-          setEditingRule(null);
-          setSearchQuery("");
-          break;
-        case '+':
-        case '=':
-          if (e.ctrlKey || e.metaKey) {
-            e.preventDefault();
-            handleZoomIn();
-          }
-          break;
-        case '-':
-        case '_':
-          if (e.ctrlKey || e.metaKey) {
-            e.preventDefault();
-            handleZoomOut();
-          }
-          break;
-        case '0':
-          if (e.ctrlKey || e.metaKey) {
-            e.preventDefault();
-            handleResetZoom();
-          }
-          break;
-        case '?':
-          if (e.shiftKey) {
-            setShowKeyboardHelp((prev) => !prev);
-          }
-          break;
-        case 'f':
-          if (e.ctrlKey || e.metaKey) {
-            e.preventDefault();
-            document.getElementById('flow-search-input')?.focus();
-          }
-          break;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNode, selectedEdge, editingRule]);
+  /* ═══════════════ NODE / EDGE ACTIONS ═══════════════ */
 
   const handleNodeClick = (node: FlowChartNode) => {
     if (!draggingNode) {
       setSelectedNode(node);
       setSelectedEdge(null);
+      setEditingRule(null);
+    }
+  };
+
+  const handleNodeDoubleClick = (node: FlowChartNode) => {
+    if (node.type === "start") return;
+    const rule = flowRules.find(
+      (r) => r.system === selectedSystem && r.nextTask === node.id
+    );
+    if (rule) {
+      setEditingRule(rule);
+      setIsEditRuleDialogOpen(true);
     }
   };
 
   const handleEdgeClick = (edge: FlowChartEdge) => {
     setSelectedEdge(edge);
     setSelectedNode(null);
-    
-    // Find and set the rule for editing
     const rule = flowRules.find((r) => r.id === edge.ruleId);
-    if (rule) {
-      setEditingRule(rule);
-    }
-  };
-
-  const handleMouseDown = (e: React.MouseEvent, nodeId: string) => {
-    if (e.button !== 0) return; // Only left click
-    e.stopPropagation();
-    
-    const node = nodes.find(n => n.id === nodeId);
-    if (!node) return;
-    
-    // Get the container element to calculate relative positions
-    const target = e.currentTarget as HTMLElement;
-    const container = target.parentElement;
-    if (!container) return;
-    
-    const rect = container.getBoundingClientRect();
-    const clickX = (e.clientX - rect.left) / zoomLevel;
-    const clickY = (e.clientY - rect.top) / zoomLevel;
-    
-    setDragOffset({
-      x: clickX - (node.x + 100), // +100 is the offset applied in rendering
-      y: clickY - (node.y + 100)
-    });
-    setDraggingNode(nodeId);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!draggingNode) return;
-    
-    const container = e.currentTarget;
-    const rect = container.getBoundingClientRect();
-    
-    const newX = (e.clientX - rect.left) / zoomLevel - dragOffset.x - 100;
-    const newY = (e.clientY - rect.top) / zoomLevel - dragOffset.y - 100;
-    
-    setNodePositions(prev => ({
-      ...prev,
-      [draggingNode]: { x: newX, y: newY }
-    }));
-  };
-
-  const handleMouseUp = () => {
-    setDraggingNode(null);
+    if (rule) setEditingRule(rule);
   };
 
   const handleAddFromNode = () => {
     if (selectedNode) {
+      const isStart = selectedNode.id === "start";
       setNewRule({
         ...newRule,
-        currentTask: selectedNode.id === "start" ? "" : selectedNode.id,
+        currentTask: isStart ? "" : selectedNode.id,
+        status: isStart ? "" : "Done",
       });
       setIsAddRuleDialogOpen(true);
     }
   };
 
   const handleUpdateNode = () => {
-    if (selectedNode && selectedNode.id !== "start") {
-      // Find the rule that creates this node (where nextTask matches this node's id)
-      const nodeRule = flowRules.find(rule => 
-        rule.system === selectedSystem && rule.nextTask === selectedNode.id
-      );
-      
-      if (nodeRule) {
-        setEditingRule(nodeRule);
-        setIsEditRuleDialogOpen(true);
-      } else {
-        toast({
-          title: "Cannot Edit",
-          description: "Unable to find the rule for this node. Start nodes cannot be edited.",
-          variant: "destructive",
-        });
-      }
-    }
-  };
-
-  const handleEditEdge = () => {
-    if (editingRule) {
+    if (!selectedNode || selectedNode.id === "start") return;
+    const rule = flowRules.find(
+      (r) => r.system === selectedSystem && r.nextTask === selectedNode.id
+    );
+    if (rule) {
+      setEditingRule(rule);
       setIsEditRuleDialogOpen(true);
     }
   };
 
+  const handleEditEdge = () => {
+    if (editingRule) setIsEditRuleDialogOpen(true);
+  };
+
   const handleDeleteEdge = () => {
-    if (editingRule && window.confirm("Are you sure you want to delete this flow rule?")) {
+    if (editingRule && window.confirm("Delete this flow rule?")) {
+      pushUndo({ type: "delete", ruleId: editingRule.id, before: editingRule });
       deleteRuleMutation.mutate(editingRule.id);
       setSelectedEdge(null);
       setEditingRule(null);
@@ -791,114 +802,63 @@ export default function VisualFlowBuilder() {
   };
 
   const handleDeleteStep = () => {
-    if (!selectedNode || selectedNode.type === "start" || selectedNode.type === "end") {
-      toast({
-        title: "Cannot Delete",
-        description: "Start and End nodes cannot be deleted. Delete the flow rules connected to this step instead.",
-        variant: "destructive",
-      });
+    if (!selectedNode || selectedNode.type === "start") {
+      toast({ title: "Cannot delete start node", variant: "destructive" });
       return;
     }
-
-    if (window.confirm(`Are you sure you want to delete the step "${selectedNode.label}"? This will delete all flow rules connected to this step.`)) {
-      // Find all rules connected to this step (as currentTask or nextTask)
-      const connectedRules = flowRules.filter(
-        rule => rule.currentTask === selectedNode.label || rule.nextTask === selectedNode.label
-      );
-
-      if (connectedRules.length === 0) {
-        toast({
-          title: "No Rules Found",
-          description: "No flow rules are connected to this step.",
-        });
-        return;
-      }
-
-      // Delete all connected rules
-      Promise.all(connectedRules.map(rule => 
-        apiRequest("DELETE", `/api/flow-rules/${rule.id}`)
-      ))
-        .then(() => {
-          toast({ 
-            title: "Success", 
-            description: `Deleted step "${selectedNode.label}" and ${connectedRules.length} connected rule(s)` 
-          });
-          queryClient.invalidateQueries({ queryKey: ["/api/flow-rules"] });
-          setSelectedNode(null);
-        })
-        .catch(() => {
-          toast({ 
-            title: "Error", 
-            description: "Failed to delete step", 
-            variant: "destructive" 
-          });
-        });
-    }
+    if (!window.confirm(`Delete step "${selectedNode.label}" and all its rules?`)) return;
+    const connected = flowRules.filter(
+      (r) =>
+        r.system === selectedSystem &&
+        (r.currentTask === selectedNode.label || r.nextTask === selectedNode.label)
+    );
+    if (!connected.length) return;
+    Promise.all(connected.map((r) => apiRequest("DELETE", `/api/flow-rules/${r.id}`)))
+      .then(() => {
+        toast({ title: `Deleted "${selectedNode.label}" (${connected.length} rules)` });
+        queryClient.invalidateQueries({ queryKey: ["/api/flow-rules"] });
+        setSelectedNode(null);
+      })
+      .catch(() => toast({ title: "Delete failed", variant: "destructive" }));
   };
 
   const handleDeleteFlow = () => {
-    if (!selectedSystem) {
-      toast({
-        title: "No Flow Selected",
-        description: "Please select a flow to delete",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (window.confirm(`Are you sure you want to delete the entire flow "${selectedSystem}"? This will delete all steps and rules in this flow. This action cannot be undone.`)) {
-      // Find all rules for this system
-      const systemRules = flowRules.filter(rule => rule.system === selectedSystem);
-
-      if (systemRules.length === 0) {
-        toast({
-          title: "No Rules Found",
-          description: "This flow has no rules to delete.",
-        });
-        return;
-      }
-
-      // Delete all rules for this system
-      Promise.all(systemRules.map(rule => 
-        apiRequest("DELETE", `/api/flow-rules/${rule.id}`)
-      ))
-        .then(() => {
-          toast({ 
-            title: "Success", 
-            description: `Deleted flow "${selectedSystem}" with ${systemRules.length} rule(s)` 
-          });
-          queryClient.invalidateQueries({ queryKey: ["/api/flow-rules"] });
-          setSelectedSystem("");
-          setSelectedNode(null);
-          setSelectedEdge(null);
-        })
-        .catch(() => {
-          toast({ 
-            title: "Error", 
-            description: "Failed to delete flow", 
-            variant: "destructive" 
-          });
-        });
-    }
+    if (!selectedSystem) return;
+    if (!window.confirm(`Delete entire flow "${selectedSystem}"? This cannot be undone.`)) return;
+    const systemRules = flowRules.filter((r) => r.system === selectedSystem);
+    if (!systemRules.length) return;
+    Promise.all(systemRules.map((r) => apiRequest("DELETE", `/api/flow-rules/${r.id}`)))
+      .then(() => {
+        toast({ title: `Flow "${selectedSystem}" deleted` });
+        queryClient.invalidateQueries({ queryKey: ["/api/flow-rules"] });
+        setSelectedSystem("");
+        setSelectedNode(null);
+        setSelectedEdge(null);
+      })
+      .catch(() => toast({ title: "Delete failed", variant: "destructive" }));
   };
 
+  const handleDuplicateRule = (rule: FlowRule) => {
+    createRuleMutation.mutate({
+      currentTask: rule.currentTask,
+      status: rule.status + " (copy)",
+      nextTask: rule.nextTask + " Copy",
+      tat: rule.tat,
+      tatType: rule.tatType,
+      doer: rule.doer,
+      email: rule.email,
+      formId: rule.formId,
+      mergeCondition: rule.mergeCondition,
+      transferable: rule.transferable,
+      transferToEmails: rule.transferToEmails,
+    });
+  };
+
+  /* ── Save handlers ── */
   const handleSaveNewRule = () => {
-    // Status is only required when currentTask is not empty (not the first step)
-    const isFirstStep = !newRule.currentTask || newRule.currentTask === "";
-    const isStatusRequired = !isFirstStep && !newRule.status;
-    
-    if (!newRule.nextTask || !newRule.doer || !newRule.email || isStatusRequired) {
-      const missingFields = [];
-      if (!newRule.nextTask) missingFields.push("Next Task");
-      if (!newRule.doer) missingFields.push("Doer");
-      if (!newRule.email) missingFields.push("Email");
-      if (isStatusRequired) missingFields.push("Status");
-      
-      toast({
-        title: "Validation Error",
-        description: `Please fill in all required fields: ${missingFields.join(", ")}`,
-        variant: "destructive",
-      });
+    const isFirst = !newRule.currentTask;
+    if (!newRule.nextTask || !newRule.doer || !newRule.email || (!isFirst && !newRule.status)) {
+      toast({ title: "Fill all required fields", variant: "destructive" });
       return;
     }
     createRuleMutation.mutate(newRule);
@@ -906,656 +866,529 @@ export default function VisualFlowBuilder() {
 
   const handleSaveEditRule = () => {
     if (!editingRule) return;
-    
-    // Validate required fields - Status is only required when currentTask is not empty
-    const isFirstStep = !editingRule.currentTask || editingRule.currentTask === "";
-    const isStatusRequired = !isFirstStep && !editingRule.status;
-    
-    if (!editingRule.nextTask || !editingRule.doer || !editingRule.email || isStatusRequired) {
-      const missingFields = [];
-      if (!editingRule.nextTask) missingFields.push("Next Task");
-      if (!editingRule.doer) missingFields.push("Doer");
-      if (!editingRule.email) missingFields.push("Email");
-      if (isStatusRequired) missingFields.push("Status");
-      
-      toast({
-        title: "Validation Error",
-        description: `Please fill in all required fields: ${missingFields.join(", ")}`,
-        variant: "destructive",
-      });
+    const isFirst = !editingRule.currentTask;
+    if (!editingRule.nextTask || !editingRule.doer || !editingRule.email || (!isFirst && !editingRule.status)) {
+      toast({ title: "Fill all required fields", variant: "destructive" });
       return;
     }
-    
-    // Only send the fields that should be updated
-    const updateData = {
-      system: editingRule.system,
-      currentTask: editingRule.currentTask,
-      status: editingRule.status,
-      nextTask: editingRule.nextTask,
-      tat: editingRule.tat,
-      tatType: editingRule.tatType,
-      doer: editingRule.doer,
-      email: editingRule.email,
-      formId: editingRule.formId || undefined,
-      transferable: editingRule.transferable || false,
-      transferToEmails: editingRule.transferToEmails || undefined,
-      mergeCondition: editingRule.mergeCondition || "all",
-    };
-    
+    pushUndo({ type: "update", ruleId: editingRule.id, before: flowRules.find((r) => r.id === editingRule.id), after: editingRule });
     updateRuleMutation.mutate({
       id: editingRule.id,
-      data: updateData,
+      data: {
+        system: editingRule.system,
+        currentTask: editingRule.currentTask,
+        status: editingRule.status,
+        nextTask: editingRule.nextTask,
+        tat: editingRule.tat,
+        tatType: editingRule.tatType,
+        doer: editingRule.doer,
+        email: editingRule.email,
+        formId: editingRule.formId || undefined,
+        transferable: editingRule.transferable || false,
+        transferToEmails: editingRule.transferToEmails || undefined,
+        mergeCondition: editingRule.mergeCondition || "all",
+      },
     });
   };
 
   const handleCreateNewFlow = () => {
     if (!newFlowName.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Please enter a flow name",
-        variant: "destructive",
-      });
+      toast({ title: "Enter a flow name", variant: "destructive" });
       return;
     }
-
-    // Check for duplicate flow name
     if (availableSystems.includes(newFlowName.trim())) {
-      toast({
-        title: "Duplicate Flow Name",
-        description: `A flow named "${newFlowName}" already exists. Please choose a different name.`,
-        variant: "destructive",
-      });
+      toast({ title: "Flow name already exists", variant: "destructive" });
       return;
     }
-    
-    // Set the new system as selected
     setSelectedSystem(newFlowName.trim());
     setIsNewFlowDialogOpen(false);
     setNewFlowName("");
-    
-    // Auto-open the Add Rule dialog after a brief delay
-    setTimeout(() => {
-      setIsAddRuleDialogOpen(true);
-    }, 500);
-  };
-
-  const handleFormIdChange = (formId: string) => {
-    // Check if the nextTask is already configured in another step
-    if (availableTasks.includes(newRule.nextTask)) {
-      toast({
-        title: "Form ID Not Allowed",
-        description: "This task is already configured in another step. Form ID cannot be set.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    setNewRule({ ...newRule, formId });
-    
-    // Clear existing timer if user is still typing
-    if (formIdDebounceTimer) {
-      clearTimeout(formIdDebounceTimer);
-    }
-    
-    // If form ID is cleared, don't open dialog
-    if (!formId.trim()) {
-      setPendingFormId("");
-      return;
-    }
-    
-    // Wait for user to stop typing (1.5 seconds of inactivity)
-    const timer = setTimeout(() => {
-      // Only open dialog if this form ID hasn't been handled yet
-      if (formId.trim() && pendingFormId !== formId) {
-        setPendingFormId(formId);
-        setFormBuilderData({
-          formId: formId,
-          title: "",
-          description: "",
-        });
-        setIsFormBuilderOpen(true);
-      }
-    }, 1500); // 1.5 seconds delay after user stops typing
-    
-    setFormIdDebounceTimer(timer);
+    setTimeout(() => setIsAddRuleDialogOpen(true), 400);
   };
 
   const handleSaveFormTemplate = () => {
     if (!formBuilderData.formId || !formBuilderData.title) {
-      toast({
-        title: "Validation Error",
-        description: "Form ID and Title are required",
-        variant: "destructive",
-      });
+      toast({ title: "Form ID and Title required", variant: "destructive" });
       return;
     }
-    
-    createFormTemplateMutation.mutate({
-      formId: formBuilderData.formId,
-      title: formBuilderData.title,
-      description: formBuilderData.description,
-      fields: [], // Start with empty fields — admin can add in Form Builder
-    });
-    setPendingFormId("");
+    createFormTemplateMutation.mutate(formBuilderData);
   };
 
-  const handleSkipFormBuilder = () => {
-    setIsFormBuilderOpen(false);
-    setPendingFormId("");
-    setFormBuilderData({ formId: "", title: "", description: "" });
-    toast({
-      title: "Form Template Skipped",
-      description: "You can create the form template later from the Form Builder page",
-    });
-  };
+  /* ═══════════════ KEYBOARD SHORTCUTS ═══════════════ */
 
-  if (isLoading) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      const ctrl = e.ctrlKey || e.metaKey;
+      switch (e.key) {
+        case "Delete":
+        case "Backspace":
+          if (selectedNode) handleDeleteStep();
+          else if (selectedEdge && editingRule) handleDeleteEdge();
+          break;
+        case "Escape":
+          setSelectedNode(null);
+          setSelectedEdge(null);
+          setEditingRule(null);
+          setContextMenu(null);
+          setSearchQuery("");
+          break;
+        case "+": case "=":
+          if (ctrl) { e.preventDefault(); handleZoomIn(); }
+          break;
+        case "-": case "_":
+          if (ctrl) { e.preventDefault(); handleZoomOut(); }
+          break;
+        case "0":
+          if (ctrl) { e.preventDefault(); handleResetZoom(); }
+          break;
+        case "z":
+          if (ctrl && !e.shiftKey) { e.preventDefault(); handleUndo(); }
+          if (ctrl && e.shiftKey) { e.preventDefault(); handleRedo(); }
+          break;
+        case "y":
+          if (ctrl) { e.preventDefault(); handleRedo(); }
+          break;
+        case "?":
+          if (e.shiftKey) setShowKeyboardHelp((p) => !p);
+          break;
+        case "f":
+          if (ctrl) { e.preventDefault(); document.getElementById("flow-search-input")?.focus(); }
+          break;
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selectedNode, selectedEdge, editingRule, handleUndo, handleRedo]);
+
+  /* ═══════════════ EDGE PATH RENDERER ═══════════════ */
+
+  const renderEdgePath = useCallback(
+    (edge: FlowChartEdge, index: number) => {
+      const fromNode = nodes.find((n) => n.id === edge.from);
+      const toNode = nodes.find((n) => n.id === edge.to);
+      if (!fromNode || !toNode) return null;
+
+      const isSelected =
+        selectedEdge?.from === edge.from &&
+        selectedEdge?.to === edge.to &&
+        selectedEdge?.label === edge.label;
+      const edgeKey = `${edge.from}-${edge.to}-${edge.label}`;
+      const isHovered = hoveredEdge === edgeKey;
+      const isDecision =
+        fromNode.type === "decision" || fromNode.childIds.length > 1;
+
+      const statusLow = edge.label?.toLowerCase() || "";
+      let strokeColor = "#94a3b8";
+      let markerEnd = "url(#arr)";
+
+      if (isSelected) {
+        strokeColor = "#3b82f6";
+        markerEnd = "url(#arr-sel)";
+      } else if (isDecision) {
+        if (/yes|approved|done|success|pass/.test(statusLow)) {
+          strokeColor = "#10b981";
+          markerEnd = "url(#arr-green)";
+        } else if (/no|decline|fail|reject/.test(statusLow)) {
+          strokeColor = "#ef4444";
+          markerEnd = "url(#arr-red)";
+        } else {
+          strokeColor = "#f59e0b";
+          markerEnd = "url(#arr-amber)";
+        }
+      }
+
+      const x1 = fromNode.x + CANVAS_PAD + NODE_W / 2;
+      const y1 = fromNode.y + CANVAS_PAD + NODE_H;
+      const x2 = toNode.x + CANVAS_PAD + NODE_W / 2;
+      const y2 = toNode.y + CANVAS_PAD;
+      const dx = x2 - x1;
+      const vOff = Math.max(Math.sqrt(dx * dx + (y2 - y1) ** 2) * 0.4, 50);
+      const pathD =
+        Math.abs(dx) > 100
+          ? `M ${x1} ${y1} C ${x1 + dx * 0.2} ${y1 + vOff}, ${x2 - dx * 0.2} ${y2 - vOff}, ${x2} ${y2}`
+          : `M ${x1} ${y1} C ${x1} ${y1 + vOff}, ${x2} ${y2 - vOff}, ${x2} ${y2}`;
+
+      const midX = (x1 + x2) / 2;
+      const midY = (y1 + y2) / 2;
+      const lLen = edge.label?.length || 0;
+      const lW = Math.max(lLen * 7 + 20, 50);
+
+      return (
+        <g
+          key={`edge-${index}`}
+          className="cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); handleEdgeClick(edge); }}
+          onContextMenu={(e) => {
+            const rule = flowRules.find((r) => r.id === edge.ruleId);
+            if (rule) {
+              setEditingRule(rule);
+              handleContextMenu(e, undefined, edge);
+            }
+          }}
+          onMouseEnter={() => setHoveredEdge(edgeKey)}
+          onMouseLeave={() => setHoveredEdge(null)}
+        >
+          {/* Invisible wider path for easier clicking */}
+          <path d={pathD} stroke="transparent" strokeWidth={16} fill="none" />
+          {/* Glow/shadow layer for selected */}
+          {isSelected && (
+            <path
+              d={pathD}
+              stroke={strokeColor}
+              strokeWidth={6}
+              fill="none"
+              opacity={0.2}
+              strokeLinecap="round"
+              filter="url(#edge-glow)"
+            />
+          )}
+          {/* Main edge path */}
+          <path
+            d={pathD}
+            stroke={strokeColor}
+            strokeWidth={isSelected ? 3 : isHovered ? 2.5 : 1.8}
+            fill="none"
+            markerEnd={markerEnd}
+            opacity={isSelected || isHovered ? 1 : 0.75}
+            strokeLinecap="round"
+            strokeDasharray={isHovered && !isSelected ? "6 3" : "none"}
+            className="transition-all duration-300"
+          />
+          {/* Animated flowing dot along the path */}
+          <circle
+            r={isSelected ? 4 : 3}
+            fill={strokeColor}
+            className={isSelected ? "flow-dot-fast" : "flow-dot"}
+            style={{
+              offsetPath: `path('${pathD}')`,
+              animationDelay: `${index * 0.4}s`,
+            } as React.CSSProperties}
+          />
+          {edge.label?.trim() && (
+            <g>
+              <rect
+                x={midX - lW / 2}
+                y={midY - 12}
+                width={lW}
+                height={24}
+                fill="white"
+                stroke={strokeColor}
+                strokeWidth={isSelected || isHovered ? 2 : 1}
+                rx={6}
+                filter="drop-shadow(0 1px 3px rgba(0,0,0,0.1))"
+              />
+              <text
+                x={midX}
+                y={midY + 4}
+                textAnchor="middle"
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  fill: strokeColor,
+                  pointerEvents: "none",
+                }}
+              >
+                {edge.label}
+              </text>
+            </g>
+          )}
+        </g>
+      );
+    },
+    [nodes, selectedEdge, hoveredEdge, flowRules]
+  );
+
+  /* ═══════════════ RENDER ═══════════════ */
+
+  if (isAuthenticated && user?.role !== "admin") {
     return (
-      <div className="flex h-screen bg-neutral">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto">
-          <Header title="Visual Flow Builder" description="Build and manage workflows visually" />
-          <div className="p-6">
-            <div className="animate-pulse">
-              <div className="h-96 bg-gray-200 rounded"></div>
-            </div>
-          </div>
-        </main>
-      </div>
+      <AppLayout title="Visual Flow Builder" description="Access denied">
+        <div className="text-center py-20 text-gray-500">
+          Only administrators can access the Visual Flow Builder.
+        </div>
+      </AppLayout>
     );
   }
 
+  const toolbarActions = (
+    <div className="flex items-center gap-2 flex-wrap">
+      <Button
+        size="sm"
+        onClick={() => setIsNewFlowDialogOpen(true)}
+        className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-sm"
+      >
+        <Plus className="w-3.5 h-3.5 mr-1" /> New Flow
+      </Button>
+      {selectedSystem && (
+        <Button size="sm" variant="destructive" onClick={handleDeleteFlow}>
+          <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
+        </Button>
+      )}
+      <div className="h-6 w-px bg-gray-200" />
+      <Select value={selectedSystem} onValueChange={setSelectedSystem}>
+        <SelectTrigger className="w-52 h-8 text-sm">
+          <Filter className="w-3.5 h-3.5 mr-1 text-gray-400" />
+          <SelectValue placeholder="Select flow" />
+        </SelectTrigger>
+        <SelectContent>
+          {availableSystems.map((s) => (
+            <SelectItem key={s} value={s}>{s}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {selectedSystem && (
+        <>
+          <div className="h-6 w-px bg-gray-200" />
+          <div className="flex items-center bg-white border rounded-md px-2 h-8">
+            <Search className="w-3.5 h-3.5 text-gray-400 mr-1" />
+            <input
+              id="flow-search-input"
+              className="w-36 text-sm outline-none bg-transparent"
+              placeholder="Search... (Ctrl+F)"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery("")}>
+                <X className="w-3 h-3 text-gray-400" />
+              </button>
+            )}
+          </div>
+          <div className="h-6 w-px bg-gray-200" />
+          <Button size="sm" variant="ghost" onClick={handleUndo} disabled={!undoStack.length} title="Undo (Ctrl+Z)">
+            <Undo2 className="w-3.5 h-3.5" />
+          </Button>
+          <Button size="sm" variant="ghost" onClick={handleRedo} disabled={!redoStack.length} title="Redo (Ctrl+Y)">
+            <Redo2 className="w-3.5 h-3.5" />
+          </Button>
+          <div className="h-6 w-px bg-gray-200" />
+          <Button size="sm" variant="ghost" onClick={handleZoomOut} title="Zoom Out"><ZoomOut className="w-3.5 h-3.5" /></Button>
+          <span className="text-xs font-medium w-10 text-center">{Math.round(zoomLevel * 100)}%</span>
+          <Button size="sm" variant="ghost" onClick={handleZoomIn} title="Zoom In"><ZoomIn className="w-3.5 h-3.5" /></Button>
+          <Button size="sm" variant="ghost" onClick={handleFitToScreen} title="Fit to Screen"><Crosshair className="w-3.5 h-3.5" /></Button>
+          <Button size="sm" variant="ghost" onClick={handleResetZoom} title="Reset View"><Maximize2 className="w-3.5 h-3.5" /></Button>
+          <div className="h-6 w-px bg-gray-200" />
+          <Button size="sm" variant="ghost" onClick={handleExportPNG} title="Export PNG"><Download className="w-3.5 h-3.5" /></Button>
+          <Button size="sm" variant="ghost" onClick={() => setShowKeyboardHelp(true)} title="Shortcuts"><Keyboard className="w-3.5 h-3.5" /></Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => { setNodePositions({}); if (canvasRef.current) { canvasRef.current.scrollTop = 0; canvasRef.current.scrollLeft = 0; } }}
+            disabled={!Object.keys(nodePositions).length}
+            title="Reset Layout"
+          >
+            Reset
+          </Button>
+        </>
+      )}
+    </div>
+  );
+
   return (
-    <div className="flex h-screen bg-neutral">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto">
-        <Header
-          title="Visual Flow Builder"
-          description="Build and manage your workflows with visual drag-and-drop interface"
-          actions={
-            <div className="flex items-center space-x-3">
-              <Button 
+    <AppLayout
+      title="Visual Flow Builder"
+      description="Build and manage workflows visually"
+      actions={toolbarActions}
+    >
+      {/* Close context menu on any click */}
+      {contextMenu && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setContextMenu(null)}
+        />
+      )}
+
+      <div className="h-[calc(100vh-140px)]">
+        {!selectedSystem ? (
+          <Card className="h-full flex items-center justify-center">
+            <div className="text-center">
+              <Workflow className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">Get Started</h3>
+              <p className="text-gray-500 mb-6 text-sm">Select a flow or create a new one</p>
+              <Button
+                size="lg"
+                className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white"
                 onClick={() => setIsNewFlowDialogOpen(true)}
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
               >
-                <Plus className="w-4 h-4 mr-2" />
-                New Flow
-              </Button>
-              {selectedSystem && (
-                <Button 
-                  onClick={handleDeleteFlow}
-                  variant="destructive"
-                  size="sm"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Delete Flow
-                </Button>
-              )}
-              <div className="flex items-center space-x-2 bg-white rounded-lg px-3 py-2 border">
-                <Filter className="w-4 h-4 text-gray-500" />
-                <Select value={selectedSystem} onValueChange={setSelectedSystem}>
-                  <SelectTrigger className="w-64 border-0 focus:ring-0">
-                    <SelectValue placeholder="Select a system" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableSystems.map((system) => (
-                      <SelectItem key={system} value={system}>
-                        {system}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {selectedSystem && (
-                <div className="flex items-center space-x-2 bg-white rounded-lg px-3 py-2 border">
-                  <Search className="w-4 h-4 text-gray-500" />
-                  <Input
-                    id="flow-search-input"
-                    type="text"
-                    placeholder="Search nodes... (Ctrl+F)"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-48 border-0 focus-visible:ring-0 h-7 px-0"
-                  />
-                  {searchQuery && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSearchQuery("")}
-                      className="h-6 w-6 p-0"
-                    >
-                      <X className="w-3 h-3" />
-                    </Button>
-                  )}
-                </div>
-              )}
-              <Button variant="outline" size="sm" onClick={handleZoomOut} title="Zoom Out (Ctrl+-)">
-                <ZoomOut className="w-4 h-4" />
-              </Button>
-              <span className="text-sm font-medium">{Math.round(zoomLevel * 100)}%</span>
-              <Button variant="outline" size="sm" onClick={handleZoomIn} title="Zoom In (Ctrl++)">
-                <ZoomIn className="w-4 h-4" />
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleResetZoom} title="Reset View (Ctrl+0)">
-                <Maximize2 className="w-4 h-4" />
-              </Button>
-              {selectedSystem && (
-                <>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={handleExportPNG}
-                    title="Export as PNG"
-                  >
-                    <Download className="w-4 h-4" />
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => setShowKeyboardHelp(true)}
-                    title="Keyboard Shortcuts (?)"
-                  >
-                    <Keyboard className="w-4 h-4" />
-                  </Button>
-                </>
-              )}
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => {
-                  setNodePositions({});
-                  setPanOffset({ x: 0, y: 0 });
-                }}
-                disabled={Object.keys(nodePositions).length === 0 && panOffset.x === 0 && panOffset.y === 0}
-                className="ml-2"
-                title="Reset Layout"
-              >
-                Reset Layout
+                <Plus className="w-5 h-5 mr-2" /> Create New Flow
               </Button>
             </div>
-          }
-        />
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 h-full">
+            {/* ═══ CANVAS ═══ */}
+            <Card className="relative" style={{ overflow: "visible" }}>
+              <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
+                <Badge variant="secondary" className="text-xs font-normal">
+                  <Workflow className="w-3 h-3 mr-1" />
+                  {selectedSystem}
+                </Badge>
+                <Badge variant="outline" className="text-xs font-normal">
+                  {nodes.length} steps · {edges.length} connections
+                </Badge>
+              </div>
 
-        <div className="p-6">
-          {!selectedSystem ? (
-            <Card>
-              <CardContent className="p-12 text-center">
-                <Workflow className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Get Started
-                </h3>
-                <p className="text-gray-500 mb-6">
-                  Choose a system from the dropdown above or create a new workflow
-                </p>
-                <Button 
-                  size="lg"
-                  onClick={() => setIsNewFlowDialogOpen(true)}
-                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+              <div
+                ref={canvasRef}
+                className="relative w-full h-full bg-slate-50 select-none"
+                style={{ overflow: "auto" }}
+                onWheel={handleWheel}
+                onMouseDown={handleCanvasMouseDown}
+                onMouseMove={handleCanvasMouseMove}
+                onMouseUp={handleCanvasMouseUp}
+                onMouseLeave={handleCanvasMouseUp}
+                onContextMenu={(e) => handleContextMenu(e)}
+              >
+                {/* Centering wrapper: uses flexbox to center content when smaller than viewport */}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    alignItems: "flex-start",
+                    minWidth: "100%",
+                    minHeight: "100%",
+                    paddingTop: "40px",
+                  }}
                 >
-                  <Plus className="w-5 h-5 mr-2" />
-                  Create New Flow
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-              {/* Main Canvas Area */}
-              <div className="lg:col-span-3">
-                <Card className="h-full">
-                  <CardHeader>
-                    <CardTitle className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <Workflow className="w-5 h-5 mr-2" />
-                        {selectedSystem} - Flow Builder
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Badge variant="secondary" className="text-xs">
-                          {isPanning ? "🖐️ Panning..." : "💡 Drag boxes to reposition"}
-                        </Badge>
-                        <Badge variant="outline" className="text-xs">
-                          🖱️ Middle-click or Shift+Drag to pan
-                        </Badge>
-                        <Badge variant="outline">
-                          {nodes.filter((node) => 
-                            !searchQuery || 
-                            node.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            node.doer?.toLowerCase().includes(searchQuery.toLowerCase())
-                          ).length} / {nodes.length} Steps
-                        </Badge>
-                      </div>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <div 
-                      className="relative bg-gray-50 overflow-hidden" 
-                      style={{ height: "calc(100vh - 280px)" }}
-                      onWheel={handleWheel}
-                      onMouseDown={handleCanvasMouseDown}
-                      onMouseMove={handleCanvasMouseMove}
-                      onMouseUp={handleCanvasMouseUp}
-                      onMouseLeave={handleCanvasMouseUp}
+                <div
+                  id="flow-canvas-container"
+                  className="relative pointer-events-auto"
+                  style={{
+                    transform: `scale(${zoomLevel})`,
+                    transformOrigin: "top center",
+                    transition: draggingNode ? "none" : "transform 0.15s ease-out",
+                    width: contentBounds.width || 400,
+                    height: contentBounds.height || 400,
+                    backgroundImage: "radial-gradient(circle, #cbd5e1 1px, transparent 1px)",
+                    backgroundSize: `${20}px ${20}px`,
+                  }}
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={handleMouseUp}
+                  onMouseLeave={handleMouseUp}
+                >
+                    {/* SVG edges */}
+                    <svg
+                      className="absolute top-0 left-0"
+                      style={{ width: "100%", height: "100%", zIndex: 1, overflow: "visible" }}
                     >
-                      <div
-                        className="absolute inset-0 pointer-events-none"
-                        style={{
-                          backgroundImage: "radial-gradient(circle, #d1d5db 1px, transparent 1px)",
-                          backgroundSize: `${20 * zoomLevel}px ${20 * zoomLevel}px`,
-                          backgroundPosition: `${panOffset.x}px ${panOffset.y}px`,
-                          cursor: isPanning ? 'grabbing' : 'default',
-                        }}
-                      />
-                      
-                      <div
-                        className="w-full h-full overflow-auto"
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          cursor: isPanning ? 'grabbing' : 'grab',
-                        }}
-                      >
-                        <div
-                          id="flow-canvas-container"
-                          className="relative pointer-events-auto"
-                          style={{
-                            transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
-                            transformOrigin: "center center",
-                            transition: isPanning ? 'none' : 'transform 0.2s ease-out',
-                            padding: "100px",
-                            minWidth: "max-content",
-                            minHeight: "max-content",
-                          }}
-                          onMouseMove={handleMouseMove}
-                          onMouseUp={handleMouseUp}
-                          onMouseLeave={handleMouseUp}
-                        >
-                        {/* SVG for connections */}
-                        <svg
-                          id="flow-canvas-svg"
-                          className="absolute top-0 left-0"
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            zIndex: 1,
-                            overflow: "visible",
-                          }}
-                        >
-                          <defs>
-                            <marker
-                              id="arrowhead"
-                              markerWidth="10"
-                              markerHeight="10"
-                              refX="9"
-                              refY="5"
-                              orient="auto"
-                            >
-                              <polygon points="0 0, 10 5, 0 10" fill="#6b7280" />
-                            </marker>
-                            <marker
-                              id="arrowhead-selected"
-                              markerWidth="10"
-                              markerHeight="10"
-                              refX="9"
-                              refY="5"
-                              orient="auto"
-                            >
-                              <polygon points="0 0, 10 5, 0 10" fill="#3b82f6" />
-                            </marker>
-                            <marker
-                              id="arrowhead-green"
-                              markerWidth="10"
-                              markerHeight="10"
-                              refX="9"
-                              refY="5"
-                              orient="auto"
-                            >
-                              <polygon points="0 0, 10 5, 0 10" fill="#10b981" />
-                            </marker>
-                            <marker
-                              id="arrowhead-red"
-                              markerWidth="10"
-                              markerHeight="10"
-                              refX="9"
-                              refY="5"
-                              orient="auto"
-                            >
-                              <polygon points="0 0, 10 5, 0 10" fill="#ef4444" />
-                            </marker>
-                            <marker
-                              id="arrowhead-orange"
-                              markerWidth="10"
-                              markerHeight="10"
-                              refX="9"
-                              refY="5"
-                              orient="auto"
-                            >
-                              <polygon points="0 0, 10 5, 0 10" fill="#f59e0b" />
-                            </marker>
-                          </defs>
-                          
-                          {edges.map((edge, index) => {
-                            const fromNode = nodes.find((n) => n.id === edge.from);
-                            const toNode = nodes.find((n) => n.id === edge.to);
-                            
-                            if (!fromNode || !toNode) return null;
+                      <defs>
+                        {/* Animated flow dot styles */}
+                        <style>{`
+                          @keyframes flowDot {
+                            0% { offset-distance: 0%; opacity: 0; }
+                            10% { opacity: 1; }
+                            90% { opacity: 1; }
+                            100% { offset-distance: 100%; opacity: 0; }
+                          }
+                          .flow-dot {
+                            animation: flowDot 2.5s linear infinite;
+                          }
+                          .flow-dot-fast {
+                            animation: flowDot 1.8s linear infinite;
+                          }
+                          @keyframes edgePulse {
+                            0%, 100% { opacity: 0.7; }
+                            50% { opacity: 1; }
+                          }
+                          .edge-pulse {
+                            animation: edgePulse 2s ease-in-out infinite;
+                          }
+                        `}</style>
+                        {/* Glow filter for selected edges */}
+                        <filter id="edge-glow" x="-20%" y="-20%" width="140%" height="140%">
+                          <feGaussianBlur stdDeviation="3" result="blur" />
+                          <feMerge>
+                            <feMergeNode in="blur" />
+                            <feMergeNode in="SourceGraphic" />
+                          </feMerge>
+                        </filter>
+                        {/* Arrowhead markers — sleeker design */}
+                        {[
+                          ["arr", "#94a3b8"],
+                          ["arr-sel", "#3b82f6"],
+                          ["arr-green", "#10b981"],
+                          ["arr-red", "#ef4444"],
+                          ["arr-amber", "#f59e0b"],
+                        ].map(([id, color]) => (
+                          <marker key={id} id={id} markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+                            <path d="M 0 1 L 10 5 L 0 9 L 2 5 Z" fill={color} />
+                          </marker>
+                        ))}
+                      </defs>
+                      {edges.map((edge, i) => renderEdgePath(edge, i))}
+                    </svg>
 
-                            const isSelected = selectedEdge?.from === edge.from && 
-                                             selectedEdge?.to === edge.to && 
-                                             selectedEdge?.label === edge.label;
-                            const edgeKey = `${edge.from}-${edge.to}-${edge.label}`;
-                            const isHovered = hoveredEdge === edgeKey;
-                            const isDecision = fromNode.type === "decision" || fromNode.childIds.length > 1;
-                            
-                            const statusLower = edge.label?.toLowerCase() || "";
-                            let strokeColor = "#6b7280";
-                            let markerEnd = "url(#arrowhead)";
-                            
-                            if (isSelected) {
-                              strokeColor = "#3b82f6";
-                              markerEnd = "url(#arrowhead-selected)";
-                            } else if (isDecision) {
-                              if (statusLower.includes("yes") || statusLower.includes("approved") || 
-                                  statusLower.includes("done") || statusLower.includes("success") ||statusLower.includes("pass")) {
-                                strokeColor = "#10b981";
-                                markerEnd = "url(#arrowhead-green)";
-                              } else if (statusLower.includes("no") || statusLower.includes("decline")||statusLower.includes("fail")) {
-                                strokeColor = "#ef4444";
-                                markerEnd = "url(#arrowhead-red)";
-                              } else {
-                                strokeColor = "#f59e0b";
-                                markerEnd = "url(#arrowhead-orange)";
-                              }
-                            }
-
-                            // Calculate start and end points
-                            // Node dimensions: width 220px, positioned at node.x + 100, node.y + 100
-                            const nodeWidth = 220;
-                            const nodeMinHeight = 100;
-                            
-                            // Start point: bottom center of from node
-                            const x1 = fromNode.x + 100 + nodeWidth / 2; // Center X
-                            const y1 = fromNode.y + 100 + nodeMinHeight; // Bottom Y (assuming min height for now)
-                            
-                            // End point: top center of to node
-                            const x2 = toNode.x + 100 + nodeWidth / 2;   // Center X
-                            const y2 = toNode.y + 100;                   // Top Y
-
-                            // Create smoother curved path
-                            const dx = x2 - x1;
-                            const dy = y2 - y1;
-                            const distance = Math.sqrt(dx * dx + dy * dy);
-                            
-                            // Adjust curve based on horizontal and vertical distance
-                            const horizontalOffset = Math.abs(dx) > 50 ? Math.abs(dx) * 0.3 : 0;
-                            const verticalOffset = Math.max(distance * 0.4, 50);
-                            
-                            const controlY1 = y1 + verticalOffset;
-                            const controlY2 = y2 - verticalOffset;
-                            
-                            // If nodes are horizontally far apart, add horizontal control
-                            let pathD;
-                            if (Math.abs(dx) > 100) {
-                              // S-curve for horizontal separation
-                              const controlX1 = x1 + dx * 0.2;
-                              const controlX2 = x2 - dx * 0.2;
-                              pathD = `M ${x1} ${y1} C ${controlX1} ${controlY1}, ${controlX2} ${controlY2}, ${x2} ${y2}`;
-                            } else {
-                              // Simple vertical curve
-                              pathD = `M ${x1} ${y1} C ${x1} ${controlY1}, ${x2} ${controlY2}, ${x2} ${y2}`;
-                            }
-
-                            const midY = (y1 + y2) / 2;
-                            const labelLength = edge.label?.length || 0;
-                            const labelWidth = Math.max(labelLength * 8 + 20, 60);
-                            const labelHeight = 28;
-
-                            return (
-                              <g 
-                                key={`edge-${index}-${edge.from}-${edge.to}`}
-                                style={{ cursor: "pointer" }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleEdgeClick(edge);
-                                }}
-                                onMouseEnter={() => setHoveredEdge(edgeKey)}
-                                onMouseLeave={() => setHoveredEdge(null)}
-                              >
-                                <path
-                                  d={pathD}
-                                  stroke={strokeColor}
-                                  strokeWidth={isSelected ? 4 : isHovered ? 3 : 2}
-                                  fill="none"
-                                  markerEnd={markerEnd}
-                                  opacity={isSelected || isHovered ? 1 : 0.85}
-                                  strokeLinecap="round"
-                                  style={{ transition: 'all 0.2s ease' }}
-                                />
-                                {edge.label && edge.label.trim() !== "" && (
-                                  <g>
-                                    <rect
-                                      x={(x1 + x2) / 2 - labelWidth / 2}
-                                      y={midY - labelHeight / 2}
-                                      width={labelWidth}
-                                      height={labelHeight}
-                                      fill="white"
-                                      stroke={strokeColor}
-                                      strokeWidth={isSelected || isHovered ? 2.5 : 1.5}
-                                      rx="8"
-                                      filter="drop-shadow(0 2px 6px rgba(0,0,0,0.15))"
-                                      style={{ transition: 'all 0.2s ease' }}
-                                    />
-                                    <text
-                                      x={(x1 + x2) / 2}
-                                      y={midY + 5}
-                                      textAnchor="middle"
-                                      style={{ 
-                                        fontSize: "13px", 
-                                        fontWeight: 600,
-                                        fill: strokeColor,
-                                        pointerEvents: "none"
-                                      }}
-                                    >
-                                      {edge.label}
-                                    </text>
-                                  </g>
-                                )}
-                              </g>
-                            );
-                          })}
-                        </svg>
-
-                        {/* Nodes */}
-                        {nodes
-                          .filter((node) => 
-                            !searchQuery || 
-                            node.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            node.doer?.toLowerCase().includes(searchQuery.toLowerCase())
-                          )
-                          .map((node) => {
-                            const isSearchMatch = searchQuery && (
-                              node.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                              node.doer?.toLowerCase().includes(searchQuery.toLowerCase())
-                            );
-                            
-                            return (
+                    {/* Nodes - all rendered, search only highlights */}
+                    {nodes
+                      .filter(
+                        (n) =>
+                          !searchQuery ||
+                          n.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          n.doer?.toLowerCase().includes(searchQuery.toLowerCase())
+                      )
+                      .map((node) => {
+                        const isMatch =
+                          searchQuery &&
+                          (node.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            node.doer?.toLowerCase().includes(searchQuery.toLowerCase()));
+                        return (
                           <div
                             key={node.id}
-                            className={`absolute border-2 rounded-lg shadow-md transition-all ${getNodeColor(
-                              node
-                            )} ${
-                              selectedNode?.id === node.id
-                                ? "ring-4 ring-primary ring-offset-2 shadow-xl"
-                                : ""
-                            } ${
-                              hoveredNode === node.id
-                                ? "shadow-xl scale-105"
-                                : "hover:shadow-lg hover:scale-[1.02]"
-                            } ${
-                              draggingNode === node.id
-                                ? "cursor-grabbing opacity-75"
-                                : "cursor-grab"
-                            } ${
-                              isSearchMatch
-                                ? "ring-2 ring-yellow-400 ring-offset-1"
-                                : ""
-                            }`}
+                            className={`absolute border-2 rounded-xl shadow-sm transition-all duration-150 ${getNodeColor(node)} ${
+                              selectedNode?.id === node.id ? "ring-2 ring-blue-500 ring-offset-2 shadow-lg" : ""
+                            } ${hoveredNode === node.id ? "shadow-md scale-[1.03]" : "hover:shadow-md"} ${
+                              draggingNode === node.id ? "cursor-grabbing opacity-70 scale-105" : "cursor-grab"
+                            } ${isMatch ? "ring-2 ring-yellow-400 ring-offset-1" : ""}`}
                             style={{
-                              left: node.x + 100,
-                              top: node.y + 100,
-                              width: "220px",
-                              minHeight: "100px",
-                              zIndex: draggingNode === node.id ? 999 : (selectedNode?.id === node.id ? 10 : 2),
+                              left: node.x + CANVAS_PAD,
+                              top: node.y + CANVAS_PAD,
+                              width: NODE_W,
+                              minHeight: NODE_H,
+                              zIndex: draggingNode === node.id ? 999 : selectedNode?.id === node.id ? 10 : 2,
                             }}
                             onClick={() => handleNodeClick(node)}
+                            onDoubleClick={() => handleNodeDoubleClick(node)}
                             onMouseDown={(e) => handleMouseDown(e, node.id)}
                             onMouseEnter={() => setHoveredNode(node.id)}
                             onMouseLeave={() => setHoveredNode(null)}
+                            onContextMenu={(e) => handleContextMenu(e, node)}
                           >
-                            <div className="p-4">
-                              <div className="flex items-start space-x-2 mb-2">
-                                {getNodeIcon(node)}
-                                <div className="flex-1">
-                                  <h4 className="font-semibold text-sm leading-tight">
-                                    {node.label}
-                                  </h4>
-                                  {node.type !== "start" && node.type !== "end" && (
-                                    <p className="text-xs opacity-75 mt-1">
-                                      {node.doer}
-                                    </p>
+                            <div className="p-3">
+                              <div className="flex items-start gap-2 mb-1">
+                                <div className="mt-0.5">{getNodeIcon(node)}</div>
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="font-semibold text-xs leading-tight truncate">{node.label}</h4>
+                                  {node.type !== "start" && node.doer && (
+                                    <p className="text-[10px] opacity-70 mt-0.5 truncate">{node.doer}</p>
                                   )}
                                 </div>
+                                {node.transferable && (
+                                  <Badge variant="outline" className="text-[9px] h-4 px-1 flex-shrink-0 border-orange-300 text-orange-600">
+                                    Transfer
+                                  </Badge>
+                                )}
                               </div>
-                              
-                              {node.tat !== undefined && (
-                                <div className="mt-2 pt-2 border-t border-current/20">
-                                  <div className="flex items-center justify-between text-xs">
-                                    <span className="flex items-center">
-                                      <Clock className="w-3 h-3 mr-1" />
-                                      TAT
-                                    </span>
-                                    <span className="font-semibold">
-                                      {node.tat} {node.tatType?.replace("tat", "")}
-                                    </span>
+                              {node.tat != null && (
+                                <div className="mt-1.5 pt-1.5 border-t border-current/10 space-y-0.5">
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" /> TAT</span>
+                                    <span className="font-semibold">{node.tat} {node.tatType?.replace("tat", "")}</span>
                                   </div>
                                   {node.formId && (
-                                    <div className="flex items-center justify-between text-xs mt-1">
+                                    <div className="flex items-center justify-between text-[10px]">
                                       <span>Form</span>
-                                      <Badge 
-                                        variant="secondary" 
-                                        className="h-5 text-xs"
-                                      >
-                                        {node.formId}
-                                      </Badge>
+                                      <Badge variant="secondary" className="h-4 text-[9px] px-1">{node.formId}</Badge>
                                     </div>
                                   )}
                                   {node.parentIds.length > 1 && node.mergeCondition && (
-                                    <div className="flex items-center justify-between text-xs mt-1">
+                                    <div className="flex items-center justify-between text-[10px]">
                                       <span>Merge</span>
-                                      <Badge 
-                                        variant={node.mergeCondition === "any" ? "default" : "secondary"} 
-                                        className={`h-5 text-xs ${node.mergeCondition === "any" ? "bg-orange-500 hover:bg-orange-600" : ""}`}
+                                      <Badge
+                                        variant={node.mergeCondition === "any" ? "default" : "secondary"}
+                                        className={`h-4 text-[9px] px-1 ${node.mergeCondition === "any" ? "bg-orange-500" : ""}`}
                                       >
-                                        {node.mergeCondition === "any" ? "⚡ Any" : "✓ All"}
+                                        {node.mergeCondition === "any" ? "Any" : "All"}
                                       </Badge>
                                     </div>
                                   )}
@@ -1564,306 +1397,591 @@ export default function VisualFlowBuilder() {
                             </div>
                           </div>
                         );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+                      })}
+                </div>
+                </div>
 
-              {/* Control Panel Sidebar */}
-              <div className="lg:col-span-1">
-                <Card className="sticky top-6">
-                  <CardHeader>
-                    <CardTitle className="text-lg">
-                      {selectedNode ? "Node Actions" : selectedEdge ? "Edge Actions" : "Builder Tools"}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {selectedNode ? (
-                      <div className="space-y-4">
-                        <div>
-                          <h4 className="font-semibold text-sm text-gray-600 mb-1">Selected Node</h4>
-                          <p className="text-base font-medium">{selectedNode.label}</p>
-                          <Badge className={`mt-2 ${getNodeColor(selectedNode)}`}>
+              </div>
+            </Card>
+
+            {/* ═══ SIDEBAR PANEL ═══ */}
+            <div className="space-y-4 overflow-y-auto max-h-full pr-1">
+              <Card>
+                <CardHeader className="py-3 px-4">
+                  <CardTitle className="text-sm">
+                    {selectedNode ? "Node Actions" : selectedEdge ? "Edge Actions" : "Builder Tools"}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-4 pb-4 pt-0">
+                  {selectedNode ? (
+                    <div className="space-y-3">
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <p className="font-medium text-sm">{selectedNode.label}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge className={`text-[10px] ${getNodeColor(selectedNode)}`}>
                             {selectedNode.type}
                           </Badge>
+                          {selectedNode.transferable && (
+                            <Badge variant="outline" className="text-[10px] border-orange-300 text-orange-600">Transferable</Badge>
+                          )}
                         </div>
-
                         {selectedNode.doer && (
-                          <div>
-                            <h4 className="font-semibold text-sm text-gray-600 mb-1">Assigned To</h4>
-                            <p className="text-sm">{selectedNode.doer}</p>
-                          </div>
+                          <p className="text-xs text-gray-500 mt-1">{selectedNode.doer}</p>
                         )}
-
-                        <div className="space-y-2 pt-4 border-t">
-                          {selectedNode.type !== "start" && (
-                            <Button 
-                              className="w-full" 
-                              variant="default"
-                              onClick={handleUpdateNode}
-                            >
-                              <Edit className="w-4 h-4 mr-2" />
-                              Update Step
-                            </Button>
-                          )}
-                          
-                          <Button 
-                            className="w-full" 
-                            variant={selectedNode.type === "start" ? "default" : "outline"}
-                            onClick={handleAddFromNode}
-                          >
-                            <Plus className="w-4 h-4 mr-2" />
-                            Add Next Step
+                      </div>
+                      <div className="space-y-1.5">
+                        {selectedNode.type !== "start" && (
+                          <Button className="w-full h-8 text-xs" onClick={handleUpdateNode}>
+                            <Edit className="w-3 h-3 mr-1.5" /> Edit Step
                           </Button>
-                          
-                          {selectedNode.type !== "start" && selectedNode.type !== "end" && (
-                            <Button 
-                              className="w-full" 
-                              variant="destructive"
-                              onClick={handleDeleteStep}
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete Step
-                            </Button>
-                          )}
-                          
-                          {/* Show general Add Rule button as alternative */}
-                          <Button 
-                            className="w-full" 
-                            variant="outline"
-                            onClick={() => {
-                              setNewRule({ ...newRule, currentTask: "" });
-                              setIsAddRuleDialogOpen(true);
-                            }}
-                          >
-                            <Plus className="w-4 h-4 mr-2" />
-                            Add New Rule
+                        )}
+                        <Button className="w-full h-8 text-xs" variant={selectedNode.type === "start" ? "default" : "outline"} onClick={handleAddFromNode}>
+                          <Plus className="w-3 h-3 mr-1.5" /> Add Next Step
+                        </Button>
+                        {selectedNode.type !== "start" && (
+                          <Button className="w-full h-8 text-xs" variant="destructive" onClick={handleDeleteStep}>
+                            <Trash2 className="w-3 h-3 mr-1.5" /> Delete Step
                           </Button>
+                        )}
+                      </div>
+                    </div>
+                  ) : selectedEdge && editingRule ? (
+                    <div className="space-y-3">
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <p className="text-xs">
+                          {selectedEdge.from === "start" ? "Start" : selectedEdge.from}{" "}
+                          <ArrowRight className="inline w-3 h-3 mx-1" />{" "}
+                          {selectedEdge.to}
+                        </p>
+                        {selectedEdge.label && <Badge className="mt-1 text-[10px]">{selectedEdge.label}</Badge>}
+                        <div className="mt-2 text-[10px] text-gray-500 space-y-0.5">
+                          <p>Doer: {editingRule.doer}</p>
+                          <p>TAT: {editingRule.tat} {editingRule.tatType}</p>
+                          {editingRule.formId && <p>Form: {editingRule.formId}</p>}
                         </div>
                       </div>
-                    ) : selectedEdge && editingRule ? (
-                      <div className="space-y-4">
-                        <div>
-                          <h4 className="font-semibold text-sm text-gray-600 mb-1">Flow Path</h4>
-                          <p className="text-sm">
-                            {selectedEdge.from === "start" ? "Start" : selectedEdge.from} 
-                            <ArrowRight className="inline w-4 h-4 mx-1" />
-                            {selectedEdge.to}
-                          </p>
-                          {selectedEdge.label && (
-                            <Badge className="mt-2">{selectedEdge.label}</Badge>
-                          )}
-                        </div>
-
-                        <div>
-                          <h4 className="font-semibold text-sm text-gray-600 mb-1">Details</h4>
-                          <p className="text-xs text-gray-600">Doer: {editingRule.doer}</p>
-                          <p className="text-xs text-gray-600">TAT: {editingRule.tat} {editingRule.tatType}</p>
-                          {editingRule.formId && (
-                            <p className="text-xs text-gray-600">
-                              Form: {editingRule.formId}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="space-y-2 pt-4 border-t">
-                          <Button 
-                            className="w-full" 
-                            variant="outline"
-                            onClick={handleEditEdge}
-                          >
-                            <Edit className="w-4 h-4 mr-2" />
-                            Edit Rule
-                          </Button>
-                          <Button 
-                            className="w-full" 
-                            variant="destructive"
-                            onClick={handleDeleteEdge}
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete Rule
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-center text-gray-500 py-8">
-                        <Workflow className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm mb-4">Click on a node or edge to manage</p>
-                        <Button 
-                          className="w-full" 
-                          onClick={() => {
-                            setNewRule({ ...newRule, currentTask: "" });
-                            setIsAddRuleDialogOpen(true);
-                          }}
-                        >
-                          <Plus className="w-4 h-4 mr-2" />
-                          Add New Rule
+                      <div className="space-y-1.5">
+                        <Button className="w-full h-8 text-xs" variant="outline" onClick={handleEditEdge}>
+                          <Edit className="w-3 h-3 mr-1.5" /> Edit Rule
+                        </Button>
+                        <Button className="w-full h-8 text-xs" variant="outline" onClick={() => handleDuplicateRule(editingRule)}>
+                          <Copy className="w-3 h-3 mr-1.5" /> Duplicate
+                        </Button>
+                        <Button className="w-full h-8 text-xs" variant="destructive" onClick={handleDeleteEdge}>
+                          <Trash2 className="w-3 h-3 mr-1.5" /> Delete Rule
                         </Button>
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
+                    </div>
+                  ) : (
+                    <div className="text-center py-6">
+                      <Workflow className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+                      <p className="text-xs text-gray-400 mb-3">Click a node or edge</p>
+                      <Button
+                        className="w-full h-8 text-xs"
+                        onClick={() => { resetNewRuleForm(); setIsAddRuleDialogOpen(true); }}
+                      >
+                        <Plus className="w-3 h-3 mr-1.5" /> Add Rule
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
-                {/* Quick Stats */}
-                <Card className="mt-6">
-                  <CardHeader>
-                    <CardTitle className="text-lg">Flow Stats</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Total Steps:</span>
-                      <span className="font-semibold">{nodes.length}</span>
+              {/* Flow Stats */}
+              <Card>
+                <CardHeader className="py-3 px-4">
+                  <CardTitle className="text-sm">Flow Stats</CardTitle>
+                </CardHeader>
+                <CardContent className="px-4 pb-4 pt-0 space-y-1.5">
+                  {[
+                    ["Steps", nodes.length],
+                    ["Connections", edges.length],
+                    ["Decision Points", nodes.filter((n) => n.type === "decision").length],
+                    ["End Points", nodes.filter((n) => n.type === "end").length],
+                    ["Transferable", nodes.filter((n) => n.transferable).length],
+                  ].map(([label, value]) => (
+                    <div key={label as string} className="flex justify-between text-xs">
+                      <span className="text-gray-500">{label}</span>
+                      <span className="font-semibold">{value}</span>
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Connections:</span>
-                      <span className="font-semibold">{edges.length}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Decision Points:</span>
-                      <span className="font-semibold">
-                        {nodes.filter(n => n.type === "decision").length}
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+                  ))}
+                </CardContent>
+              </Card>
+
+              {/* Quick help */}
+              <Card>
+                <CardContent className="px-4 py-3 text-[10px] text-gray-400 space-y-1">
+                  <p><kbd className="bg-gray-100 px-1 rounded">Ctrl+Z</kbd> Undo · <kbd className="bg-gray-100 px-1 rounded">Ctrl+Y</kbd> Redo</p>
+                  <p><kbd className="bg-gray-100 px-1 rounded">Scroll</kbd> Pan · <kbd className="bg-gray-100 px-1 rounded">Ctrl+Scroll</kbd> Zoom</p>
+                  <p><kbd className="bg-gray-100 px-1 rounded">Double-click</kbd> node to edit · <kbd className="bg-gray-100 px-1 rounded">Right-click</kbd> for menu</p>
+                </CardContent>
+              </Card>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* ═══ CONTEXT MENU ═══ */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-white border rounded-lg shadow-xl py-1 min-w-[160px] animate-in fade-in-0 zoom-in-95 duration-100"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          {contextMenu.node ? (
+            <>
+              <div className="px-3 py-1.5 text-xs font-medium text-gray-400 border-b mb-1 truncate max-w-[200px]">
+                {contextMenu.node.label}
+              </div>
+              {contextMenu.node.type !== "start" && (
+                <button
+                  className="flex items-center w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100"
+                  onClick={() => {
+                    handleNodeDoubleClick(contextMenu.node!);
+                    setContextMenu(null);
+                  }}
+                >
+                  <Edit className="w-3.5 h-3.5 mr-2 text-gray-500" /> Edit Step
+                </button>
+              )}
+              <button
+                className="flex items-center w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100"
+                onClick={() => {
+                  setSelectedNode(contextMenu.node!);
+                  handleAddFromNode();
+                  setContextMenu(null);
+                }}
+              >
+                <Plus className="w-3.5 h-3.5 mr-2 text-gray-500" /> Add Next Step
+              </button>
+              {contextMenu.node.type !== "start" && (
+                <button
+                  className="flex items-center w-full px-3 py-1.5 text-sm text-left hover:bg-red-50 text-red-600"
+                  onClick={() => {
+                    setSelectedNode(contextMenu.node!);
+                    handleDeleteStep();
+                    setContextMenu(null);
+                  }}
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete Step
+                </button>
+              )}
+            </>
+          ) : contextMenu.edge ? (
+            <>
+              <div className="px-3 py-1.5 text-xs font-medium text-gray-400 border-b mb-1">Rule</div>
+              <button
+                className="flex items-center w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100"
+                onClick={() => { handleEditEdge(); setContextMenu(null); }}
+              >
+                <Edit className="w-3.5 h-3.5 mr-2 text-gray-500" /> Edit Rule
+              </button>
+              {editingRule && (
+                <button
+                  className="flex items-center w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100"
+                  onClick={() => { handleDuplicateRule(editingRule); setContextMenu(null); }}
+                >
+                  <Copy className="w-3.5 h-3.5 mr-2 text-gray-500" /> Duplicate
+                </button>
+              )}
+              <button
+                className="flex items-center w-full px-3 py-1.5 text-sm text-left hover:bg-red-50 text-red-600"
+                onClick={() => { handleDeleteEdge(); setContextMenu(null); }}
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete Rule
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className="flex items-center w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100"
+                onClick={() => { resetNewRuleForm(); setIsAddRuleDialogOpen(true); setContextMenu(null); }}
+              >
+                <Plus className="w-3.5 h-3.5 mr-2 text-gray-500" /> Add New Rule
+              </button>
+              <button
+                className="flex items-center w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100"
+                onClick={() => { handleFitToScreen(); setContextMenu(null); }}
+              >
+                <Crosshair className="w-3.5 h-3.5 mr-2 text-gray-500" /> Fit to Screen
+              </button>
+              <button
+                className="flex items-center w-full px-3 py-1.5 text-sm text-left hover:bg-gray-100"
+                onClick={() => { handleExportPNG(); setContextMenu(null); }}
+              >
+                <Download className="w-3.5 h-3.5 mr-2 text-gray-500" /> Export PNG
+              </button>
+            </>
           )}
         </div>
+      )}
 
-        {/* Add Rule Dialog */}
-        <Dialog open={isAddRuleDialogOpen} onOpenChange={setIsAddRuleDialogOpen}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Add New Flow Rule</DialogTitle>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Current Task (From)</Label>
-                  {availableTasks.length > 0 ? (
-                    <Select 
-                      value={newRule.currentTask || "__start__"} 
-                      onValueChange={(val) => setNewRule({ ...newRule, currentTask: val === "__start__" ? "" : val })}
-                      disabled={!newRule.currentTask && availableTasks.length === 0}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select current task" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__start__">
-                          <span className="flex items-center">
-                            <Play className="w-4 h-4 mr-2 text-green-600" />
-                            Start (No Previous Task)
-                          </span>
-                        </SelectItem>
-                        {availableTasks.map((task) => (
-                          <SelectItem key={task} value={task}>
-                            {task}
-                          </SelectItem>
-                        ))}
-                        <SelectItem value="__custom__">
-                          <span className="text-blue-600 font-medium">+ Type Custom Task...</span>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input
-                      value={newRule.currentTask}
-                      onChange={(e) => setNewRule({ ...newRule, currentTask: e.target.value })}
-                      placeholder="Leave empty for start task"
-                      disabled
-                      className="bg-gray-100 cursor-not-allowed"
-                    />
-                  )}
-                  {newRule.currentTask === "__custom__" && (
-                    <Input
-                      className="mt-2"
-                      placeholder="Enter custom task name"
-                      onChange={(e) => setNewRule({ ...newRule, currentTask: e.target.value })}
-                      autoFocus
-                    />
-                  )}
-                  <p className="text-xs text-gray-500 mt-1">
-                    {!newRule.currentTask || newRule.currentTask === "" 
-                      ? "🔒 Blocked for first task - This will be the start of your flow" 
-                      : "Task that leads to next step"}
-                  </p>
-                </div>
-                <div>
-                  <Label>Status (When) {newRule.currentTask && newRule.currentTask !== "" ? "*" : ""}</Label>
-                  <Input
-                    value={newRule.status}
-                    onChange={(e) => setNewRule({ ...newRule, status: e.target.value })}
-                    placeholder="e.g., Done, Approved, Yes"
-                    list="status-suggestions"
-                    disabled={!newRule.currentTask}
-                    className={!newRule.currentTask ? "bg-gray-100 cursor-not-allowed" : ""}
-                  />
-                  <datalist id="status-suggestions">
-                    <option value="Done" />
-                    <option value="Yes" />
-                    <option value="No" />
-                    <option value="Approved" />
-                    <option value="Decline" />
-                    <option value="Pending" />
-                    <option value="Complete" />
-                  </datalist>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {!newRule.currentTask ? "🔒 Not required for first task" : "* Required - Condition to trigger this path"}
-                  </p>
-                </div>
+      {/* ═══ ADD RULE DIALOG ═══ */}
+      <Dialog open={isAddRuleDialogOpen} onOpenChange={setIsAddRuleDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="w-5 h-5 text-blue-500" /> Add Flow Rule
+            </DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs">Current Task (From)</Label>
+                {availableTasks.length > 0 ? (
+                  <Select
+                    value={newRule.currentTask || "__start__"}
+                    onValueChange={(v) => setNewRule({ ...newRule, currentTask: v === "__start__" ? "" : v })}
+                  >
+                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__start__">
+                        <span className="flex items-center"><Play className="w-3.5 h-3.5 mr-2 text-green-600" /> Start</span>
+                      </SelectItem>
+                      {availableTasks.map((t) => (<SelectItem key={t} value={t}>{t}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input value="" disabled className="h-9 bg-gray-50" placeholder="Start (first task)" />
+                )}
+                <p className="text-[10px] text-gray-400 mt-1">
+                  {!newRule.currentTask ? "First task in flow" : "Previous step"}
+                </p>
               </div>
               <div>
-                <Label>Next Task (To) *</Label>
+                <Label className="text-xs">Status (When) {newRule.currentTask ? "*" : ""}</Label>
                 <Input
-                  value={newRule.nextTask}
-                  onChange={(e) => {
-                    const newNextTask = e.target.value;
-                    // Clear formId if the new task name is already configured
-                    if (availableTasks.includes(newNextTask)) {
-                      setNewRule({ ...newRule, nextTask: newNextTask, formId: "" });
-                    } else {
-                      setNewRule({ ...newRule, nextTask: newNextTask });
-                    }
-                  }}
-                  placeholder="Enter next task name"
-                  list="task-suggestions"
+                  value={newRule.status}
+                  onChange={(e) => setNewRule({ ...newRule, status: e.target.value })}
+                  placeholder="e.g., Done, Approved"
+                  className="h-9"
+                  list="status-suggestions"
+                  disabled={!newRule.currentTask}
                 />
-                <datalist id="task-suggestions">
-                  {availableTasks.map((task) => (
-                    <option key={task} value={task} />
+                <datalist id="status-suggestions">
+                  {["Done", "Yes", "No", "Approved", "Decline", "Complete", "Pending"].map((s) => (
+                    <option key={s} value={s} />
                   ))}
                 </datalist>
-                {availableTasks.includes(newRule.nextTask) ? (
-                  <p className="text-xs text-amber-600 mt-1">
-                    ⚠️ This task already exists - connecting to existing step
-                  </p>
-                ) : (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Task that will be created after this condition
-                  </p>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs">Next Task (To) *</Label>
+              <Input
+                value={newRule.nextTask}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  // If selecting an existing step, auto-fill its TAT, doer, email, form from existing rule
+                  const existingRule = flowRules.find(
+                    (r) => r.system === selectedSystem && r.nextTask === val
+                  );
+                  if (existingRule && availableTasks.includes(val)) {
+                    setNewRule({
+                      ...newRule,
+                      nextTask: val,
+                      tat: existingRule.tat,
+                      tatType: existingRule.tatType as any,
+                      doer: existingRule.doer,
+                      email: existingRule.email,
+                      formId: existingRule.formId || "",
+                      transferable: existingRule.transferable || false,
+                      transferToEmails: existingRule.transferToEmails || "",
+                      mergeCondition: (existingRule.mergeCondition as any) || "all",
+                    });
+                  } else {
+                    setNewRule({
+                      ...newRule,
+                      nextTask: val,
+                    });
+                  }
+                }}
+                placeholder="Task name"
+                className="h-9"
+                list="task-suggestions"
+              />
+              <datalist id="task-suggestions">
+                {availableTasks.map((t) => (<option key={t} value={t} />))}
+              </datalist>
+              {availableTasks.includes(newRule.nextTask) && (
+                <p className="text-[10px] text-amber-600 mt-1">Connecting to existing step — fields auto-filled</p>
+              )}
+            </div>
+
+            {availableTasks.includes(newRule.nextTask) && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                <p className="text-xs text-blue-700 font-medium">Existing step selected — TAT, Doer, User &amp; Form auto-filled from existing rule</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs">TAT *</Label>
+                <Input
+                  type="number"
+                  value={newRule.tat}
+                  onChange={(e) => setNewRule({ ...newRule, tat: parseInt(e.target.value) || 1 })}
+                  min={1}
+                  className={`h-9 ${availableTasks.includes(newRule.nextTask) ? "bg-gray-50" : ""}`}
+                  disabled={availableTasks.includes(newRule.nextTask)}
+                />
+              </div>
+              <div>
+                <Label className="text-xs">TAT Type *</Label>
+                <Select value={newRule.tatType} onValueChange={(v: any) => setNewRule({ ...newRule, tatType: v })} disabled={availableTasks.includes(newRule.nextTask)}>
+                  <SelectTrigger className={`h-9 ${availableTasks.includes(newRule.nextTask) ? "bg-gray-50" : ""}`}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="daytat">Day TAT</SelectItem>
+                    <SelectItem value="hourtat">Hour TAT</SelectItem>
+                    <SelectItem value="beforetat">Before TAT</SelectItem>
+                    <SelectItem value="specifytat">Specify TAT</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs">Doer (Role) *</Label>
+                <Input
+                  value={newRule.doer}
+                  onChange={(e) => setNewRule({ ...newRule, doer: e.target.value })}
+                  placeholder="e.g., Manager"
+                  className={`h-9 ${availableTasks.includes(newRule.nextTask) ? "bg-gray-50" : ""}`}
+                  disabled={availableTasks.includes(newRule.nextTask)}
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Assign to User *</Label>
+                <Select
+                  value={newRule.email}
+                  onValueChange={(v) => {
+                    const u = (users as any[])?.find((u: any) => u.email === v);
+                    setNewRule({
+                      ...newRule,
+                      email: v,
+                      doer: u ? `${u.firstName} ${u.lastName}`.trim() : newRule.doer,
+                    });
+                  }}
+                  disabled={availableTasks.includes(newRule.nextTask)}
+                >
+                  <SelectTrigger className={`h-9 ${availableTasks.includes(newRule.nextTask) ? "bg-gray-50" : ""}`}><SelectValue placeholder="Select user" /></SelectTrigger>
+                  <SelectContent>
+                    {(users as any[])?.map((u: any) => (
+                      <SelectItem key={u.id} value={u.email}>
+                        {u.firstName} {u.lastName} ({u.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs">Form Attachment</Label>
+              <div className="flex gap-2">
+                <Select
+                  value={newRule.formId || "__none__"}
+                  onValueChange={(v) => {
+                    if (v === "__create_new__") {
+                      setInlineFormCreate("add");
+                      setFormBuilderData({ formId: "", title: "", description: "" });
+                    } else {
+                      setNewRule({ ...newRule, formId: v === "__none__" ? "" : v });
+                    }
+                  }}
+                  disabled={availableTasks.includes(newRule.nextTask)}
+                >
+                  <SelectTrigger className="h-9 flex-1"><SelectValue placeholder="No form" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">No Form</SelectItem>
+                    {(quickFormTemplates as any[])?.map((t: any) => (
+                      <SelectItem key={t.formId} value={t.formId}>{t.title} ({t.formId})</SelectItem>
+                    ))}
+                    <SelectItem value="__create_new__">
+                      <span className="flex items-center text-blue-600 font-medium"><Plus className="w-3.5 h-3.5 mr-1" /> Create New Form</span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                {!availableTasks.includes(newRule.nextTask) && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-9 px-2 text-blue-600 border-blue-200 hover:bg-blue-50"
+                    onClick={() => {
+                      setInlineFormCreate("add");
+                      setFormBuilderData({ formId: "", title: "", description: "" });
+                    }}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </Button>
                 )}
               </div>
+              {inlineFormCreate === "add" && (
+                <div className="mt-3 p-3 border border-blue-200 bg-blue-50/50 rounded-lg space-y-3">
+                  <p className="text-xs font-semibold text-blue-700 flex items-center gap-1"><Plus className="w-3 h-3" /> Create New Form</p>
+                  <div>
+                    <Label className="text-[11px]">Form ID *</Label>
+                    <Input
+                      value={formBuilderData.formId}
+                      onChange={(e) => setFormBuilderData({ ...formBuilderData, formId: e.target.value })}
+                      placeholder="e.g., intake-form"
+                      className="h-8 text-sm"
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[11px]">Form Title *</Label>
+                    <Input
+                      value={formBuilderData.title}
+                      onChange={(e) => setFormBuilderData({ ...formBuilderData, title: e.target.value })}
+                      placeholder="e.g., Customer Intake Form"
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[11px]">Description</Label>
+                    <Textarea
+                      value={formBuilderData.description}
+                      onChange={(e) => setFormBuilderData({ ...formBuilderData, description: e.target.value })}
+                      rows={2}
+                      className="text-sm"
+                      placeholder="Optional description"
+                    />
+                  </div>
+                  <p className="text-[10px] text-amber-600">Add fields later in the Form Builder page.</p>
+                  <div className="flex gap-2 justify-end">
+                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setInlineFormCreate(null); setFormBuilderData({ formId: "", title: "", description: "" }); }}>
+                      Cancel
+                    </Button>
+                    <Button type="button" size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700" onClick={handleSaveFormTemplate} disabled={createFormTemplateMutation.isPending}>
+                      {createFormTemplateMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Save className="w-3 h-3 mr-1" />}
+                      Create Form
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs">Merge Condition</Label>
+                <Select
+                  value={newRule.mergeCondition}
+                  onValueChange={(v: "all" | "any") => setNewRule({ ...newRule, mergeCondition: v })}
+                >
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Complete</SelectItem>
+                    <SelectItem value="any">Any Complete</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 mt-5">
+                  <Checkbox
+                    id="new-transferable"
+                    checked={newRule.transferable}
+                    onCheckedChange={(v) => setNewRule({ ...newRule, transferable: Boolean(v) })}
+                  />
+                  <Label htmlFor="new-transferable" className="text-xs">Transferable task</Label>
+                </div>
+              </div>
+            </div>
+
+            {newRule.transferable && (
+              <div>
+                <Label className="text-xs">Transfer To (comma-separated emails)</Label>
+                <Input
+                  value={newRule.transferToEmails}
+                  onChange={(e) => setNewRule({ ...newRule, transferToEmails: e.target.value })}
+                  placeholder="user1@example.com, user2@example.com"
+                  className="h-9"
+                />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setIsAddRuleDialogOpen(false)} disabled={createRuleMutation.isPending}>Cancel</Button>
+            <Button size="sm" onClick={handleSaveNewRule} disabled={createRuleMutation.isPending}>
+              {createRuleMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1.5" />}
+              {createRuleMutation.isPending ? "Saving..." : "Save Rule"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══ EDIT RULE DIALOG ═══ */}
+      <Dialog open={isEditRuleDialogOpen} onOpenChange={setIsEditRuleDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit className="w-5 h-5 text-blue-500" /> Edit Flow Rule
+            </DialogTitle>
+          </DialogHeader>
+          {editingRule && (
+            <div className="grid gap-4 py-2">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>TAT *</Label>
+                  <Label className="text-xs">Current Task (From)</Label>
+                  <Select
+                    value={editingRule.currentTask || "__start__"}
+                    onValueChange={(v) => setEditingRule({ ...editingRule, currentTask: v === "__start__" ? "" : v })}
+                  >
+                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__start__">
+                        <span className="flex items-center"><Play className="w-3.5 h-3.5 mr-2 text-green-600" /> Start</span>
+                      </SelectItem>
+                      {availableTasks.map((t) => (<SelectItem key={t} value={t}>{t}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Status (When) {editingRule.currentTask ? "*" : ""}</Label>
+                  <Input
+                    value={editingRule.status}
+                    onChange={(e) => setEditingRule({ ...editingRule, status: e.target.value })}
+                    placeholder="e.g., Done, Approved"
+                    className="h-9"
+                    list="status-suggestions-edit"
+                  />
+                  <datalist id="status-suggestions-edit">
+                    {["Done", "Yes", "No", "Approved", "Decline", "Complete", "Pending"].map((s) => (
+                      <option key={s} value={s} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-xs">Next Task (To) *</Label>
+                <Input
+                  value={editingRule.nextTask}
+                  onChange={(e) => setEditingRule({ ...editingRule, nextTask: e.target.value })}
+                  className="h-9"
+                  list="task-suggestions-edit"
+                />
+                <datalist id="task-suggestions-edit">
+                  {availableTasks.map((t) => (<option key={t} value={t} />))}
+                </datalist>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs">TAT *</Label>
                   <Input
                     type="number"
-                    value={newRule.tat}
-                    onChange={(e) => setNewRule({ ...newRule, tat: parseInt(e.target.value) || 1 })}
-                    min="1"
+                    value={editingRule.tat}
+                    onChange={(e) => setEditingRule({ ...editingRule, tat: parseInt(e.target.value) || 1 })}
+                    min={1}
+                    className="h-9"
                   />
                 </div>
                 <div>
-                  <Label>TAT Type *</Label>
-                  <Select value={newRule.tatType} onValueChange={(val: any) => setNewRule({ ...newRule, tatType: val })}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
+                  <Label className="text-xs">TAT Type *</Label>
+                  <Select value={editingRule.tatType} onValueChange={(v: any) => setEditingRule({ ...editingRule, tatType: v })}>
+                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="daytat">Day TAT</SelectItem>
                       <SelectItem value="hourtat">Hour TAT</SelectItem>
@@ -1873,526 +1991,232 @@ export default function VisualFlowBuilder() {
                   </Select>
                 </div>
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Doer (Role) *</Label>
-                  <Input
-                    value={newRule.doer}
-                    onChange={(e) => setNewRule({ ...newRule, doer: e.target.value })}
-                    placeholder="e.g., Sales Executive"
-                  />
+                  <Label className="text-xs">Doer (Role) *</Label>
+                  <Input value={editingRule.doer} onChange={(e) => setEditingRule({ ...editingRule, doer: e.target.value })} className="h-9" />
                 </div>
                 <div>
-                  <Label>Assign to User *</Label>
-                  <Select value={newRule.email} onValueChange={(val) => {
-                    setNewRule({ ...newRule, email: val });
-                    const selectedUser = (users as any[])?.find((u: any) => u.email === val);
-                    if (selectedUser) {
-                      setNewRule({ 
-                        ...newRule, 
-                        email: val,
-                        doer: `${selectedUser.firstName} ${selectedUser.lastName}`.trim()
-                      });
-                    }
-                  }}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select user" />
-                    </SelectTrigger>
+                  <Label className="text-xs">Assign to User *</Label>
+                  <Select value={editingRule.email} onValueChange={(v) => setEditingRule({ ...editingRule, email: v })}>
+                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {(users as any[])?.map((user: any) => (
-                        <SelectItem key={user.id} value={user.email}>
-                          {user.firstName} {user.lastName} ({user.email})
-                        </SelectItem>
+                      {(users as any[])?.map((u: any) => (
+                        <SelectItem key={u.id} value={u.email}>{u.firstName} {u.lastName} ({u.email})</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
               </div>
-              <div>
-                <Label>Form Attachment (Optional)</Label>
-                <Select 
-                  value={newRule.formId || "__none__"} 
-                  onValueChange={(val) => setNewRule({ ...newRule, formId: val === "__none__" ? "" : val })}
-                  disabled={availableTasks.includes(newRule.nextTask)}
-                >
-                  <SelectTrigger className={availableTasks.includes(newRule.nextTask) ? "bg-gray-100 cursor-not-allowed" : ""}>
-                    <SelectValue placeholder="No form" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">No Form</SelectItem>
-                    {(quickFormTemplates as any[])?.map((t: any) => (
-                      <SelectItem key={t.formId} value={t.formId}>
-                        {t.title} ({t.formId})
-                      </SelectItem>
-                    ))}
-                    {(!quickFormTemplates || (quickFormTemplates as any[]).length === 0) && (
-                      <SelectItem value="__empty__" disabled>
-                        No form templates — create one in Form Builder
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-                {availableTasks.includes(newRule.nextTask) && (
-                  <p className="text-xs text-red-500 mt-1">
-                    🚫 Form is disabled - This task is already configured in another step
-                  </p>
-                )}
-              </div>
-              <div>
-                <Label>Merge Condition (For Parallel Steps)</Label>
-                <Select 
-                  value={newRule.mergeCondition} 
-                  onValueChange={(val: "all" | "any") => setNewRule({ ...newRule, mergeCondition: val })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">
-                      All Steps Complete - Next step starts only after ALL parallel steps are completed
-                    </SelectItem>
-                    <SelectItem value="any">
-                      Any Step Complete - Next step starts as soon as ANY parallel step is completed
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-gray-500 mt-1">
-                  💡 Controls when next task starts at merge points
-                </p>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsAddRuleDialogOpen(false)} disabled={createRuleMutation.isPending}>
-                Cancel
-              </Button>
-              <Button onClick={handleSaveNewRule} disabled={createRuleMutation.isPending}>
-                {createRuleMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4 mr-2" />
-                )}
-                {createRuleMutation.isPending ? "Saving..." : "Save Rule"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
 
-        {/* Edit Rule Dialog */}
-        <Dialog open={isEditRuleDialogOpen} onOpenChange={setIsEditRuleDialogOpen}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Edit Flow Rule</DialogTitle>
-            </DialogHeader>
-            {editingRule && (
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Current Task (From)</Label>
-                    <Select 
-                      value={editingRule.currentTask || "__start__"} 
-                      onValueChange={(val) => setEditingRule({ ...editingRule, currentTask: val === "__start__" ? "" : val })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__start__">
-                          <span className="flex items-center">
-                            <Play className="w-4 h-4 mr-2 text-green-600" />
-                            Start (No Previous Task)
-                          </span>
-                        </SelectItem>
-                        {availableTasks.map((task) => (
-                          <SelectItem key={task} value={task}>
-                            {task}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Status (When) {editingRule.currentTask && editingRule.currentTask !== "" ? "*" : ""}</Label>
-                    <Input
-                      value={editingRule.status}
-                      onChange={(e) => setEditingRule({ ...editingRule, status: e.target.value })}
-                      placeholder="e.g., Done, Approved"
-                      list="status-suggestions-edit"
-                    />
-                    <datalist id="status-suggestions-edit">
-                      <option value="Done" />
-                      <option value="Yes" />
-                      <option value="No" />
-                      <option value="Approved" />
-                      <option value="Decline" />
-                      <option value="Pending" />
-                      <option value="Complete" />
-                    </datalist>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {!editingRule.currentTask || editingRule.currentTask === "" ? "Not required for first task" : "* Required - Condition to trigger this path"}
-                    </p>
-                  </div>
-                </div>
-                <div>
-                  <Label>Next Task (To) *</Label>
-                  <Input
-                    value={editingRule.nextTask}
-                    onChange={(e) => setEditingRule({ ...editingRule, nextTask: e.target.value })}
-                    list="task-suggestions-edit"
-                  />
-                  <datalist id="task-suggestions-edit">
-                    {availableTasks.map((task) => (
-                      <option key={task} value={task} />
-                    ))}
-                  </datalist>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>TAT *</Label>
-                    <Input
-                      type="number"
-                      value={editingRule.tat}
-                      onChange={(e) => setEditingRule({ ...editingRule, tat: parseInt(e.target.value) || 1 })}
-                      min="1"
-                    />
-                  </div>
-                  <div>
-                    <Label>TAT Type *</Label>
-                    <Select 
-                      value={editingRule.tatType} 
-                      onValueChange={(val: any) => setEditingRule({ ...editingRule, tatType: val })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="daytat">Day TAT</SelectItem>
-                        <SelectItem value="hourtat">Hour TAT</SelectItem>
-                        <SelectItem value="beforetat">Before TAT</SelectItem>
-                        <SelectItem value="specifytat">Specify TAT</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Doer (Role) *</Label>
-                    <Input
-                      value={editingRule.doer}
-                      onChange={(e) => setEditingRule({ ...editingRule, doer: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <Label>Assign to User *</Label>
-                    <Select 
-                      value={editingRule.email} 
-                      onValueChange={(val) => setEditingRule({ ...editingRule, email: val })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(users as any[])?.map((user: any) => (
-                          <SelectItem key={user.id} value={user.email}>
-                            {user.firstName} {user.lastName} ({user.email})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div>
-                  <Label>Form Attachment (Optional)</Label>
-                  <Select 
-                    value={editingRule.formId || "__none__"} 
-                    onValueChange={(val) => setEditingRule({ ...editingRule, formId: val === "__none__" ? "" : val })}
+              <div>
+                <Label className="text-xs">Form Attachment</Label>
+                <div className="flex gap-2">
+                  <Select
+                    value={editingRule.formId || "__none__"}
+                    onValueChange={(v) => {
+                      if (v === "__create_new__") {
+                        setInlineFormCreate("edit");
+                        setFormBuilderData({ formId: "", title: "", description: "" });
+                      } else {
+                        setEditingRule({ ...editingRule, formId: v === "__none__" ? "" : v });
+                      }
+                    }}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="No form" />
-                    </SelectTrigger>
+                    <SelectTrigger className="h-9 flex-1"><SelectValue placeholder="No form" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__">No Form</SelectItem>
                       {(quickFormTemplates as any[])?.map((t: any) => (
-                        <SelectItem key={t.formId} value={t.formId}>
-                          {t.title} ({t.formId})
-                        </SelectItem>
+                        <SelectItem key={t.formId} value={t.formId}>{t.title} ({t.formId})</SelectItem>
                       ))}
-                      {(!quickFormTemplates || (quickFormTemplates as any[]).length === 0) && (
-                        <SelectItem value="__empty__" disabled>
-                          No form templates — create one in Form Builder
-                        </SelectItem>
-                      )}
+                      <SelectItem value="__create_new__">
+                        <span className="flex items-center text-blue-600 font-medium"><Plus className="w-3.5 h-3.5 mr-1" /> Create New Form</span>
+                      </SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-                <div>
-                  <Label>Merge Condition (For Parallel Steps)</Label>
-                  <Select 
-                    value={editingRule.mergeCondition || "all"} 
-                    onValueChange={(val: "all" | "any") => setEditingRule({ ...editingRule, mergeCondition: val })}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-9 px-2 text-blue-600 border-blue-200 hover:bg-blue-50"
+                    onClick={() => {
+                      setInlineFormCreate("edit");
+                      setFormBuilderData({ formId: "", title: "", description: "" });
+                    }}
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
+                    <Plus className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+                {inlineFormCreate === "edit" && (
+                  <div className="mt-3 p-3 border border-blue-200 bg-blue-50/50 rounded-lg space-y-3">
+                    <p className="text-xs font-semibold text-blue-700 flex items-center gap-1"><Plus className="w-3 h-3" /> Create New Form</p>
+                    <div>
+                      <Label className="text-[11px]">Form ID *</Label>
+                      <Input
+                        value={formBuilderData.formId}
+                        onChange={(e) => setFormBuilderData({ ...formBuilderData, formId: e.target.value })}
+                        placeholder="e.g., intake-form"
+                        className="h-8 text-sm"
+                        autoFocus
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-[11px]">Form Title *</Label>
+                      <Input
+                        value={formBuilderData.title}
+                        onChange={(e) => setFormBuilderData({ ...formBuilderData, title: e.target.value })}
+                        placeholder="e.g., Customer Intake Form"
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-[11px]">Description</Label>
+                      <Textarea
+                        value={formBuilderData.description}
+                        onChange={(e) => setFormBuilderData({ ...formBuilderData, description: e.target.value })}
+                        rows={2}
+                        className="text-sm"
+                        placeholder="Optional description"
+                      />
+                    </div>
+                    <p className="text-[10px] text-amber-600">Add fields later in the Form Builder page.</p>
+                    <div className="flex gap-2 justify-end">
+                      <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setInlineFormCreate(null); setFormBuilderData({ formId: "", title: "", description: "" }); }}>
+                        Cancel
+                      </Button>
+                      <Button type="button" size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700" onClick={handleSaveFormTemplate} disabled={createFormTemplateMutation.isPending}>
+                        {createFormTemplateMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Save className="w-3 h-3 mr-1" />}
+                        Create Form
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs">Merge Condition</Label>
+                  <Select
+                    value={editingRule.mergeCondition || "all"}
+                    onValueChange={(v: "all" | "any") => setEditingRule({ ...editingRule, mergeCondition: v })}
+                  >
+                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">
-                        All Steps Complete - Next step starts only after ALL parallel steps are completed
-                      </SelectItem>
-                      <SelectItem value="any">
-                        Any Step Complete - Next step starts as soon as ANY parallel step is completed
-                      </SelectItem>
+                      <SelectItem value="all">All Complete</SelectItem>
+                      <SelectItem value="any">Any Complete</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    💡 Controls when next task starts at merge points
-                  </p>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 mt-5">
+                    <Checkbox
+                      id="edit-transferable"
+                      checked={editingRule.transferable || false}
+                      onCheckedChange={(v) => setEditingRule({ ...editingRule, transferable: Boolean(v) })}
+                    />
+                    <Label htmlFor="edit-transferable" className="text-xs">Transferable task</Label>
+                  </div>
                 </div>
               </div>
-            )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsEditRuleDialogOpen(false)} disabled={updateRuleMutation.isPending}>
-                Cancel
-              </Button>
-              <Button onClick={handleSaveEditRule} disabled={updateRuleMutation.isPending}>
-                {updateRuleMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4 mr-2" />
-                )}
-                {updateRuleMutation.isPending ? "Updating..." : "Update Rule"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
 
-        {/* New Flow Dialog */}
-        <Dialog open={isNewFlowDialogOpen} onOpenChange={setIsNewFlowDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create New Flow</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div>
-                <Label>Flow Name / System Name *</Label>
-                <Input
-                  value={newFlowName}
-                  onChange={(e) => setNewFlowName(e.target.value)}
-                  placeholder="e.g., Order Management, Customer Onboarding"
-                  className="mt-2"
-                  autoFocus
-                />
-                <p className="text-xs text-gray-500 mt-2">
-                  This will be the name of your new workflow system
-                </p>
-              </div>
-              
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h4 className="font-semibold text-sm text-blue-900 mb-2">What happens next?</h4>
-                <ul className="text-xs text-blue-700 space-y-1">
-                  <li>• A new workflow system will be created</li>
-                  <li>• You'll be prompted to add your first step</li>
-                  <li>• Build your flow by connecting steps visually</li>
-                  <li>• Each step can have multiple branches based on status</li>
-                </ul>
-              </div>
-
-              {availableSystems.length > 0 && (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                  <p className="text-xs text-gray-600 mb-2">Existing Flows:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {availableSystems.map((system) => (
-                      <Badge key={system} variant="outline" className="text-xs">
-                        {system}
-                      </Badge>
-                    ))}
-                  </div>
+              {editingRule.transferable && (
+                <div>
+                  <Label className="text-xs">Transfer To (comma-separated emails)</Label>
+                  <Input
+                    value={editingRule.transferToEmails || ""}
+                    onChange={(e) => setEditingRule({ ...editingRule, transferToEmails: e.target.value })}
+                    placeholder="user1@example.com, user2@example.com"
+                    className="h-9"
+                  />
                 </div>
               )}
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => {
-                setIsNewFlowDialogOpen(false);
-                setNewFlowName("");
-              }}>
-                Cancel
-              </Button>
-              <Button 
-                onClick={handleCreateNewFlow}
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Create Flow
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          )}
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setIsEditRuleDialogOpen(false)} disabled={updateRuleMutation.isPending}>Cancel</Button>
+            <Button size="sm" onClick={handleSaveEditRule} disabled={updateRuleMutation.isPending}>
+              {updateRuleMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1.5" />}
+              {updateRuleMutation.isPending ? "Updating..." : "Update Rule"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-        {/* Form Builder Dialog */}
-        <Dialog open={isFormBuilderOpen} onOpenChange={setIsFormBuilderOpen}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <span className="text-2xl">📝</span>
-                Create Form Template for "{formBuilderData.formId}"
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h4 className="font-semibold text-sm text-blue-900 mb-2">Quick Form Setup</h4>
-                <p className="text-xs text-blue-700">
-                  Create a basic form template now. You can add detailed questions and fields later from the Form Builder page.
-                </p>
-              </div>
-
-              <div>
-                <Label>Form ID *</Label>
-                <Input
-                  value={formBuilderData.formId}
-                  onChange={(e) => setFormBuilderData({ ...formBuilderData, formId: e.target.value })}
-                  placeholder="e.g., f001, sales-form"
-                  disabled
-                  className="bg-gray-50"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  This matches the Form ID you entered in the flow rule
-                </p>
-              </div>
-
-              <div>
-                <Label>Form Title *</Label>
-                <Input
-                  value={formBuilderData.title}
-                  onChange={(e) => setFormBuilderData({ ...formBuilderData, title: e.target.value })}
-                  placeholder="e.g., Sales Information Form"
-                  autoFocus
-                />
-              </div>
-
-              <div>
-                <Label>Description (Optional)</Label>
-                <Textarea
-                  value={formBuilderData.description}
-                  onChange={(e) => setFormBuilderData({ ...formBuilderData, description: e.target.value })}
-                  placeholder="Brief description of what this form is for..."
-                  rows={3}
-                />
-              </div>
-
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                <p className="text-xs text-amber-800">
-                  <strong>Note:</strong> This creates a blank form template. Visit the <strong>Form Builder</strong> page to add questions, fields, and customize your form.
-                </p>
-              </div>
+      {/* ═══ NEW FLOW DIALOG ═══ */}
+      <Dialog open={isNewFlowDialogOpen} onOpenChange={setIsNewFlowDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Create New Flow</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-xs">Flow Name *</Label>
+              <Input
+                value={newFlowName}
+                onChange={(e) => setNewFlowName(e.target.value)}
+                placeholder="e.g., Order Management"
+                autoFocus
+                className="h-9 mt-1"
+              />
             </div>
-            <DialogFooter className="flex gap-2">
-              <Button variant="outline" onClick={handleSkipFormBuilder}>
-                Skip for Now
-              </Button>
-              <Button 
-                onClick={handleSaveFormTemplate}
-                className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700"
-              >
-                <Save className="w-4 h-4 mr-2" />
-                Create Template
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Keyboard Shortcuts Help Dialog */}
-        <Dialog open={showKeyboardHelp} onOpenChange={setShowKeyboardHelp}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Keyboard className="w-5 h-5" />
-                Keyboard Shortcuts
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-sm text-gray-700">Navigation</h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-gray-600">Mouse Wheel + Ctrl</span>
-                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Zoom</kbd>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-gray-600">Middle Click Drag</span>
-                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Pan</kbd>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-gray-600">Shift + Left Drag</span>
-                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Pan</kbd>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-sm text-gray-700">Zoom Controls</h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-gray-600">Zoom In</span>
-                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Ctrl + +</kbd>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-gray-600">Zoom Out</span>
-                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Ctrl + -</kbd>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-gray-600">Reset Zoom</span>
-                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Ctrl + 0</kbd>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-sm text-gray-700">Actions</h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-gray-600">Delete Selected</span>
-                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Del / Backspace</kbd>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-gray-600">Deselect All</span>
-                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Esc</kbd>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-gray-600">Search Nodes</span>
-                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Ctrl + F</kbd>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-sm text-gray-700">Help</h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-gray-600">Show Shortcuts</span>
-                      <kbd className="px-2 py-1 bg-gray-100 border rounded text-xs">Shift + ?</kbd>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <h4 className="font-semibold text-sm text-blue-900 mb-2">💡 Pro Tips</h4>
-                <ul className="text-xs text-blue-700 space-y-1">
-                  <li>• Drag nodes to reposition them manually</li>
-                  <li>• Hold Ctrl while scrolling to zoom in/out smoothly</li>
-                  <li>• Use middle mouse button to pan around large flows</li>
-                  <li>• Click on edges to view and edit flow rules</li>
-                  <li>• Search for nodes by name or doer using Ctrl+F</li>
-                </ul>
-              </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <ul className="text-xs text-blue-700 space-y-0.5">
+                <li>A new workflow will be created</li>
+                <li>You'll add the first step next</li>
+                <li>Build branches based on status outcomes</li>
+              </ul>
             </div>
-            <DialogFooter>
-              <Button onClick={() => setShowKeyboardHelp(false)}>
-                Got it!
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </main>
-    </div>
+            {availableSystems.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {availableSystems.map((s) => (
+                  <Badge key={s} variant="outline" className="text-[10px]">{s}</Badge>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => { setIsNewFlowDialogOpen(false); setNewFlowName(""); }}>Cancel</Button>
+            <Button
+              size="sm"
+              onClick={handleCreateNewFlow}
+              className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white"
+            >
+              <Plus className="w-3.5 h-3.5 mr-1.5" /> Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══ KEYBOARD SHORTCUTS DIALOG ═══ */}
+      <Dialog open={showKeyboardHelp} onOpenChange={setShowKeyboardHelp}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Keyboard className="w-5 h-5" /> Keyboard Shortcuts
+            </DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-4 py-2">
+            {[
+              { section: "Navigation", items: [["Scroll", "Pan/Navigate"], ["Scrollbar", "Drag to move"]] },
+              { section: "Zoom", items: [["Ctrl + +", "Zoom In"], ["Ctrl + -", "Zoom Out"], ["Ctrl + 0", "Reset"]] },
+              { section: "Actions", items: [["Del", "Delete Selected"], ["Esc", "Deselect"], ["Ctrl+F", "Search"], ["Dbl-Click", "Edit Node"]] },
+              { section: "History", items: [["Ctrl+Z", "Undo"], ["Ctrl+Y/Shift+Z", "Redo"], ["Right-Click", "Context Menu"], ["Shift+?", "This Help"]] },
+            ].map(({ section, items }) => (
+              <div key={section} className="space-y-2">
+                <h4 className="text-xs font-semibold text-gray-600">{section}</h4>
+                {items.map(([key, desc]) => (
+                  <div key={key} className="flex justify-between text-xs">
+                    <span className="text-gray-500">{desc}</span>
+                    <kbd className="px-1.5 py-0.5 bg-gray-100 border rounded text-[10px]">{key}</kbd>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button size="sm" onClick={() => setShowKeyboardHelp(false)}>Got it</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </AppLayout>
   );
 }
