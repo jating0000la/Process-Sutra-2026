@@ -731,7 +731,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/tasks/:id/status", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const { status } = req.body;
+      const { status, completionStatus } = req.body;
+      const user = req.currentUser;
       
       // Validate status
       const validStatuses = ["pending", "in_progress", "completed", "overdue"];
@@ -744,73 +745,154 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!task) {
         return res.status(404).json({ message: "Task not found" });
       }
-      
-      const updateData: any = { status };
-      if (status === "completed") {
-        updateData.actualCompletionTime = new Date();
-      }
-      
-      // Update the task
-      const updatedTask = await storage.updateTask(id, updateData);
-      
-      // Check for workflow progression based on new status - Create ALL matching next tasks
-      const flowRules = await storage.getFlowRules(task.system);
-      
-      // Map status values to flow rule status values
-      const statusMap: Record<string, string> = {
-        "pending": "Pending",
-        "in_progress": "In Progress", 
-        "completed": "Done",
-        "overdue": "Overdue"
-      };
-      
-      const ruleStatus = statusMap[status];
-      const nextRules = flowRules.filter(
-        rule => rule.currentTask === task.taskName && rule.status === ruleStatus
-      );
-      
-      // Get all previous form data for this flow to include in new tasks (using MongoDB)
-      const previousFormResponses = await storage.getMongoFormResponsesByFlowId(req.currentUser.organizationId, task.flowId);
-      const flowInitialData = previousFormResponses.length > 0 ? previousFormResponses[0].formData : null;
-      
-      if (nextRules.length > 0) {
-        // Get TAT configuration for enhanced calculations
-        const currentUser = req.currentUser;
-        const tatConfiguration = await storage.getTATConfig(currentUser.organizationId);
-        const config: TATConfig = tatConfiguration || { 
-          officeStartHour: 9, 
-          officeEndHour: 17, // Configurable per organization (5 PM default)
-          timezone: "Asia/Kolkata",
-          skipWeekends: true,
-          weekendDays: "0,6" // Sunday and Saturday
-        };
-        
-        // Create ALL next tasks based on current task status using enhanced TAT calculation
-        for (const nextRule of nextRules) {
-          const plannedTime = calculateTAT(new Date(), nextRule.tat, nextRule.tatType, config);
 
-          await storage.createTask({
-            system: task.system,
-            flowId: task.flowId,
-            orderNumber: task.orderNumber,
-            taskName: nextRule.nextTask,
-            plannedTime,
-            doerEmail: nextRule.email,
-            status: "pending",
-            formId: nextRule.formId,
-            organizationId: currentUser.organizationId, // Include organization ID for new tasks
-            // Include flow context and previous form data
-            flowInitiatedBy: task.flowInitiatedBy,
-            flowInitiatedAt: task.flowInitiatedAt,
-            flowDescription: task.flowDescription,
-            flowInitialFormData: task.flowInitialFormData || (flowInitialData as any),
+      // FIX: Verify task belongs to user's organization
+      if (task.organizationId !== user.organizationId) {
+        console.log(`[SECURITY] User ${user.email} attempted to update task ${id} from another organization`);
+        return res.status(403).json({ message: "Access denied to this task" });
+      }
+
+      // FIX: Check form submission before allowing completion
+      if (status === "completed" && task.formId) {
+        const respCol = await getQuickFormResponsesCollection();
+        const formResponseCount = await respCol.countDocuments({
+          orgId: user.organizationId,
+          flowId: task.flowId,
+          taskId: task.id,
+        });
+        if (formResponseCount === 0) {
+          return res.status(400).json({
+            message: "Cannot complete task: Form must be submitted before marking task as complete",
+            requiresForm: true,
+            formId: task.formId,
           });
         }
       }
-      
+
+      // FIX: Use organization-scoped flow rules
+      const flowRules = await storage.getFlowRulesByOrganization(user.organizationId, task.system);
+
+      // FIX: Use user-defined completion status (e.g. "Done", "Approved", "Yes", "No")
+      // If completionStatus is provided, use it directly to match flow rules.
+      // Otherwise, no workflow progression on simple status changes.
+      const ruleStatus = completionStatus || null;
+      const nextRules = ruleStatus
+        ? flowRules.filter(
+            rule => rule.currentTask === task.taskName && rule.status === ruleStatus
+          )
+        : [];
+
+      // Get all previous form data for this flow
+      const previousFormResponses = await storage.getMongoFormResponsesByFlowId(user.organizationId, task.flowId);
+      const flowInitialData = previousFormResponses.length > 0 ? previousFormResponses[0].formData : null;
+
+      // FIX: Wrap in transaction with merge/duplicate protection (matching /complete logic)
+      const updatedTask = await db.transaction(async (trx) => {
+        const updateData: any = { status, updatedAt: new Date() };
+        if (status === "completed") {
+          updateData.actualCompletionTime = new Date();
+        }
+
+        const updated = await trx
+          .update(tasks)
+          .set(updateData)
+          .where(eq(tasks.id, id))
+          .returning();
+
+        if (!updated || updated.length === 0) {
+          throw new Error("Failed to update task status");
+        }
+
+        // Create next tasks if rules exist
+        if (nextRules.length > 0) {
+          const tatConfiguration = await storage.getTATConfig(user.organizationId);
+          const config: TATConfig = tatConfiguration || {
+            officeStartHour: 9,
+            officeEndHour: 17,
+            timezone: "Asia/Kolkata",
+            skipWeekends: true,
+            weekendDays: "0,6",
+          };
+
+          for (const nextRule of nextRules) {
+            // FIX: Merge condition & duplicate check
+            const parallelPrerequisites = flowRules.filter(
+              rule => rule.nextTask === nextRule.nextTask
+            );
+
+            if (parallelPrerequisites.length > 1) {
+              const allFlowTasks = await trx
+                .select()
+                .from(tasks)
+                .where(eq(tasks.flowId, task.flowId));
+
+              const hasAllCondition = parallelPrerequisites.some(
+                rule => (rule.mergeCondition || "all") === "all"
+              );
+              const mergeCondition = hasAllCondition ? "all" : "any";
+
+              if (mergeCondition === "all") {
+                const allPrerequisitesCompleted = parallelPrerequisites.every(prereqRule => {
+                  const prereqTask = allFlowTasks.find(
+                    t => t.taskName === prereqRule.currentTask && t.status === "completed"
+                  );
+                  return prereqTask !== undefined;
+                });
+                if (!allPrerequisitesCompleted) {
+                  console.log(`⏸️ [PATCH] Waiting for parallel tasks: ${nextRule.nextTask}`);
+                  continue;
+                }
+                console.log(`✅ [PATCH] All prerequisites met: ${nextRule.nextTask}`);
+              } else {
+                console.log(`✅ [PATCH] Any step complete, proceeding: ${nextRule.nextTask}`);
+              }
+
+              const existingNextTask = allFlowTasks.find(
+                t => t.taskName === nextRule.nextTask && t.status !== "cancelled"
+              );
+              if (existingNextTask) {
+                console.log(`✅ [PATCH] Next task already exists: ${nextRule.nextTask}`);
+                continue;
+              }
+            }
+
+            const plannedTime = calculateTAT(new Date(), nextRule.tat, nextRule.tatType, config);
+            console.log(`✨ [PATCH] Creating next task: ${nextRule.nextTask}`);
+
+            await trx
+              .insert(tasks)
+              .values({
+                system: task.system,
+                flowId: task.flowId,
+                orderNumber: task.orderNumber,
+                taskName: nextRule.nextTask,
+                plannedTime,
+                doerEmail: nextRule.email,
+                status: "pending",
+                formId: nextRule.formId,
+                organizationId: user.organizationId,
+                flowInitiatedBy: task.flowInitiatedBy,
+                flowInitiatedAt: task.flowInitiatedAt,
+                flowDescription: task.flowDescription,
+                flowInitialFormData: task.flowInitialFormData || (flowInitialData as any),
+              })
+              .onConflictDoNothing();
+          }
+        }
+
+        return updated[0];
+      });
+
+      console.log(`[AUDIT] Task status updated: ${task.taskName} (ID: ${id}) → ${status} by ${user.email}`);
       res.json(updatedTask);
     } catch (error) {
       console.error("Error updating task status:", error);
+      if (error instanceof Error && error.message.includes("constraint")) {
+        return res.status(409).json({
+          message: "Task update conflict. Please refresh and try again.",
+          details: "Another user may have updated this task simultaneously.",
+        });
+      }
       res.status(500).json({ message: "Failed to update task status" });
     }
   });
