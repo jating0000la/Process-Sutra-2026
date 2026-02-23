@@ -18,7 +18,6 @@ import {
   Users,
   FileCheck,
   ShieldCheck,
-  Fingerprint,
   Clock,
   Activity,
   Globe,
@@ -261,258 +260,6 @@ For questions: security@muxrotechnologies.com
     window.URL.revokeObjectURL(url);
   };
 
-  // Security documentation is available for viewing only - no download needed
-  const handleViewSecurityDoc = () => {
-    // Scroll to security tab or show information
-    setActiveTab("security");
-  };
-
-  // Removed security doc download functionality
-  const handleDownloadSecurityDoc_OLD = () => {
-    const securityDoc = `
-SECURITY DOCUMENTATION
-ProcessSutra by Muxro Technologies
-Security Rating: LOW RISK / ENTERPRISE-GRADE
-
-Generated for: ${dbUser?.firstName && dbUser?.lastName ? `${dbUser.firstName} ${dbUser.lastName}` : dbUser?.email}
-Organization: ${organizationName}
-Date: ${organizationCreatedAt || new Date().toLocaleDateString()}
-NDA Agreement Date: ${organizationCreatedAt || new Date().toLocaleDateString()}
-
-==============================================================================
-TABLE OF CONTENTS
-==============================================================================
-1. Security Overview
-2. Authentication & Authorization
-3. Data Protection
-4. Infrastructure Security
-5. Compliance & Standards
-6. Security Monitoring
-7. Incident Response
-8. Best Practices
-
-==============================================================================
-1. SECURITY OVERVIEW
-==============================================================================
-
-ProcessSutra by Muxro Technologies implements enterprise-grade security measures to protect 
-your data and ensure system integrity. Our multi-layered security approach includes:
-
-✓ Google OAuth 2.0 Authentication
-✓ Enhanced Token Validation
-✓ Secure Session Management
-✓ Rate Limiting
-✓ CSRF Protection
-✓ Role-Based Access Control (RBAC)
-✓ Data Encryption (at rest and in transit)
-✓ Regular Security Audits
-
-Security Rating: 🟢 LOW RISK / ENTERPRISE-GRADE
-Last Security Audit: October 21, 2025
-
-==============================================================================
-2. AUTHENTICATION & AUTHORIZATION
-==============================================================================
-
-2.1 Authentication Methods:
-- Google OAuth 2.0 via Firebase
-- Enhanced token validation (audience, issuer, age verification)
-- Secure session management with 4-hour TTL
-- Device fingerprinting for enhanced security
-
-2.2 Authorization:
-- Role-Based Access Control (RBAC)
-- Granular permissions per role
-- Organization-level isolation
-- Activity audit trail
-
-2.3 Session Security:
-- Cryptographically secure session tokens
-- HttpOnly cookies
-- SameSite=strict policy
-- Automatic session timeout
-- Session invalidation on logout
-
-2.4 Rate Limiting:
-- Authentication endpoints: 25 attempts per 15 minutes
-- Prevents brute-force attacks
-- IP-based tracking
-- Automatic blocking of suspicious activity
-
-==============================================================================
-3. DATA PROTECTION
-==============================================================================
-
-3.1 Data Encryption:
-- HTTPS/TLS encryption for all data in transit
-- Database encryption at rest
-- Secure file storage (Google Drive)
-- Encrypted backup storage
-
-3.2 Data Privacy:
-- No sensitive data logging in production
-- Password hashing (Firebase)
-- PII protection
-- GDPR compliance measures
-
-3.3 Data Isolation:
-- Organization-level data isolation
-- Query-level security filters
-- Role-based data access
-- No cross-organization data leakage
-
-3.4 Backup & Recovery:
-- Daily automated backups
-- 7-day retention policy
-- Encrypted backup storage
-- Disaster recovery plan
-
-==============================================================================
-4. INFRASTRUCTURE SECURITY
-==============================================================================
-
-4.1 Hosting:
-- Cloud hosting (AWS/DigitalOcean)
-- SSL/TLS certificates (Let's Encrypt)
-- CDN with DDoS protection (Cloudflare)
-- Load balancing for high availability
-
-4.2 Database Security:
-- Managed PostgreSQL (primary)
-- MongoDB for document storage
-- Connection encryption
-- Access control lists (ACLs)
-- Regular security patches
-
-4.3 Network Security:
-- Firewall protection
-- VPC isolation
-- Restricted port access
-- Regular vulnerability scanning
-
-==============================================================================
-5. COMPLIANCE & STANDARDS
-==============================================================================
-
-5.1 Standards:
-✓ Data Privacy Laws
-✓ Secure Development Practices
-✓ Regular Security Audits
-✓ Incident Response Procedures
-
-5.2 Documentation:
-✓ Security Audit Reports
-✓ Customer Security Documentation
-✓ NDA Templates
-✓ Best Practices Guides
-
-==============================================================================
-6. SECURITY MONITORING
-==============================================================================
-
-6.1 Activity Logging:
-- User login/logout tracking
-- Failed authentication attempts
-- Data access logs
-- System modifications
-- Administrative actions
-
-6.2 Alert System:
-- Suspicious activity detection
-- Failed login alerts
-- System error notifications
-- Performance monitoring
-
-6.3 Audit Trail:
-- Comprehensive activity logs
-- User action tracking
-- 90-day log retention
-- Exportable audit reports
-
-==============================================================================
-7. INCIDENT RESPONSE
-==============================================================================
-
-7.1 Incident Handling:
-- 24/7 security monitoring
-- Immediate incident response
-- Root cause analysis
-- Corrective action implementation
-- Post-incident review
-
-7.2 Notification:
-- Prompt notification of security incidents
-- Transparent communication
-- Regular status updates
-- Detailed incident reports
-
-7.3 Recovery:
-- Fast recovery procedures
-- Backup restoration
-- Service continuity plans
-- Minimal downtime
-
-==============================================================================
-8. SECURITY BEST PRACTICES FOR USERS
-==============================================================================
-
-8.1 Password Security:
-✓ Use strong, unique passwords
-✓ Enable Google OAuth when available
-✓ Never share credentials
-✓ Log out when done
-
-8.2 Access Control:
-✓ Use appropriate role assignments
-✓ Review user access regularly
-✓ Remove inactive users
-✓ Monitor suspicious activity
-
-8.3 Data Handling:
-✓ Mark sensitive information appropriately
-✓ Use secure channels for communication
-✓ Follow data retention policies
-✓ Report security concerns immediately
-
-8.4 Device Security:
-✓ Keep devices updated
-✓ Use secure networks
-✓ Enable device locks
-✓ Review active sessions regularly
-
-==============================================================================
-SUPPORT & CONTACT
-==============================================================================
-
-Security Inquiries: security@muxrotechnologies.com
-Support: support@muxrotechnologies.com
-Emergency: Available 24/7
-
-For NDA Agreements: Refer to NDA section of this portal
-For Security Updates: Check documentation regularly
-
-==============================================================================
-
-This document is confidential and proprietary. Distribution is restricted to
-authorized personnel only.
-
-© ${new Date().getFullYear()} Muxro Technologies. All Rights Reserved.
-Product: ProcessSutra
-Security Rating: 🟢 LOW RISK / ENTERPRISE-GRADE
-Last Updated: ${new Date().toLocaleDateString()}
-`;
-
-    const blob = new Blob([securityDoc], { type: 'text/plain' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Security_Documentation_ProcessSutra_${new Date().toISOString().split('T')[0]}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-  };
-
   return (
     <AppLayout 
       title="NDA & Security Documentation" 
@@ -520,7 +267,7 @@ Last Updated: ${new Date().toLocaleDateString()}
     >
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header Card */}
-        <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+        <Card className="border-blue-200 dark:border-blue-800 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -547,10 +294,12 @@ Last Updated: ${new Date().toLocaleDateString()}
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
-                <Lock className="w-8 h-8 text-blue-600" />
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-100 dark:bg-blue-900/50">
+                  <Lock className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                </div>
                 <div>
                   <p className="text-2xl font-bold">LOW RISK</p>
-                  <p className="text-sm text-gray-600">Security Rating</p>
+                  <p className="text-xs text-muted-foreground">Security Rating</p>
                 </div>
               </div>
             </CardContent>
@@ -558,10 +307,12 @@ Last Updated: ${new Date().toLocaleDateString()}
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
-                <CheckCircle className="w-8 h-8 text-green-600" />
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/50">
+                  <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                </div>
                 <div>
                   <p className="text-2xl font-bold">99.9%</p>
-                  <p className="text-sm text-gray-600">Uptime</p>
+                  <p className="text-xs text-muted-foreground">Uptime</p>
                 </div>
               </div>
             </CardContent>
@@ -569,10 +320,12 @@ Last Updated: ${new Date().toLocaleDateString()}
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
-                <Database className="w-8 h-8 text-purple-600" />
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-purple-100 dark:bg-purple-900/50">
+                  <Database className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                </div>
                 <div>
                   <p className="text-2xl font-bold">Encrypted</p>
-                  <p className="text-sm text-gray-600">All Data</p>
+                  <p className="text-xs text-muted-foreground">All Data</p>
                 </div>
               </div>
             </CardContent>
@@ -580,10 +333,12 @@ Last Updated: ${new Date().toLocaleDateString()}
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
-                <Activity className="w-8 h-8 text-orange-600" />
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-100 dark:bg-orange-900/50">
+                  <Activity className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                </div>
                 <div>
                   <p className="text-2xl font-bold">24/7</p>
-                  <p className="text-sm text-gray-600">Monitoring</p>
+                  <p className="text-xs text-muted-foreground">Monitoring</p>
                 </div>
               </div>
             </CardContent>
@@ -614,7 +369,7 @@ Last Updated: ${new Date().toLocaleDateString()}
               <CardContent className="space-y-6">
                 <div className="grid md:grid-cols-2 gap-6">
                   {/* NDA Card */}
-                  <Card className="border-2 border-blue-100">
+                  <Card className="border-2 border-blue-100 dark:border-blue-900">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2 text-lg">
                         <FileSignature className="w-5 h-5 text-blue-600" />
@@ -622,7 +377,7 @@ Last Updated: ${new Date().toLocaleDateString()}
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-muted-foreground">
                         Official NDA protecting your organization's confidential data. This agreement ensures 
                         all workflow designs, forms, employee data, documents, and business information remain 
                         strictly confidential and are owned solely by your organization.
@@ -651,7 +406,7 @@ Last Updated: ${new Date().toLocaleDateString()}
                   </Card>
 
                   {/* Security Documentation Card */}
-                  <Card className="border-2 border-green-100">
+                  <Card className="border-2 border-green-100 dark:border-green-900">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2 text-lg">
                         <ShieldCheck className="w-5 h-5 text-green-600" />
@@ -659,7 +414,7 @@ Last Updated: ${new Date().toLocaleDateString()}
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-muted-foreground">
                         Comprehensive security implementation details, including authentication,
                         encryption, monitoring, and compliance measures.
                       </p>
@@ -686,34 +441,34 @@ Last Updated: ${new Date().toLocaleDateString()}
                 <Separator />
 
                 {/* User Information */}
-                <div className="bg-gray-50 rounded-lg p-4">
+                <div className="rounded-lg border bg-muted/50 p-4">
                   <h3 className="font-semibold mb-3 flex items-center gap-2">
                     <Users className="w-4 h-4" />
                     Your Information
                   </h3>
                   <div className="grid md:grid-cols-3 gap-4 text-sm">
                     <div>
-                      <span className="text-gray-600">Name:</span>
+                      <span className="text-muted-foreground">Name:</span>
                       <p className="font-medium">{dbUser?.firstName && dbUser?.lastName ? `${dbUser.firstName} ${dbUser.lastName}` : 'N/A'}</p>
                     </div>
                     <div>
-                      <span className="text-gray-600">Email:</span>
+                      <span className="text-muted-foreground">Email:</span>
                       <p className="font-medium">{dbUser?.email}</p>
                     </div>
                     <div>
-                      <span className="text-gray-600">Role:</span>
+                      <span className="text-muted-foreground">Role:</span>
                       <p className="font-medium capitalize">{dbUser?.role}</p>
                     </div>
                     <div>
-                      <span className="text-gray-600">Organization:</span>
+                      <span className="text-muted-foreground">Organization:</span>
                       <p className="font-medium">{loadingOrg ? 'Loading...' : organizationName}</p>
                     </div>
                     <div>
-                      <span className="text-gray-600">Access Level:</span>
+                      <span className="text-muted-foreground">Access Level:</span>
                       <p className="font-medium">Administrator</p>
                     </div>
                     <div>
-                      <span className="text-gray-600">Organization Created:</span>
+                      <span className="text-muted-foreground">Organization Created:</span>
                       <p className="font-medium">{organizationCreatedAt || 'Loading...'}</p>
                     </div>
                   </div>
@@ -736,10 +491,10 @@ Last Updated: ${new Date().toLocaleDateString()}
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* NDA Content Preview */}
-                <div className="bg-gray-50 rounded-lg p-6 border space-y-4 max-h-96 overflow-y-auto">
+                <div className="rounded-lg border bg-muted/50 p-6 space-y-4 max-h-96 overflow-y-auto">
                   <div>
                     <h3 className="font-bold text-lg mb-2">NON-DISCLOSURE AGREEMENT (NDA)</h3>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       This Agreement is made between Muxro Technologies (ProcessSutra) and {organizationName}
                     </p>
                   </div>
@@ -748,10 +503,10 @@ Last Updated: ${new Date().toLocaleDateString()}
 
                   <div>
                     <h4 className="font-semibold mb-2">1. PURPOSE</h4>
-                    <p className="text-sm text-gray-700 mb-2">
+                    <p className="text-sm mb-2">
                       The Client may share certain information with the Service Provider while using ProcessSutra, such as:
                     </p>
-                    <ul className="list-disc list-inside text-sm text-gray-700 space-y-1 ml-4">
+                    <ul className="list-disc list-inside text-sm space-y-1 ml-4">
                       <li>Workflow designs</li>
                       <li>Forms and form responses</li>
                       <li>Organization information (GST, PAN, address, business data)</li>
@@ -759,17 +514,17 @@ Last Updated: ${new Date().toLocaleDateString()}
                       <li>Documents and files uploaded</li>
                       <li>Any dynamic data provided voluntarily or optionally</li>
                     </ul>
-                    <p className="text-sm text-gray-700 mt-2">
+                    <p className="text-sm mt-2">
                       This Agreement ensures that all such information remains confidential.
                     </p>
                   </div>
 
                   <div>
                     <h4 className="font-semibold mb-2">2. DEFINITION OF CONFIDENTIAL INFORMATION</h4>
-                    <p className="text-sm text-gray-700 mb-2">
+                    <p className="text-sm mb-2">
                       "Confidential Information" includes, but is not limited to:
                     </p>
-                    <ul className="list-disc list-inside text-sm text-gray-700 space-y-1 ml-4">
+                    <ul className="list-disc list-inside text-sm space-y-1 ml-4">
                       <li>Organization data</li>
                       <li>Employee or personal data</li>
                       <li>Business workflows, processes, or operational details</li>
@@ -777,15 +532,15 @@ Last Updated: ${new Date().toLocaleDateString()}
                       <li>Any form data submitted by users</li>
                       <li>Any information not publicly available and provided through ProcessSutra</li>
                     </ul>
-                    <p className="text-sm text-gray-700 mt-2 italic">
+                    <p className="text-sm text-muted-foreground mt-2 italic">
                       Even if the Client provides only partial, optional, or dynamic data, it is still protected under this NDA.
                     </p>
                   </div>
 
                   <div>
                     <h4 className="font-semibold mb-2">3. OBLIGATIONS OF THE SERVICE PROVIDER</h4>
-                    <p className="text-sm text-gray-700 mb-2">The Service Provider agrees to:</p>
-                    <ul className="list-disc list-inside text-sm text-gray-700 space-y-1 ml-4">
+                    <p className="text-sm mb-2">The Service Provider agrees to:</p>
+                    <ul className="list-disc list-inside text-sm space-y-1 ml-4">
                       <li><strong>Maintain confidentiality:</strong> Not disclose, share, sell, lease, or make available the Client's data to any third party</li>
                       <li><strong>Use data only for service functionality:</strong> Data may only be used to operate features such as workflow execution, task creation, or technical support</li>
                       <li><strong>Restrict access internally:</strong> Only authorized personnel who require access for system operation or troubleshooting may access the data</li>
@@ -796,7 +551,7 @@ Last Updated: ${new Date().toLocaleDateString()}
 
                   <div>
                     <h4 className="font-semibold mb-2">5. DATA OWNERSHIP</h4>
-                    <p className="text-sm text-gray-700">
+                    <p className="text-sm">
                       All data provided through ProcessSutra will always remain the <strong>sole property of the Client</strong>.
                       The Service Provider holds no ownership rights over this data.
                     </p>
@@ -804,8 +559,8 @@ Last Updated: ${new Date().toLocaleDateString()}
 
                   <div>
                     <h4 className="font-semibold mb-2">6. DATA DELETION</h4>
-                    <p className="text-sm text-gray-700 mb-2">Upon request, the Service Provider will:</p>
-                    <ul className="list-disc list-inside text-sm text-gray-700 space-y-1 ml-4">
+                    <p className="text-sm mb-2">Upon request, the Service Provider will:</p>
+                    <ul className="list-disc list-inside text-sm space-y-1 ml-4">
                       <li>Permanently delete workflow data</li>
                       <li>Delete forms and submitted data</li>
                       <li>Remove user and employee information</li>
@@ -815,7 +570,7 @@ Last Updated: ${new Date().toLocaleDateString()}
 
                   <div>
                     <h4 className="font-semibold mb-2">7. DURATION</h4>
-                    <p className="text-sm text-gray-700">
+                    <p className="text-sm">
                       This Agreement begins from the date the Client uses ProcessSutra, remains in effect for as long 
                       as the Client uses the service, and continues for <strong>3 years</strong> after account deletion, 
                       unless otherwise requested in writing.
@@ -824,20 +579,20 @@ Last Updated: ${new Date().toLocaleDateString()}
 
                   <div>
                     <h4 className="font-semibold mb-2">9. GOVERNING LAW</h4>
-                    <p className="text-sm text-gray-700">
+                    <p className="text-sm">
                       This Agreement is governed by the <strong>laws of India</strong>.
                     </p>
                   </div>
 
                   <div>
                     <h4 className="font-semibold mb-2">10. ACCEPTANCE</h4>
-                    <p className="text-sm text-gray-700">
+                    <p className="text-sm">
                       By using ProcessSutra, the Client agrees to the terms of this NDA automatically.
                     </p>
                   </div>
 
-                  <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
-                    <p className="text-xs text-gray-600">
+                  <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded p-3">
+                    <p className="text-xs text-muted-foreground">
                       <strong>Note:</strong> This is a preview. Download the complete NDA document using the button below
                       for the full agreement including all terms, conditions, and legal provisions.
                     </p>
@@ -868,28 +623,28 @@ Last Updated: ${new Date().toLocaleDateString()}
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>Google OAuth 2.0</strong>
-                      <p className="text-gray-600">Google OAuth 2.0 authentication integration</p>
+                      <p className="text-muted-foreground">Google OAuth 2.0 authentication integration</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>Token Validation</strong>
-                      <p className="text-gray-600">Enhanced validation (audience, issuer, age)</p>
+                      <p className="text-muted-foreground">Enhanced validation (audience, issuer, age)</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>Session Management</strong>
-                      <p className="text-gray-600">Secure 4-hour TTL sessions</p>
+                      <p className="text-muted-foreground">Secure 4-hour TTL sessions</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>Rate Limiting</strong>
-                      <p className="text-gray-600">25 attempts per 15 minutes</p>
+                      <p className="text-muted-foreground">25 attempts per 15 minutes</p>
                     </div>
                   </div>
                 </CardContent>
@@ -908,28 +663,28 @@ Last Updated: ${new Date().toLocaleDateString()}
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>HTTPS/TLS Encryption</strong>
-                      <p className="text-gray-600">All data in transit encrypted</p>
+                      <p className="text-muted-foreground">All data in transit encrypted</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>Database Encryption</strong>
-                      <p className="text-gray-600">Data at rest encryption enabled</p>
+                      <p className="text-muted-foreground">Data at rest encryption enabled</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>Secure Cookies</strong>
-                      <p className="text-gray-600">HttpOnly, SameSite=strict</p>
+                      <p className="text-muted-foreground">HttpOnly, SameSite=strict</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>Daily Backups</strong>
-                      <p className="text-gray-600">7-day retention, encrypted storage</p>
+                      <p className="text-muted-foreground">7-day retention, encrypted storage</p>
                     </div>
                   </div>
                 </CardContent>
@@ -948,28 +703,28 @@ Last Updated: ${new Date().toLocaleDateString()}
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>Cloud Hosting</strong>
-                      <p className="text-gray-600">AWS/DigitalOcean secure infrastructure</p>
+                      <p className="text-muted-foreground">AWS/DigitalOcean secure infrastructure</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>CDN Protection</strong>
-                      <p className="text-gray-600">Cloudflare DDoS protection</p>
+                      <p className="text-muted-foreground">Cloudflare DDoS protection</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>Load Balancing</strong>
-                      <p className="text-gray-600">High availability architecture</p>
+                      <p className="text-muted-foreground">High availability architecture</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>Firewall Protection</strong>
-                      <p className="text-gray-600">Network security & VPC isolation</p>
+                      <p className="text-muted-foreground">Network security & VPC isolation</p>
                     </div>
                   </div>
                 </CardContent>
@@ -988,37 +743,37 @@ Last Updated: ${new Date().toLocaleDateString()}
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>Activity Logging</strong>
-                      <p className="text-gray-600">Comprehensive audit trail</p>
+                      <p className="text-muted-foreground">Comprehensive audit trail</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>Failed Login Tracking</strong>
-                      <p className="text-gray-600">Suspicious activity detection</p>
+                      <p className="text-muted-foreground">Suspicious activity detection</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>24/7 Monitoring</strong>
-                      <p className="text-gray-600">Real-time security alerts</p>
+                      <p className="text-muted-foreground">Real-time security alerts</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>Device Fingerprinting</strong>
-                      <p className="text-gray-600">Enhanced session security</p>
+                      <p className="text-muted-foreground">Enhanced session security</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             </div>
 
-            <Card className="border-green-200 bg-green-50">
+            <Card className="border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/40">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-green-800">
+                <CardTitle className="flex items-center gap-2 text-green-800 dark:text-green-400">
                   <ShieldCheck className="w-5 h-5" />
                   Security Rating
                 </CardTitle>
@@ -1026,9 +781,9 @@ Last Updated: ${new Date().toLocaleDateString()}
               <CardContent>
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-2xl font-bold text-green-800">🟢 LOW RISK / ENTERPRISE-GRADE</p>
-                    <p className="text-sm text-green-700 mt-1">Last Security Audit: October 21, 2025</p>
-                    <p className="text-xs text-green-600 mt-2">All security documentation is available for review on this page</p>
+                    <p className="text-2xl font-bold text-green-800 dark:text-green-300">🟢 LOW RISK / ENTERPRISE-GRADE</p>
+                    <p className="text-sm text-green-700 dark:text-green-400 mt-1">Last Security Audit: October 21, 2025</p>
+                    <p className="text-xs text-green-600 dark:text-green-500 mt-2">All security documentation is available for review on this page</p>
                   </div>
                 </div>
               </CardContent>
@@ -1059,21 +814,21 @@ Last Updated: ${new Date().toLocaleDateString()}
                         <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                         <div className="text-sm">
                           <strong>Data Privacy Laws</strong>
-                          <p className="text-gray-600">GDPR compliance measures</p>
+                          <p className="text-muted-foreground">GDPR compliance measures</p>
                         </div>
                       </div>
                       <div className="flex items-start gap-2">
                         <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                         <div className="text-sm">
                           <strong>Secure Development</strong>
-                          <p className="text-gray-600">Following industry best practices</p>
+                          <p className="text-muted-foreground">Following industry best practices</p>
                         </div>
                       </div>
                       <div className="flex items-start gap-2">
                         <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                         <div className="text-sm">
                           <strong>Regular Audits</strong>
-                          <p className="text-gray-600">Quarterly security assessments</p>
+                          <p className="text-muted-foreground">Quarterly security assessments</p>
                         </div>
                       </div>
                     </div>
@@ -1089,21 +844,21 @@ Last Updated: ${new Date().toLocaleDateString()}
                         <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                         <div className="text-sm">
                           <strong>99.9% Uptime SLA</strong>
-                          <p className="text-gray-600">High availability commitment</p>
+                          <p className="text-muted-foreground">High availability commitment</p>
                         </div>
                       </div>
                       <div className="flex items-start gap-2">
                         <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                         <div className="text-sm">
                           <strong>Incident Response</strong>
-                          <p className="text-gray-600">&lt; 1 hour for critical issues</p>
+                          <p className="text-muted-foreground">&lt; 1 hour for critical issues</p>
                         </div>
                       </div>
                       <div className="flex items-start gap-2">
                         <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                         <div className="text-sm">
                           <strong>Regular Updates</strong>
-                          <p className="text-gray-600">Monthly security patches</p>
+                          <p className="text-muted-foreground">Monthly security patches</p>
                         </div>
                       </div>
                     </div>
@@ -1112,35 +867,35 @@ Last Updated: ${new Date().toLocaleDateString()}
 
                 <Separator />
 
-                <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                <div className="rounded-lg border bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 p-4">
                   <h3 className="font-semibold mb-3 flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-blue-600" />
+                    <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                     Available Documentation
                   </h3>
                   <div className="grid md:grid-cols-3 gap-3">
                     <div className="text-sm">
                       <p className="font-medium">✓ Security Audit Reports</p>
-                      <p className="text-gray-600 text-xs">Quarterly assessments</p>
+                      <p className="text-muted-foreground text-xs">Quarterly assessments</p>
                     </div>
                     <div className="text-sm">
                       <p className="font-medium">✓ Customer Security Docs</p>
-                      <p className="text-gray-600 text-xs">Public-facing information</p>
+                      <p className="text-muted-foreground text-xs">Public-facing information</p>
                     </div>
                     <div className="text-sm">
                       <p className="font-medium">✓ NDA Templates</p>
-                      <p className="text-gray-600 text-xs">Legal agreements</p>
+                      <p className="text-muted-foreground text-xs">Legal agreements</p>
                     </div>
                     <div className="text-sm">
                       <p className="font-medium">✓ Best Practices</p>
-                      <p className="text-gray-600 text-xs">Security guidelines</p>
+                      <p className="text-muted-foreground text-xs">Security guidelines</p>
                     </div>
                     <div className="text-sm">
                       <p className="font-medium">✓ Incident Reports</p>
-                      <p className="text-gray-600 text-xs">Transparency reports</p>
+                      <p className="text-muted-foreground text-xs">Transparency reports</p>
                     </div>
                     <div className="text-sm">
                       <p className="font-medium">✓ Compliance Certificates</p>
-                      <p className="text-gray-600 text-xs">Standards compliance</p>
+                      <p className="text-muted-foreground text-xs">Standards compliance</p>
                     </div>
                   </div>
                 </div>
@@ -1151,19 +906,19 @@ Last Updated: ${new Date().toLocaleDateString()}
                   <h3 className="font-semibold">Contact Information</h3>
                   <div className="grid md:grid-cols-2 gap-4 text-sm">
                     <div>
-                      <p className="text-gray-600">Security Inquiries:</p>
+                      <p className="text-muted-foreground">Security Inquiries:</p>
                       <p className="font-medium">security@muxrotechnologies.com</p>
                     </div>
                     <div>
-                      <p className="text-gray-600">General Support:</p>
+                      <p className="text-muted-foreground">General Support:</p>
                       <p className="font-medium">support@muxrotechnologies.com</p>
                     </div>
                     <div>
-                      <p className="text-gray-600">Emergency Contact:</p>
+                      <p className="text-muted-foreground">Emergency Contact:</p>
                       <p className="font-medium">24/7 Available</p>
                     </div>
                     <div>
-                      <p className="text-gray-600">NDA Agreements:</p>
+                      <p className="text-muted-foreground">NDA Agreements:</p>
                       <p className="font-medium">Download from this portal</p>
                     </div>
                   </div>
@@ -1174,18 +929,18 @@ Last Updated: ${new Date().toLocaleDateString()}
         </Tabs>
 
         {/* Footer Notice */}
-        <Card className="bg-gray-50">
+        <Card className="bg-muted/50">
           <CardContent className="pt-6">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-gray-700">
+              <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
+              <div className="text-sm">
                 <p className="font-medium mb-1">Confidential Information</p>
-                <p>
+                <p className="text-muted-foreground">
                   This documentation contains confidential and proprietary information. By accessing this page, 
                   you acknowledge that you are bound by confidentiality obligations as outlined in the NDA. 
                   Unauthorized disclosure or distribution is strictly prohibited and may result in legal action.
                 </p>
-                <p className="mt-2 text-xs text-gray-600">
+                <p className="mt-2 text-xs text-muted-foreground">
                   © {new Date().getFullYear()} Muxro Technologies. All Rights Reserved. | Product: ProcessSutra | Last Updated: {new Date().toLocaleDateString()}
                 </p>
               </div>
