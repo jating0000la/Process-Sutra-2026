@@ -2040,14 +2040,16 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
         break;
         
       case 'forms':
-        // For forms, create base columns + all form data fields
-        const baseColumns = ['responseId', 'formId', 'flowId', 'taskId', 'submittedBy', 'timestamp', 'organizationId'];
+        // For Quick Form responses: base columns + all data fields
+        // Quick Form docs use `data` (not `formData`) and `orgId` (not `organizationId`)
+        const baseColumns = ['responseId', 'formId', 'formTitle', 'flowId', 'taskId', 'submittedBy', 'createdAt', 'orgId'];
         const formFieldKeys = new Set<string>();
         
-        // Collect all unique form field keys
+        // Collect all unique form field keys from Quick Form `data` object
         data.forEach((response: any) => {
-          if (response.formData && typeof response.formData === 'object') {
-            Object.keys(response.formData).forEach(key => formFieldKeys.add(`field_${key}`));
+          const formData = response.data || response.formData;
+          if (formData && typeof formData === 'object') {
+            Object.keys(formData).forEach(key => formFieldKeys.add(`field_${key}`));
           }
         });
         
@@ -2055,20 +2057,22 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
         
         rows = data.map((response: any) => {
           const row: string[] = [];
+          const formData = response.data || response.formData;
           
           // Base columns
           row.push(escapeCSV(response.responseId || response._id));
           row.push(escapeCSV(response.formId));
+          row.push(escapeCSV(response.formTitle));
           row.push(escapeCSV(response.flowId));
           row.push(escapeCSV(response.taskId));
           row.push(escapeCSV(response.submittedBy));
-          row.push(escapeCSV(response.timestamp || response.createdAt));
-          row.push(escapeCSV(response.organizationId));
+          row.push(escapeCSV(response.createdAt));
+          row.push(escapeCSV(response.orgId));
           
           // Form data fields
           Array.from(formFieldKeys).sort().forEach(fieldKey => {
             const actualKey = fieldKey.replace('field_', '');
-            const value = response.formData?.[actualKey];
+            const value = formData?.[actualKey];
             row.push(escapeCSV(value));
           });
           

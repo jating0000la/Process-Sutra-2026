@@ -278,12 +278,14 @@ export class DatabaseStorage implements IStorage {
     // This method is for explicit deletion control and audit logging
     
     try {
-      // Delete MongoDB form responses first
+      // Delete MongoDB Quick Form data first
       try {
-        const { getFormResponsesCollection } = await import('./mongo/client.js');
-        const col = await getFormResponsesCollection();
-        const result = await col.deleteMany({ orgId: id });
-        console.log(`[deleteOrganization] Deleted ${result.deletedCount} form responses from MongoDB for org ${id}`);
+        const { getQuickFormResponsesCollection, getQuickFormTemplatesCollection } = await import('./mongo/quickFormClient.js');
+        const respCol = await getQuickFormResponsesCollection();
+        const tplCol = await getQuickFormTemplatesCollection();
+        const respResult = await respCol.deleteMany({ orgId: id });
+        const tplResult = await tplCol.deleteMany({ orgId: id });
+        console.log(`[deleteOrganization] Deleted ${respResult.deletedCount} form responses and ${tplResult.deletedCount} form templates from MongoDB for org ${id}`);
       } catch (mongoError) {
         console.error(`[deleteOrganization] Error deleting MongoDB data for org ${id}:`, mongoError);
         // Continue with PostgreSQL deletion even if MongoDB fails
@@ -532,7 +534,7 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(tasks.createdAt));
   }
 
-  // MongoDB Form Response operations
+  // MongoDB Quick Form Response operations
   async getMongoFormResponsesByOrgAndForm(params: {
     orgId: string;
     formId?: string;
@@ -544,8 +546,8 @@ export class DatabaseStorage implements IStorage {
     const { orgId, formId, startDate, endDate, page = 1, pageSize = 50 } = params;
     
     try {
-      const { getFormResponsesCollection } = await import('./mongo/client.js');
-      const col = await getFormResponsesCollection();
+      const { getQuickFormResponsesCollection } = await import('./mongo/quickFormClient.js');
+      const col = await getQuickFormResponsesCollection();
 
       const filter: any = { orgId };
       if (formId) filter.formId = formId;
@@ -570,40 +572,26 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  // Get previous form responses by flowId and organizationId from MongoDB for auto-prefill
+  // Get previous form responses by flowId and organizationId from MongoDB Quick Forms for auto-prefill
   async getMongoFormResponsesByFlowId(organizationId: string, flowId: string): Promise<any[]> {
     try {
-      const { getFormResponsesCollection } = await import('./mongo/client.js');
-      const col = await getFormResponsesCollection();
+      const { getQuickFormResponsesByFlowId } = await import('./mongo/quickFormClient.js');
+      const data = await getQuickFormResponsesByFlowId(organizationId, flowId);
 
-      const filter = { 
-        orgId: organizationId,
-        flowId: flowId
-      };
-
-      // Get form responses ordered by creation date (oldest first for consistent auto-prefill)
-      const data = await col
-        .find(filter)
-        .sort({ createdAt: 1 })
-        .toArray();
-
-      // Transform MongoDB documents to match the expected format
+      // Transform Quick Form documents to match the expected format
+      // Quick Form uses `data` field; callers expect `formData`
       return data.map((doc) => ({
         id: doc._id?.toString(),
         taskId: doc.taskId,
-        formData: doc.formData,
+        formData: doc.data,
         submittedAt: doc.createdAt ? doc.createdAt.toISOString() : new Date().toISOString(),
         taskName: doc.taskName,
         formId: doc.formId,
+        formTitle: doc.formTitle,
         submittedBy: doc.submittedBy,
-        orderNumber: doc.orderNumber,
-        system: doc.system,
-        flowDescription: doc.flowDescription,
-        flowInitiatedBy: doc.flowInitiatedBy,
-        flowInitiatedAt: doc.flowInitiatedAt
       }));
     } catch (error) {
-      console.error('Error fetching MongoDB form responses by flowId:', error);
+      console.error('Error fetching Quick Form responses by flowId:', error);
       return [];
     }
   }

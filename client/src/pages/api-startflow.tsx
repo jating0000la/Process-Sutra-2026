@@ -1,739 +1,674 @@
-import Sidebar from "@/components/sidebar";
-import Header from "@/components/header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AppLayout } from "@/components/app-layout";
+import { useAuth } from "@/contexts/AuthContext";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Key,
+  Send,
+  Play,
+  Copy,
+  Check,
+  Plus,
+  Trash2,
+  Eye,
+  EyeOff,
+  Loader2,
+  Shield,
+  Globe,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  RefreshCw,
+} from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+
+/* ────────────── helpers ────────────── */
+
+function randomSecret(length = 48) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const arr = new Uint32Array(length);
+  window.crypto.getRandomValues(arr);
+  return Array.from(arr, (v) => chars[v % chars.length]).join("");
+}
+
+function copyText(text: string, toast: any) {
+  navigator.clipboard.writeText(text).then(
+    () => toast({ title: "Copied!", description: "Copied to clipboard" }),
+    () => toast({ title: "Copy failed", variant: "destructive" })
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════ */
 
 export default function ApiStartFlow() {
   const { dbUser } = useAuth();
-  const isAdmin = dbUser?.role === 'admin';
-  const [token, setToken] = useState<string>("");
-  const [selectedKeyId, setSelectedKeyId] = useState<string>("");
-  const [orgId, setOrgId] = useState<string | undefined>(dbUser?.organizationId);
-  const [system, setSystem] = useState<string>("CRM Onboarding");
-  const [orderNumber, setOrderNumber] = useState<string>('ORD-12345');
-  const [description, setDescription] = useState<string>("New account setup");
-  const [initialFormData, setInitialFormData] = useState<string>("{\n  \"account\": \"Acme\"\n}");
-  const [notifyAssignee, setNotifyAssignee] = useState<boolean>(true);
-  const [testing, setTesting] = useState<boolean>(false);
-  const [testResult, setTestResult] = useState<string>("");
-  const [testError, setTestError] = useState<string>("");
-  const [tokenError, setTokenError] = useState<string>("");
+  const { toast } = useToast();
+  const isAdmin = dbUser?.role === "admin";
+  const orgId = dbUser?.organizationId ?? "";
 
-  // API Keys state
+  /* ─── API keys state ─── */
   const [apiKeys, setApiKeys] = useState<any[]>([]);
-  const [keysLoading, setKeysLoading] = useState<boolean>(false);
-  const [keyError, setKeyError] = useState<string>("");
-  const [creatingKey, setCreatingKey] = useState<boolean>(false);
-  const [newKeyName, setNewKeyName] = useState<string>('');
-  const [newKeyDescription, setNewKeyDescription] = useState<string>('');
-  const [newlyCreatedKey, setNewlyCreatedKey] = useState<string>('');
-  const [showNewKey, setShowNewKey] = useState<boolean>(false);
+  const [keysLoading, setKeysLoading] = useState(false);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyDesc, setNewKeyDesc] = useState("");
+  const [creatingKey, setCreatingKey] = useState(false);
+  const [newlyCreatedKey, setNewlyCreatedKey] = useState("");
 
-  // Webhook state
+  /* ─── Webhook state ─── */
   const [webhooks, setWebhooks] = useState<any[]>([]);
-  const [hooksLoading, setHooksLoading] = useState<boolean>(false);
-  const [hookError, setHookError] = useState<string>("");
-  const [creatingHook, setCreatingHook] = useState<boolean>(false);
-  const [newEvent, setNewEvent] = useState<string>('flow.started');
-  const [newTargetUrl, setNewTargetUrl] = useState<string>('https://example.com/webhooks/processsutra');
-  const [newSecret, setNewSecret] = useState<string>('');
-  const [newDescription, setNewDescription] = useState<string>('');
-  const [newActive, setNewActive] = useState<boolean>(true);
+  const [hooksLoading, setHooksLoading] = useState(false);
+  const [newEvent, setNewEvent] = useState("flow.started");
+  const [newTargetUrl, setNewTargetUrl] = useState("");
+  const [newSecret, setNewSecret] = useState("");
+  const [newHookDesc, setNewHookDesc] = useState("");
+  const [creatingHook, setCreatingHook] = useState(false);
   const [revealSecretId, setRevealSecretId] = useState<string | null>(null);
-  const [testHookUrl, setTestHookUrl] = useState<string>('');
-  const [hookTestResult, setHookTestResult] = useState<string>('');
-  const [hookTesting, setHookTesting] = useState<boolean>(false);
 
-  const generateSecret = () => {
-    const random = cryptoRandomString(48);
-    setNewSecret(random);
-  };
+  /* ─── Tester state ─── */
+  const [testApiKey, setTestApiKey] = useState("");
+  const [testSystem, setTestSystem] = useState("");
+  const [testOrderNumber, setTestOrderNumber] = useState("");
+  const [testDescription, setTestDescription] = useState("");
+  const [testFormData, setTestFormData] = useState('{\n  "field": "value"\n}');
+  const [testNotify, setTestNotify] = useState(true);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState("");
+  const [testStatus, setTestStatus] = useState<"idle" | "success" | "error">("idle");
 
-  // Simple random secret without external deps
-  function cryptoRandomString(length: number) {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let out = '';
-    const array = new Uint32Array(length);
-    window.crypto.getRandomValues(array);
-    for (let i = 0; i < length; i++) {
-      out += chars[array[i] % chars.length];
+  /* ─── Fetch available flow names for the dropdown ─── */
+  const { data: flowRules } = useQuery({
+    queryKey: ["/api/flow-rules"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/flow-rules");
+      return res.json();
+    },
+    enabled: isAdmin,
+  });
+
+  const flowNames = useMemo(() => {
+    if (!flowRules || !Array.isArray(flowRules)) return [];
+    const names = new Set<string>();
+    flowRules.forEach((r: any) => {
+      if (r.system) names.add(r.system);
+    });
+    return Array.from(names).sort();
+  }, [flowRules]);
+
+  // Pick first flow name as default when loaded
+  useEffect(() => {
+    if (flowNames.length > 0 && !testSystem) {
+      setTestSystem(flowNames[0]);
     }
-    return out;
-  }
+  }, [flowNames]);
 
-  const loadWebhooks = async () => {
-    if (!isAdmin) return;
-    setHooksLoading(true); setHookError('');
-    try {
-      const res = await fetch('/api/webhooks');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setWebhooks(data);
-    } catch (e:any) {
-      setHookError(e.message || 'Failed to load webhooks');
-    } finally { setHooksLoading(false); }
-  };
-
+  /* ─── API key CRUD ─── */
   const loadApiKeys = async () => {
     if (!isAdmin) return;
-    setKeysLoading(true); setKeyError('');
+    setKeysLoading(true);
     try {
-      const res = await fetch('/api/admin/integrations/keys');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setApiKeys(data);
-    } catch (e:any) {
-      setKeyError(e.message || 'Failed to load API keys');
-    } finally { setKeysLoading(false); }
+      const res = await fetch("/api/admin/integrations/keys");
+      if (res.ok) setApiKeys(await res.json());
+    } catch {}
+    setKeysLoading(false);
   };
 
-  useEffect(() => { loadWebhooks(); loadApiKeys(); }, [isAdmin]);
-
-  const handleCreateApiKey = async () => {
-    if (!isAdmin || !newKeyName.trim()) return;
-    setCreatingKey(true); setKeyError('');
+  const createApiKey = async () => {
+    if (!newKeyName.trim()) return;
+    setCreatingKey(true);
     try {
-      const res = await fetch('/api/admin/integrations/keys', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newKeyName, description: newKeyDescription })
+      const res = await fetch("/api/admin/integrations/keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newKeyName, description: newKeyDesc }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error("Failed");
       const data = await res.json();
       setNewlyCreatedKey(data.apiKey);
-      setShowNewKey(true);
-      setNewKeyName('');
-      setNewKeyDescription('');
+      setNewKeyName("");
+      setNewKeyDesc("");
       await loadApiKeys();
-    } catch (e:any) {
-      setKeyError(e.message || 'Failed to create API key');
-    } finally { setCreatingKey(false); }
+      toast({ title: "API Key created" });
+    } catch {
+      toast({ title: "Failed to create API key", variant: "destructive" });
+    }
+    setCreatingKey(false);
   };
 
   const toggleKeyActive = async (key: any) => {
-    try {
-      const res = await fetch(`/api/admin/integrations/keys/${key.id}`, { 
-        method: 'PUT', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ isActive: !key.isActive }) 
-      });
-      if (res.ok) await loadApiKeys();
-    } catch {}
+    await fetch(`/api/admin/integrations/keys/${key.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isActive: !key.isActive }),
+    });
+    await loadApiKeys();
   };
 
   const deleteKey = async (key: any) => {
-    if (!window.confirm('Delete this API key? This action cannot be undone.')) return;
-    try {
-      const res = await fetch(`/api/admin/integrations/keys/${key.id}`, { method: 'DELETE' });
-      if (res.ok) await loadApiKeys();
-    } catch {}
+    if (!confirm("Revoke this API key? This cannot be undone.")) return;
+    await fetch(`/api/admin/integrations/keys/${key.id}`, { method: "DELETE" });
+    await loadApiKeys();
+    toast({ title: "API key revoked" });
   };
 
-  useEffect(() => { loadWebhooks(); }, [isAdmin]);
-
-  const handleCreateWebhook = async () => {
+  /* ─── Webhook CRUD ─── */
+  const loadWebhooks = async () => {
     if (!isAdmin) return;
-    if (!newEvent || !newTargetUrl || !newSecret) {
-      setHookError('Event, Target URL, Secret required');
+    setHooksLoading(true);
+    try {
+      const res = await fetch("/api/webhooks");
+      if (res.ok) setWebhooks(await res.json());
+    } catch {}
+    setHooksLoading(false);
+  };
+
+  const createWebhook = async () => {
+    if (!newTargetUrl || !newSecret) {
+      toast({ title: "Target URL and Secret are required", variant: "destructive" });
       return;
     }
-    setCreatingHook(true); setHookError('');
+    setCreatingHook(true);
     try {
-      const res = await fetch('/api/webhooks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event: newEvent, targetUrl: newTargetUrl, secret: newSecret, description: newDescription, isActive: newActive })
+      const res = await fetch("/api/webhooks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: newEvent, targetUrl: newTargetUrl, secret: newSecret, description: newHookDesc, isActive: true }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      // Reset form minimal
-      setNewDescription('');
-      // keep secret so user can copy again
+      if (!res.ok) throw new Error("Failed");
+      setNewTargetUrl("");
+      setNewHookDesc("");
       await loadWebhooks();
-    } catch (e:any) {
-      setHookError(e.message || 'Failed to create webhook');
-    } finally { setCreatingHook(false); }
+      toast({ title: "Webhook created" });
+    } catch {
+      toast({ title: "Failed to create webhook", variant: "destructive" });
+    }
+    setCreatingHook(false);
   };
 
   const toggleHookActive = async (hook: any) => {
-    try {
-      const res = await fetch(`/api/webhooks/${hook.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: !hook.isActive }) });
-      if (res.ok) await loadWebhooks();
-    } catch {}
+    await fetch(`/api/webhooks/${hook.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isActive: !hook.isActive }),
+    });
+    await loadWebhooks();
   };
 
   const deleteHook = async (hook: any) => {
-    if (!window.confirm('Delete this webhook?')) return;
-    try {
-      const res = await fetch(`/api/webhooks/${hook.id}`, { method: 'DELETE' });
-      if (res.ok) await loadWebhooks();
-    } catch {}
+    if (!confirm("Delete this webhook?")) return;
+    await fetch(`/api/webhooks/${hook.id}`, { method: "DELETE" });
+    await loadWebhooks();
+    toast({ title: "Webhook deleted" });
   };
 
-  const sendWebhookTest = async (opts: { url?: string; id?: string; event?: string }) => {
-    setHookTesting(true); setHookTestResult('');
-    try {
-      const res = await fetch('/api/webhooks/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetUrl: opts.url, webhookId: opts.id, event: opts.event }) });
-      const json = await res.json();
-      setHookTestResult(JSON.stringify(json, null, 2));
-    } catch (e:any) {
-      setHookTestResult(e.message || 'Test failed');
-    } finally { setHookTesting(false); }
-  };
-
-  // Keep local orgId in sync and try fetching it if missing
   useEffect(() => {
-    setOrgId(dbUser?.organizationId);
-  }, [dbUser?.organizationId]);
+    loadApiKeys();
+    loadWebhooks();
+  }, [isAdmin]);
 
-  useEffect(() => {
-    if (!orgId) {
-      (async () => {
-        try {
-          const res = await fetch('/api/auth/user');
-          if (res.ok) {
-            const u = await res.json();
-            setOrgId(u.organizationId);
-          }
-        } catch {}
-      })();
-    }
-  }, [orgId]);
-
-  const parsedInitialData = useMemo(() => {
+  /* ─── Tester ─── */
+  const parsedFormData = useMemo(() => {
     try {
-      if (!initialFormData.trim()) return undefined;
-      return JSON.parse(initialFormData);
+      if (!testFormData.trim()) return undefined;
+      return JSON.parse(testFormData);
     } catch {
       return undefined;
     }
-  }, [initialFormData]);
+  }, [testFormData]);
 
-  const handleGenerate = async () => {
-    if (!isAdmin) return;
-    try {
-      setTokenError("");
-      const res = await fetch('/api/admin/integrations/token', { method: 'POST' });
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '');
-        throw new Error(errText || 'Failed to generate');
-      }
-      const data = await res.json();
-      setToken(data.token || "");
-    } catch (e) {
-      console.error(e);
-      setToken("");
-      setTokenError((e as any)?.message || 'Failed to generate token');
-    }
-  };
-
-  const handleTest = async () => {
+  const handleTestApi = async () => {
     setTesting(true);
     setTestResult("");
-    setTestError("");
-    try {
-      if (!token) throw new Error('Provide x-api-key (use your Organization ID)');
-      if (!system || !orderNumber || !description) throw new Error('Fill required body fields');
-      if (initialFormData.trim() && !parsedInitialData) throw new Error('Initial form data must be valid JSON');
+    setTestStatus("idle");
 
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'x-api-key': token,
-      };
+    try {
+      if (!testApiKey) throw new Error("Enter an API key");
+      if (!testSystem) throw new Error("Select a flow name (system)");
+      if (!testOrderNumber) throw new Error("Enter an order number");
+      if (!testDescription) throw new Error("Enter a description");
+      if (testFormData.trim() && !parsedFormData) throw new Error("Initial form data must be valid JSON");
 
       const body: any = {
-        system,
-        orderNumber,
-        description,
-        notifyAssignee,
+        system: testSystem,
+        orderNumber: testOrderNumber,
+        description: testDescription,
+        notifyAssignee: testNotify,
       };
-      if (parsedInitialData) body.initialFormData = parsedInitialData;
+      if (parsedFormData) body.initialFormData = parsedFormData;
 
-// Call the working backend API directly
-      const res = await fetch('http://localhost:5000/api/start-flow', {
-        method: 'POST',
-        headers,
+      const res = await fetch("/api/integrations/start-flow", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": testApiKey,
+        },
         body: JSON.stringify(body),
       });
-      const text = await res.text();
-      try {
-        const json = JSON.parse(text);
-        setTestResult(JSON.stringify(json, null, 2));
-      } catch {
-        setTestResult(text);
-      }
-      if (!res.ok) setTestError(`HTTP ${res.status}`);
+
+      const json = await res.json().catch(() => ({}));
+      setTestResult(JSON.stringify(json, null, 2));
+      setTestStatus(res.ok ? "success" : "error");
     } catch (err: any) {
-      setTestError(err?.message || 'Request failed');
-    } finally {
-      setTesting(false);
+      setTestResult(err.message || "Request failed");
+      setTestStatus("error");
     }
+    setTesting(false);
   };
 
+  if (!isAdmin) {
+    return (
+      <AppLayout title="API & Webhooks" description="Integration APIs">
+        <div className="text-center py-12 text-gray-500">Only admins can access this page.</div>
+      </AppLayout>
+    );
+  }
+
   return (
-    <div className="flex h-screen bg-neutral">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto">
-        <Header title="Start Flow API" description="Trigger flows from external tools and integrations" />
-        <div className="p-6 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>API Keys Management</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {!isAdmin ? (
-                <div className="text-sm text-gray-600">Only admins can manage API keys.</div>
-              ) : (
-                <>
-                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
-                    <div className="text-sm font-medium text-blue-900 mb-2">🔐 Secure API Key System</div>
-                    <ul className="text-xs text-blue-800 space-y-1 ml-4 list-disc">
-                      <li>API keys are hashed and stored securely in the database</li>
-                      <li>Keys are shown only once upon creation - save them immediately</li>
-                      <li>Each key tracks last usage and can be individually revoked</li>
-                      <li>Keys can optionally expire after a set date</li>
-                    </ul>
-                  </div>
+    <AppLayout title="API & Webhooks" description="Start flows from external tools, manage keys and webhooks">
+      <div className="max-w-5xl mx-auto">
+        <Tabs defaultValue="keys" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3 h-11">
+            <TabsTrigger value="keys" className="gap-1.5"><Key className="h-4 w-4" /> API Keys</TabsTrigger>
+            <TabsTrigger value="webhooks" className="gap-1.5"><Globe className="h-4 w-4" /> Webhooks</TabsTrigger>
+            <TabsTrigger value="test" className="gap-1.5"><Play className="h-4 w-4" /> Test API</TabsTrigger>
+          </TabsList>
 
-                  {/* Create New API Key */}
-                  <div className="border rounded-md p-4 space-y-4 bg-white/50">
-                    <div className="text-sm font-medium">Create New API Key</div>
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <div>
-                        <Label>Key Name *</Label>
-                        <Input value={newKeyName} onChange={e=>setNewKeyName(e.target.value)} placeholder="Production API Key" />
-                      </div>
-                      <div>
-                        <Label>Description (optional)</Label>
-                        <Input value={newKeyDescription} onChange={e=>setNewKeyDescription(e.target.value)} placeholder="Used for production integrations" />
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button disabled={creatingKey || !newKeyName.trim()} onClick={handleCreateApiKey}>
-                        {creatingKey ? 'Creating...' : 'Generate API Key'}
-                      </Button>
-                    </div>
-                    {keyError && <div className="text-xs text-red-600">{keyError}</div>}
-                  </div>
+          {/* ═══════════ API KEYS TAB ═══════════ */}
+          <TabsContent value="keys" className="space-y-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+              <Shield className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-blue-900">
+                <p className="font-semibold mb-1">Secure API Key System</p>
+                <ul className="text-xs text-blue-800 space-y-0.5 list-disc ml-4">
+                  <li>Keys are hashed — shown only once on creation</li>
+                  <li>Each key tracks usage and can be individually revoked</li>
+                  <li>Use <code className="bg-blue-100 px-1 rounded">x-api-key</code> header in every request</li>
+                </ul>
+              </div>
+            </div>
 
-                  {/* Show newly created key */}
-                  {showNewKey && newlyCreatedKey && (
-                    <div className="p-4 bg-green-50 border-2 border-green-500 rounded-md">
-                      <div className="text-sm font-semibold text-green-900 mb-2">✅ API Key Created Successfully!</div>
-                      <div className="text-xs text-green-800 mb-3">⚠️ Save this key now - it will never be shown again!</div>
-                      <div className="flex gap-2 items-center">
-                        <code className="flex-1 bg-white p-2 rounded border text-xs break-all">{newlyCreatedKey}</code>
-                        <Button size="sm" onClick={() => {
-                          navigator.clipboard.writeText(newlyCreatedKey);
-                          alert('API Key copied to clipboard!');
-                        }}>Copy</Button>
-                        <Button size="sm" variant="outline" onClick={() => {setShowNewKey(false); setNewlyCreatedKey('');}}>Close</Button>
-                      </div>
-                    </div>
-                  )}
+            {/* Create Key */}
+            <div className="bg-white border rounded-lg p-6 space-y-4">
+              <h3 className="font-semibold flex items-center gap-2"><Plus className="h-4 w-4" /> Create New API Key</h3>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <Label>Key Name *</Label>
+                  <Input value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)} placeholder="e.g. Production ERP Key" />
+                </div>
+                <div>
+                  <Label>Description</Label>
+                  <Input value={newKeyDesc} onChange={(e) => setNewKeyDesc(e.target.value)} placeholder="Optional description" />
+                </div>
+              </div>
+              <Button onClick={createApiKey} disabled={creatingKey || !newKeyName.trim()}>
+                {creatingKey ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating...</> : <><Key className="h-4 w-4 mr-2" /> Generate API Key</>}
+              </Button>
+            </div>
 
-                  {/* Existing API Keys */}
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium">Your API Keys</div>
-                    {keysLoading && <div className="text-sm text-gray-500">Loading...</div>}
-                    {!keysLoading && apiKeys.length === 0 && <div className="text-xs text-gray-500">No API keys created yet.</div>}
-                    <div className="space-y-2">
-                      {apiKeys.map(key => (
-                        <div key={key.id} className="border rounded-md p-3 bg-white/70 flex flex-col gap-2">
-                          <div className="flex flex-wrap gap-2 items-center justify-between">
-                            <div className="font-medium text-sm">{key.name}</div>
-                            <div className="flex gap-2 items-center">
-                              <Button size="sm" variant={key.isActive? 'secondary':'outline'} onClick={()=>toggleKeyActive(key)}>
-                                {key.isActive? 'Active':'Disabled'}
-                              </Button>
-                              <Button size="sm" variant="destructive" onClick={()=>deleteKey(key)}>Revoke</Button>
-                            </div>
-                          </div>
-                          <div className="grid md:grid-cols-4 gap-2 text-xs text-gray-600">
-                            <div><span className="font-semibold">Prefix:</span> <code className="bg-gray-100 px-1 rounded">{key.keyPrefix}</code></div>
-                            <div><span className="font-semibold">Created:</span> {new Date(key.createdAt).toLocaleDateString()}</div>
-                            <div><span className="font-semibold">Last Used:</span> {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString() : 'Never'}</div>
-                            <div className="truncate"><span className="font-semibold">Desc:</span> {key.description || '-'}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="text-xs text-gray-500 border-t pt-3">
-                    💡 Use any active API key as the <code className="bg-gray-100 px-1 rounded">x-api-key</code> header in your requests. Keys can be revoked at any time.
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Legacy Organization ID (Deprecated)</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {!isAdmin ? (
-                <div className="text-sm text-gray-600">Only admins can view organization details.</div>
-              ) : (
-                <>
-                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                    <div className="text-xs text-yellow-800">
-                      ⚠️ Using organization ID as API key is deprecated. Please create proper API keys above for better security and tracking.
-                    </div>
-                  </div>
-                  <div>
-                    <Label>Your Organization ID</Label>
-                    <Input readOnly value={orgId || "Unavailable"} />
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (orgId) {
-                        navigator.clipboard.writeText(orgId).then(() => {
-                          alert("Organization ID copied to clipboard");
-                        }).catch(() => {
-                          alert("Failed to copy Organization ID");
-                        });
-                      }
-                    }}
-                    disabled={!orgId}
-                  >
-                    Copy Organization ID
+            {/* Newly Created Key */}
+            {newlyCreatedKey && (
+              <div className="bg-green-50 border-2 border-green-500 rounded-lg p-5 space-y-3">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-5 w-5 text-green-600" />
+                  <span className="font-semibold text-green-900">API Key Created!</span>
+                </div>
+                <p className="text-xs text-green-800">
+                  <AlertTriangle className="h-3.5 w-3.5 inline mr-1" />
+                  Copy this key now — it will <strong>never be shown again</strong>.
+                </p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 bg-white border rounded p-2.5 text-xs font-mono break-all select-all">{newlyCreatedKey}</code>
+                  <Button size="sm" onClick={() => copyText(newlyCreatedKey, toast)}>
+                    <Copy className="h-4 w-4" />
                   </Button>
-                </>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => setNewlyCreatedKey("")}>Dismiss</Button>
+              </div>
+            )}
+
+            {/* Existing Keys */}
+            <div className="bg-white border rounded-lg p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold">Your API Keys</h3>
+                <Button size="sm" variant="ghost" onClick={loadApiKeys} disabled={keysLoading}>
+                  <RefreshCw className={`h-4 w-4 ${keysLoading ? "animate-spin" : ""}`} />
+                </Button>
+              </div>
+
+              {apiKeys.length === 0 && !keysLoading && (
+                <p className="text-sm text-gray-500">No API keys yet. Create one above to get started.</p>
               )}
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Endpoint</CardTitle>
-            </CardHeader>
-            <CardContent>
-// Update endpoint display
-              <pre className="whitespace-pre-wrap text-sm bg-gray-50 p-3 rounded-md border">POST http://localhost:5000/api/start-flow</pre>
-              <div className="mt-4 text-sm text-gray-700">
-                Use this endpoint to trigger a new flow based on your organization’s configured rules.
+              <div className="space-y-3">
+                {apiKeys.map((key) => (
+                  <div key={key.id} className="border rounded-lg p-4 space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <Key className="h-4 w-4 text-gray-400" />
+                        <span className="font-medium text-sm">{key.name}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${key.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                          {key.isActive ? "Active" : "Disabled"}
+                        </span>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => toggleKeyActive(key)}>
+                          {key.isActive ? "Disable" : "Enable"}
+                        </Button>
+                        <Button size="sm" variant="destructive" onClick={() => deleteKey(key)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-gray-500">
+                      <div>
+                        <span className="font-medium text-gray-700">Prefix:</span>{" "}
+                        <code className="bg-gray-100 px-1 rounded">{key.keyPrefix}</code>
+                      </div>
+                      <div><span className="font-medium text-gray-700">Created:</span> {new Date(key.createdAt).toLocaleDateString()}</div>
+                      <div><span className="font-medium text-gray-700">Last Used:</span> {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString() : "Never"}</div>
+                      <div className="truncate"><span className="font-medium text-gray-700">Desc:</span> {key.description || "—"}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </CardContent>
-          </Card>
+            </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Headers</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <pre className="text-sm bg-gray-50 p-3 rounded-md border">x-api-key: sk_live_your_api_key_here
-x-actor-email: bot@yourcompany.com (optional)
-x-source: zapier (optional)</pre>
-              <div className="mt-3 text-xs text-gray-600">
-                Use a properly generated API key from the management section above. Legacy organization ID support is maintained for backward compatibility.
+            {/* Org ID (legacy) */}
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                <span className="text-sm font-medium text-yellow-900">Legacy: Organization ID</span>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Request Body</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <pre className="text-sm bg-gray-50 p-3 rounded-md border">{`{
-  "system": "CRM Onboarding",            // required
-  "orderNumber": "ORD-12345",            // required
-  "description": "New account setup",     // required
-  "initialFormData": { "account": "Acme" }, // optional (object or JSON string)
-  "notifyAssignee": true                  // optional (default true)
-}`}</pre>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Response</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <pre className="text-sm bg-gray-50 p-3 rounded-md border">{`{
-  "flowId": "...",
-  "task": { /* created task */ },
-  "orderNumber": "ORD-12345",
-  "description": "New account setup",
-  "initiatedBy": "bot@yourcompany.com",
-  "initiatedAt": "2025-08-23T10:05:00.000Z",
-  "message": "Flow started successfully"
-}`}</pre>
-              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                <div className="text-sm font-medium text-blue-900 mb-2">📢 Automatic Webhook Notifications</div>
-                <div className="text-xs text-blue-800">
-                  When a flow starts successfully, a <code className="bg-blue-100 px-1 rounded">flow.started</code> webhook event is automatically triggered to all active webhooks configured below. Configure your webhook endpoints to receive real-time notifications with full flow details, including flowId, task assignments, and metadata.
-                </div>
+              <p className="text-xs text-yellow-800">Using organization ID as API key is deprecated. Use proper API keys for better security and tracking.</p>
+              <div className="flex items-center gap-2">
+                <code className="text-xs bg-white border border-yellow-300 rounded px-2 py-1 flex-1 font-mono">{orgId || "Unavailable"}</code>
+                <Button size="sm" variant="outline" onClick={() => copyText(orgId, toast)} disabled={!orgId}>
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </TabsContent>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Examples</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* ═══════════ WEBHOOKS TAB ═══════════ */}
+          <TabsContent value="webhooks" className="space-y-6">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
+              <Shield className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-green-900">
+                <p className="font-semibold mb-1">Enterprise Webhook Security</p>
+                <ul className="text-xs text-green-800 space-y-0.5 list-disc ml-4">
+                  <li><strong>HMAC-SHA256</strong> signature on every delivery (<code className="bg-green-100 px-1 rounded">X-Webhook-Signature</code>)</li>
+                  <li><strong>SSRF protection:</strong> blocks internal IPs and cloud metadata</li>
+                  <li><strong>Auto-retry:</strong> 3 retries with exponential backoff (1→5→30 min)</li>
+                  <li><strong>10s timeout</strong> per delivery, full delivery logging</li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Create Webhook */}
+            <div className="bg-white border rounded-lg p-6 space-y-4">
+              <h3 className="font-semibold flex items-center gap-2"><Plus className="h-4 w-4" /> Add Webhook</h3>
+              <div className="grid sm:grid-cols-2 gap-4">
                 <div>
-                  <div className="font-medium mb-2">PowerShell</div>
-                  <pre className="text-xs bg-gray-50 p-3 rounded-md border">{`$headers = @{ "x-api-key" = "sk_live_your_api_key_here"; "x-actor-email" = "bot@yourcompany.com" }
-    $body = @{ system = "CRM Onboarding"; orderNumber = "ORD-12345"; description = "New account setup"; initialFormData = @{ account = "Acme" } } | ConvertTo-Json
-// Update example to match working API
-Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Headers $headers -Body $body -ContentType "application/json"`}</pre>
-                </div>
-                <div>
-                  <div className="font-medium mb-2">Node fetch</div>
-                  <pre className="text-xs bg-gray-50 p-3 rounded-md border">{`await fetch("http://localhost:5000/api/start-flow", {
-  method: "POST",
-  headers: {
-    "x-api-key": "sk_live_your_api_key_here",
-    "Content-Type": "application/json"
-  },
-  body: JSON.stringify({ system: "CRM Onboarding", orderNumber: "ORD-12345", description: "New account setup" })
-});`}</pre>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {isAdmin && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Try it now (Admin)</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label>API Key (x-api-key)</Label>
-                  <select 
-                    className="w-full border rounded-md h-10 px-3 text-sm"
-                    value={selectedKeyId} 
-                    onChange={(e) => {
-                      setSelectedKeyId(e.target.value);
-                      const selected = apiKeys.find(k => k.id === e.target.value);
-                      if (selected) {
-                        setToken(''); // Can't use actual key for testing from here
-                      } else {
-                        setToken(e.target.value); // It's the org ID
-                      }
-                    }}
-                  >
-                    <option value="">Select an API key or use Org ID...</option>
-                    {orgId && <option value={orgId}>Organization ID (Legacy - {orgId})</option>}
+                  <Label>Event</Label>
+                  <select className="w-full border rounded-md h-10 px-3 text-sm bg-white" value={newEvent} onChange={(e) => setNewEvent(e.target.value)}>
+                    <option value="flow.started">flow.started</option>
+                    <option value="flow.resumed">flow.resumed</option>
+                    <option value="form.submitted">form.submitted</option>
                   </select>
-                  <div className="text-xs text-yellow-600 mt-1 p-2 bg-yellow-50 rounded border border-yellow-200">
-                    ⚠️ For security, you need to copy a full API key from above to test it. The "Try it now" feature works with Organization ID (legacy method).
-                  </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label>System</Label>
-                    <Input value={system} onChange={(e) => setSystem(e.target.value)} />
-                  </div>
-                  <div>
-                    <Label>Order Number</Label>
-                    <Input value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} />
+                <div>
+                  <Label>Target URL *</Label>
+                  <Input value={newTargetUrl} onChange={(e) => setNewTargetUrl(e.target.value)} placeholder="https://your-server.com/webhook" />
+                </div>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <Label>Secret *</Label>
+                  <div className="flex gap-2">
+                    <Input value={newSecret} onChange={(e) => setNewSecret(e.target.value)} placeholder="Click generate →" className="flex-1" />
+                    <Button variant="outline" onClick={() => setNewSecret(randomSecret())}>Generate</Button>
                   </div>
                 </div>
                 <div>
                   <Label>Description</Label>
-                  <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+                  <Input value={newHookDesc} onChange={(e) => setNewHookDesc(e.target.value)} placeholder="Optional" />
                 </div>
-                <div>
-                  <Label>Initial Form Data (JSON)</Label>
-                  <textarea className="w-full min-h-[120px] text-sm p-2 border rounded-md" value={initialFormData} onChange={(e) => setInitialFormData(e.target.value)} />
-                  {initialFormData.trim() && !parsedInitialData && (
-                    <div className="text-xs text-red-600 mt-1">Invalid JSON</div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Checkbox id="notify" checked={notifyAssignee} onCheckedChange={(v) => setNotifyAssignee(Boolean(v))} />
-                  <Label htmlFor="notify">Notify assignee</Label>
-                </div>
-                <div className="flex gap-2">
-// Ensure Try it now button always works
-                  <Button onClick={handleTest} disabled={testing || !(token || orgId)}>Send Test Request</Button>
-                  {testing && <div className="text-sm text-gray-600 self-center">Sending…</div>}
-                </div>
-                <div className="text-xs text-gray-500">
-                  💡 For testing with actual API keys, use curl, Postman, or your preferred HTTP client with the full key value.
-                </div>
-                {(testError || testResult) && (
-                  <div>
-                    {testError && <div className="text-sm text-red-600 mb-2">{testError}</div>}
-                    {testResult && (
-                      <pre className="text-xs bg-gray-50 p-3 rounded-md border whitespace-pre-wrap">{testResult}</pre>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+              </div>
+              <Button onClick={createWebhook} disabled={creatingHook || !newTargetUrl || !newSecret}>
+                {creatingHook ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating...</> : <><Globe className="h-4 w-4 mr-2" /> Add Webhook</>}
+              </Button>
+            </div>
 
-          {isAdmin && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Webhooks</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-3">
-                  <div className="text-sm text-gray-700">
-                    Configure outbound webhooks for events: <code className="bg-gray-100 px-1 rounded">flow.started</code>, <code className="bg-gray-100 px-1 rounded">flow.resumed</code>, <code className="bg-gray-100 px-1 rounded">form.submitted</code>.
-                  </div>
-                  <div className="p-3 bg-green-50 border border-green-200 rounded-md">
-                    <div className="text-sm font-medium text-green-900 mb-2">🔒 Enterprise Security Features</div>
-                    <ul className="text-xs text-green-800 space-y-1 ml-4 list-disc">
-                      <li><strong>HMAC-SHA256 Signatures:</strong> All requests include <code className="bg-green-100 px-1 rounded">X-Webhook-Signature</code> header for authenticity verification</li>
-                      <li><strong>SSRF Protection:</strong> Blocks internal IPs, cloud metadata services (AWS/Azure/GCP), and prevents redirect-based attacks</li>
-                      <li><strong>Automatic Retries:</strong> Failed deliveries retry 3 times with exponential backoff (1min → 5min → 30min)</li>
-                      <li><strong>10-second Timeout:</strong> Prevents hanging requests</li>
-                      <li><strong>Delivery Logging:</strong> Track all webhook attempts, HTTP status, latency, and errors</li>
-                      <li><strong>HTTPS Required:</strong> Production webhooks must use HTTPS (HTTP allowed for localhost in development)</li>
-                    </ul>
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    Your webhook endpoint must verify the signature using constant-time comparison to prevent timing attacks.
-                  </div>
-                </div>
-                <div className="border rounded-md p-4 space-y-4 bg-white/50">
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div>
-                      <Label>Event</Label>
-                      <select className="w-full border rounded-md h-9 px-2 text-sm" value={newEvent} onChange={e=>setNewEvent(e.target.value)}>
-                        <option value="flow.started">flow.started</option>
-                        <option value="form.submitted">form.submitted</option>
-                      </select>
-                    </div>
-                    <div>
-                      <Label>Target URL</Label>
-                      <Input value={newTargetUrl} onChange={e=>setNewTargetUrl(e.target.value)} placeholder="https://..." />
-                    </div>
-                  </div>
-                  <div className="grid md:grid-cols-2 gap-4 items-end">
-                    <div>
-                      <Label>Secret</Label>
-                      <Input value={newSecret} onChange={e=>setNewSecret(e.target.value)} placeholder="Generate secret" />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button type="button" variant="outline" onClick={generateSecret}>Generate Secret</Button>
-                      <Button type="button" onClick={()=>{ if(newSecret){navigator.clipboard.writeText(newSecret);} }}>Copy Secret</Button>
-                    </div>
-                  </div>
-                  <div>
-                    <Label>Description (optional)</Label>
-                    <Input value={newDescription} onChange={e=>setNewDescription(e.target.value)} placeholder="Webhook description" />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Checkbox id="activeHook" checked={newActive} onCheckedChange={(v)=>setNewActive(Boolean(v))} />
-                    <Label htmlFor="activeHook">Active</Label>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button disabled={creatingHook || !newSecret || !newTargetUrl} onClick={handleCreateWebhook}>{creatingHook? 'Creating...' : 'Add Webhook'}</Button>
-                    <Button variant="outline" type="button" onClick={loadWebhooks} disabled={hooksLoading}>{hooksLoading? 'Refreshing...' : 'Refresh'}</Button>
-                  </div>
-                  {hookError && <div className="text-xs text-red-600">{hookError}</div>}
-                </div>
+            {/* Existing Webhooks */}
+            <div className="bg-white border rounded-lg p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold">Active Webhooks</h3>
+                <Button size="sm" variant="ghost" onClick={loadWebhooks} disabled={hooksLoading}>
+                  <RefreshCw className={`h-4 w-4 ${hooksLoading ? "animate-spin" : ""}`} />
+                </Button>
+              </div>
 
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Existing Webhooks</div>
-                  {hooksLoading && <div className="text-sm text-gray-500">Loading...</div>}
-                  {!hooksLoading && webhooks.length === 0 && <div className="text-xs text-gray-500">No webhooks configured.</div>}
-                  <div className="space-y-2">
-                    {webhooks.map(hook => (
-                      <div key={hook.id} className="border rounded-md p-3 bg-white/70 flex flex-col gap-2">
-                        <div className="flex flex-wrap gap-2 items-center justify-between">
-                          <div className="font-mono text-xs break-all max-w-[55ch]">{hook.targetUrl}</div>
-                          <div className="flex gap-2 items-center">
-                            <Button size="sm" variant="outline" onClick={()=>sendWebhookTest({ id: hook.id, event: hook.event })}>Test</Button>
-                            <Button size="sm" variant={hook.isActive? 'secondary':'outline'} onClick={()=>toggleHookActive(hook)}>{hook.isActive? 'Disable':'Enable'}</Button>
-                            <Button size="sm" variant="destructive" onClick={()=>deleteHook(hook)}>Delete</Button>
-                          </div>
-                        </div>
-                        <div className="grid md:grid-cols-4 gap-2 text-xs">
-                          <div><span className="font-semibold">Event:</span> {hook.event}</div>
-                          <div className="truncate"><span className="font-semibold">Secret:</span> {revealSecretId===hook.id? hook.secret : '••••••••••'} <button className="underline ml-1" onClick={()=> setRevealSecretId(revealSecretId===hook.id? null : hook.id)}>{revealSecretId===hook.id? 'hide':'show'}</button></div>
-                          <div><span className="font-semibold">Created:</span> {hook.createdAt ? new Date(hook.createdAt).toLocaleString() : ''}</div>
-                          <div className="truncate"><span className="font-semibold">Desc:</span> {hook.description || '-'}</div>
-                        </div>
+              {webhooks.length === 0 && !hooksLoading && (
+                <p className="text-sm text-gray-500">No webhooks configured yet.</p>
+              )}
+
+              <div className="space-y-3">
+                {webhooks.map((hook) => (
+                  <div key={hook.id} className="border rounded-lg p-4 space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${hook.isActive ? "bg-green-500" : "bg-gray-300"}`} />
+                        <span className="font-mono text-xs truncate max-w-[40ch]">{hook.targetUrl}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">{hook.event}</span>
                       </div>
-                    ))}
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => toggleHookActive(hook)}>
+                          {hook.isActive ? "Disable" : "Enable"}
+                        </Button>
+                        <Button size="sm" variant="destructive" onClick={() => deleteHook(hook)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-gray-500">
+                      <div className="flex items-center gap-1">
+                        <span className="font-medium text-gray-700">Secret:</span>
+                        <code className="bg-gray-100 px-1 rounded">{revealSecretId === hook.id ? hook.secret : "••••••••••"}</code>
+                        <button onClick={() => setRevealSecretId(revealSecretId === hook.id ? null : hook.id)}>
+                          {revealSecretId === hook.id ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                        </button>
+                      </div>
+                      <div><span className="font-medium text-gray-700">Created:</span> {hook.createdAt ? new Date(hook.createdAt).toLocaleDateString() : ""}</div>
+                      <div className="truncate"><span className="font-medium text-gray-700">Desc:</span> {hook.description || "—"}</div>
+                    </div>
                   </div>
-                  {webhooks.length > 0 && (
-                    <div className="text-xs text-gray-500">Store secrets securely. Rotate if leaked.</div>
-                  )}
-                </div>
-                <div className="text-xs text-gray-500 border-t pt-3">
-                  <div className="font-medium mb-2">Webhook Payload Example (flow.started):</div>
-                  <pre className="bg-gray-50 p-3 rounded-md border whitespace-pre-wrap">{`{
-  "id": "webhook-delivery-uuid",
+                ))}
+              </div>
+            </div>
+
+            {/* Webhook Payload Example */}
+            <div className="bg-white border rounded-lg p-6 space-y-4">
+              <h3 className="font-semibold">Webhook Payload Example</h3>
+              <div className="bg-gray-900 rounded-lg p-4 text-xs font-mono text-gray-100 overflow-x-auto">
+                <pre>{`{
+  "id": "delivery-uuid",
   "type": "flow.started",
-  "createdAt": "2025-11-07T10:30:00Z",
+  "createdAt": "2026-02-23T16:05:14Z",
   "data": {
     "flowId": "flow-uuid",
-    "orderNumber": "ORD-12345",
-    "system": "CRM Onboarding",
-    "description": "New account setup",
+    "orderNumber": "TRIP-001",
+    "system": "Truck Trip Management",
+    "description": "New truck trip",
     "initiatedBy": "user@company.com",
-    "initiatedAt": "2025-11-07T10:30:00Z",
     "task": {
       "id": "task-uuid",
-      "name": "First Task Name",
+      "name": "Vehicle Visit in Yard",
       "assignee": "assignee@company.com"
     }
   }
 }`}</pre>
-                  <div className="mt-3 font-medium mb-2">Signature Verification Example (Node.js):</div>
-                  <pre className="bg-gray-50 p-3 rounded-md border whitespace-pre-wrap">{`const crypto = require('crypto');
+              </div>
 
-function verifyWebhookSignature(secret, body, signature) {
-  const expectedSignature = crypto
-    .createHmac('sha256', secret)
-    .update(JSON.stringify(body))
-    .digest('hex');
-  
-  // Use constant-time comparison to prevent timing attacks
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expectedSignature)
-  );
-}
+              <h3 className="font-semibold mt-2">Signature Verification (Node.js)</h3>
+              <div className="bg-gray-900 rounded-lg p-4 text-xs font-mono text-gray-100 overflow-x-auto">
+                <pre>{`const crypto = require('crypto');
 
-// In your webhook handler:
 app.post('/webhook', (req, res) => {
-  const signature = req.headers['x-webhook-signature'];
-  const secret = 'your-webhook-secret';
-  
-  if (!verifyWebhookSignature(secret, req.body, signature)) {
+  const sig = req.headers['x-webhook-signature'];
+  const expected = crypto
+    .createHmac('sha256', YOUR_SECRET)
+    .update(JSON.stringify(req.body))
+    .digest('hex');
+
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
     return res.status(401).json({ error: 'Invalid signature' });
   }
-  
-  // Process the webhook
-  // Webhook data intentionally not logged for security
+  // Process webhook...
   res.json({ received: true });
 });`}</pre>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* ═══════════ TEST API TAB ═══════════ */}
+          <TabsContent value="test" className="space-y-6">
+            <div className="bg-white border rounded-lg p-6 space-y-5">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Play className="h-5 w-5 text-green-500" /> Test Start Flow API
+              </h2>
+              <p className="text-sm text-gray-600">
+                Send a real API request to start a flow. This will create an actual task in your organization.
+              </p>
+
+              {/* API Key */}
+              <div>
+                <Label className="text-sm font-medium">API Key *</Label>
+                <Input
+                  value={testApiKey}
+                  onChange={(e) => setTestApiKey(e.target.value)}
+                  placeholder="sk_live_your_key_here or paste Organization ID"
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-gray-400 mt-1">Paste your full API key from the API Keys tab</p>
+              </div>
+
+              {/* System (flow name) */}
+              <div>
+                <Label className="text-sm font-medium">Flow Name (system) *</Label>
+                {flowNames.length > 0 ? (
+                  <select
+                    className="w-full border rounded-md h-10 px-3 text-sm bg-white"
+                    value={testSystem}
+                    onChange={(e) => setTestSystem(e.target.value)}
+                  >
+                    {flowNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <Input value={testSystem} onChange={(e) => setTestSystem(e.target.value)} placeholder="Enter flow name" />
+                )}
+              </div>
+
+              {/* Order Number + Description */}
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-sm font-medium">Order Number *</Label>
+                  <Input
+                    value={testOrderNumber}
+                    onChange={(e) => setTestOrderNumber(e.target.value)}
+                    placeholder={`TEST-${new Date().toISOString().slice(0, 10)}`}
+                  />
                 </div>
-                <div className="border-t pt-4 space-y-3">
-                  <div className="text-sm font-medium">Ad-hoc Test URL</div>
-                  <div className="flex flex-col md:flex-row gap-2">
-                    <Input placeholder="https://your-server.com/webhook" value={testHookUrl} onChange={e=>setTestHookUrl(e.target.value)} />
-                    <Button disabled={!testHookUrl || hookTesting} onClick={()=>sendWebhookTest({ url: testHookUrl, event: newEvent })}>{hookTesting? 'Testing...':'Send Test'}</Button>
-                  </div>
-                  {hookTestResult && (
-                    <pre className="text-xs bg-gray-50 p-3 rounded-md border whitespace-pre-wrap max-h-64 overflow-auto">{hookTestResult}</pre>
+                <div>
+                  <Label className="text-sm font-medium">Description *</Label>
+                  <Input
+                    value={testDescription}
+                    onChange={(e) => setTestDescription(e.target.value)}
+                    placeholder="API test flow"
+                  />
+                </div>
+              </div>
+
+              {/* Initial Form Data */}
+              <div>
+                <Label className="text-sm font-medium">Initial Form Data (JSON, optional)</Label>
+                <textarea
+                  className="w-full min-h-[100px] text-sm font-mono border rounded-md p-3 bg-gray-50"
+                  value={testFormData}
+                  onChange={(e) => setTestFormData(e.target.value)}
+                />
+                {testFormData.trim() && !parsedFormData && (
+                  <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><XCircle className="h-3 w-3" /> Invalid JSON</p>
+                )}
+              </div>
+
+              {/* Notify */}
+              <div className="flex items-center gap-2">
+                <Checkbox id="test-notify" checked={testNotify} onCheckedChange={(v) => setTestNotify(Boolean(v))} />
+                <Label htmlFor="test-notify" className="text-sm">Notify assignee via email</Label>
+              </div>
+
+              {/* Generated Request Preview */}
+              <div>
+                <Label className="text-sm font-medium text-gray-500">Request Preview</Label>
+                <div className="bg-gray-900 rounded-lg p-4 text-xs font-mono text-gray-300 overflow-x-auto mt-1">
+                  <div className="text-green-400">POST /api/integrations/start-flow</div>
+                  <div className="text-blue-300">x-api-key: {testApiKey ? testApiKey.slice(0, 20) + "..." : "<your-key>"}</div>
+                  <div className="text-gray-400 mt-1">{JSON.stringify({
+                    system: testSystem || "...",
+                    orderNumber: testOrderNumber || "...",
+                    description: testDescription || "...",
+                    ...(parsedFormData ? { initialFormData: parsedFormData } : {}),
+                    notifyAssignee: testNotify,
+                  }, null, 2)}</div>
+                </div>
+              </div>
+
+              {/* Send Button */}
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={handleTestApi}
+                  disabled={testing || !testApiKey || !testSystem || !testOrderNumber || !testDescription}
+                  size="lg"
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  {testing ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Sending...</>
+                  ) : (
+                    <><Send className="h-4 w-4 mr-2" /> Send Test Request</>
                   )}
+                </Button>
+                {testing && <span className="text-sm text-gray-500">Calling API...</span>}
+              </div>
+
+              {/* Result */}
+              {testResult && (
+                <div className={`rounded-lg border-2 p-4 space-y-2 ${
+                  testStatus === "success" ? "border-green-300 bg-green-50" : "border-red-300 bg-red-50"
+                }`}>
+                  <div className="flex items-center gap-2">
+                    {testStatus === "success" ? (
+                      <><CheckCircle className="h-5 w-5 text-green-600" /><span className="font-semibold text-green-900">Flow Started Successfully!</span></>
+                    ) : (
+                      <><XCircle className="h-5 w-5 text-red-600" /><span className="font-semibold text-red-900">Request Failed</span></>
+                    )}
+                  </div>
+                  <pre className="text-xs font-mono bg-white rounded border p-3 overflow-x-auto whitespace-pre-wrap max-h-80">{testResult}</pre>
+                  <Button size="sm" variant="outline" onClick={() => copyText(testResult, toast)}>
+                    <Copy className="h-3.5 w-3.5 mr-1" /> Copy Response
+                  </Button>
                 </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      </main>
-    </div>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </AppLayout>
   );
 }
