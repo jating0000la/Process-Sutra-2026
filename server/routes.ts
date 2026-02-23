@@ -25,6 +25,7 @@ import oauthRouter from './oauthRoutes.js';
 import quickFormRouter from './quickFormRoutes.js';
 import reportRouter from './reportRoutes.js';
 import billingRouter, { handlePayUSuccess, handlePayUFailure, handlePayUWebhook } from './billingRoutes.js';
+import aiAssistantRouter from './aiAssistantRoutes.js';
 import * as crypto from 'crypto';
 import { sanitizeFlowRule, sanitizeFlowRules } from './inputSanitizer.js';
 import archiver from 'archiver';
@@ -276,6 +277,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Billing & Payments API — authenticated routes (list, generate, pay, transactions)
   app.use('/api/billing', isAuthenticated, requireAdmin, addUserToRequest, billingRouter);
+
+  // AI Assistant API — authenticated admin-only routes
+  app.use('/api/ai-assistant', isAuthenticated, requireAdmin, addUserToRequest, aiAssistantRouter);
 
   // Flow Rules API (Organization-specific, Admin only)
   app.get("/api/flow-rules", isAuthenticated, addUserToRequest, async (req: any, res) => {

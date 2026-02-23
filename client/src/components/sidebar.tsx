@@ -18,6 +18,7 @@ import {
   Boxes,
   Shield,
   PieChart,
+  Bot,
 } from "lucide-react";
 
 // All navigation items in the correct order
@@ -53,6 +54,14 @@ const allNavigationItems = [
     href: "/quick-form-builder",
     icon: FileText,
     badge: null,
+    adminOnly: true,
+    section: "builders",
+  },
+  {
+    name: "AI Assistant",
+    href: "/ai-assistant",
+    icon: Bot,
+    badge: "AI",
     adminOnly: true,
     section: "builders",
   },

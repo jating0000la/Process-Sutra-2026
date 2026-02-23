@@ -34,6 +34,7 @@ import QuickFormBuilder from "@/pages/quick-form-builder";
 import QuickFormFill from "@/pages/quick-form-fill";
 import QuickFormResponses from "@/pages/quick-form-responses";
 import ReportBuilder from "@/pages/report-builder";
+import AIAssistant from "@/pages/ai-assistant";
 import { useEffect } from "react";
 import { useOrganizationCheck } from "@/hooks/useOrganizationCheck";
 import { useGoogleDriveCheck } from "@/hooks/useGoogleDriveCheck";
@@ -179,6 +180,13 @@ function Router() {
           <Route path="/report-builder">
             <ProtectedRoute requireAdmin>
               <ReportBuilder />
+            </ProtectedRoute>
+          </Route>
+
+          {/* AI Assistant */}
+          <Route path="/ai-assistant">
+            <ProtectedRoute requireAdmin>
+              <AIAssistant />
             </ProtectedRoute>
           </Route>
         </>

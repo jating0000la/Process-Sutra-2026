@@ -56,6 +56,8 @@ export const organizations = pgTable(
     pricePerGb: integer("price_per_gb").default(0),
     healthScore: integer("health_score").default(100),
     healthStatus: varchar("health_status").default("healthy"), // healthy, warning, critical
+    geminiApiKey: text("gemini_api_key"), // Google AI Studio Gemini API key
+    openaiApiKey: text("openai_api_key"), // OpenAI API key
     isSuspended: boolean("is_suspended").default(false),
     suspendedAt: timestamp("suspended_at"),
     suspensionReason: text("suspension_reason"),
