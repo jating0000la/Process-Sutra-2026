@@ -23,6 +23,8 @@ import { calculateTAT, TATConfig } from "./tatCalculator.js";
 import uploadsRouter from './uploads.js';
 import oauthRouter from './oauthRoutes.js';
 import quickFormRouter from './quickFormRoutes.js';
+import reportRouter from './reportRoutes.js';
+import billingRouter from './billingRoutes.js';
 import * as crypto from 'crypto';
 import { sanitizeFlowRule, sanitizeFlowRules } from './inputSanitizer.js';
 import archiver from 'archiver';
@@ -262,6 +264,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Quick Form API — MongoDB-only, simple JSON responses
   app.use('/api/quick-forms', isAuthenticated, addUserToRequest, quickFormRouter);
+
+  // Report Builder API — admin-only analytics over form data
+  app.use('/api/reports', isAuthenticated, requireAdmin, addUserToRequest, reportRouter);
+
+  // Billing & Payments API — challan generation, PayU payment flow
+  // Note: PayU callback routes (/payu-success, /payu-failure, /payu-webhook) are unauthenticated
+  // The authenticated routes (GET /, GET /:id, POST /generate, POST /pay/:id, GET /transactions)
+  // are protected by isAuthenticated + requireAdmin middleware
+  app.use('/api/billing', (req, res, next) => {
+    // Skip auth for PayU callback endpoints
+    if (req.path.startsWith('/payu-')) return next();
+    return isAuthenticated(req as any, res, () => requireAdmin(req as any, res, () => addUserToRequest(req as any, res, next)));
+  }, billingRouter);
 
   // Flow Rules API (Organization-specific, Admin only)
   app.get("/api/flow-rules", isAuthenticated, addUserToRequest, async (req: any, res) => {

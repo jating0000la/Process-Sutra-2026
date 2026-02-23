@@ -96,7 +96,7 @@ async function getClient(): Promise<MongoClient> {
   return client;
 }
 
-function getDb() {
+export function getDb() {
   return getClient().then(c => c.db(process.env.MONGODB_DB as string));
 }
 

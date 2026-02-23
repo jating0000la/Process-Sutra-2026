@@ -33,6 +33,7 @@ import DataManagement from "@/pages/data-management";
 import QuickFormBuilder from "@/pages/quick-form-builder";
 import QuickFormFill from "@/pages/quick-form-fill";
 import QuickFormResponses from "@/pages/quick-form-responses";
+import ReportBuilder from "@/pages/report-builder";
 import { useEffect } from "react";
 import { useOrganizationCheck } from "@/hooks/useOrganizationCheck";
 import { useGoogleDriveCheck } from "@/hooks/useGoogleDriveCheck";
@@ -171,6 +172,13 @@ function Router() {
           <Route path="/quick-form-responses">
             <ProtectedRoute requireAdmin>
               <QuickFormResponses />
+            </ProtectedRoute>
+          </Route>
+
+          {/* Report Builder */}
+          <Route path="/report-builder">
+            <ProtectedRoute requireAdmin>
+              <ReportBuilder />
             </ProtectedRoute>
           </Route>
         </>

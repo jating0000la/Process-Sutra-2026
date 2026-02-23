@@ -156,4 +156,16 @@ export const pageSEO = {
     keywords: 'business automation, workflow software, process management, BPM, automation platform',
     canonical: '/welcome',
   },
+  reportBuilder: {
+    title: 'Report Builder - Custom Reports & Dashboards',
+    description: 'Build custom reports and dashboards from your form data. Aggregate, filter, group and visualize with bar charts, pie charts, and line graphs.',
+    keywords: 'report builder, custom reports, dashboards, data visualization, analytics, charts, business intelligence',
+    canonical: '/report-builder',
+  },
+  payments: {
+    title: 'Payments & Billing',
+    description: 'View billing challans, make payments, and track transaction history for your organization on ProcessSutra.',
+    keywords: 'payments, billing, challans, invoices, payment history, PayU, transactions',
+    canonical: '/payments',
+  },
 };

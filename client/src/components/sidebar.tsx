@@ -17,6 +17,7 @@ import {
   Database,
   Boxes,
   Shield,
+  PieChart,
 } from "lucide-react";
 
 // All navigation items in the correct order
@@ -79,6 +80,15 @@ const allNavigationItems = [
     badge: null,
     adminOnly: true,
     section: "data",
+  },
+  // Analytics Section
+  {
+    name: "Report Builder",
+    href: "/report-builder",
+    icon: PieChart,
+    badge: null,
+    adminOnly: true,
+    section: "analytics",
   },
 ];
 

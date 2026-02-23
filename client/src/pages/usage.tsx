@@ -1,20 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
-import { useState } from "react";
-import Header from "@/components/header";
-import Sidebar from "@/components/sidebar";
+import { useState, useEffect } from "react";
+import { AppLayout } from "@/components/app-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  TrendingUp, 
-  Activity, 
-  FileText, 
-  Database, 
-  DollarSign, 
-  Users, 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import SEOHead, { pageSEO } from "@/components/SEOHead";
+import {
+  TrendingUp,
+  Activity,
+  FileText,
+  Database,
+  DollarSign,
+  Users,
   Zap,
   Download,
   AlertCircle,
@@ -25,11 +27,9 @@ import {
   Workflow,
   BarChart3,
   PieChart,
-  Settings
+  Settings,
 } from "lucide-react";
-import { 
-  LineChart, 
-  Line, 
+import {
   BarChart,
   Bar,
   PieChart as RechartsPie,
@@ -37,14 +37,15 @@ import {
   Cell,
   AreaChart,
   Area,
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
   ResponsiveContainer,
-  Legend
+  Legend,
 } from "recharts";
-import { format } from "date-fns";
+
+/* ─── Types ─── */
 
 interface UsageSummary {
   flows: {
@@ -102,49 +103,118 @@ interface UsageSummary {
 }
 
 interface UsageTrends {
-  daily: Array<{
-    date: string;
-    flows: number;
-    forms: number;
-    storage: number;
-  }>;
-  flowsBySystem: Array<{
-    system: string;
-    count: number;
-    percentage: number;
-  }>;
-  topForms: Array<{
-    formId: string;
-    count: number;
-  }>;
+  daily: Array<{ date: string; flows: number; forms: number; storage: number }>;
+  flowsBySystem: Array<{ system: string; count: number; percentage: number }>;
+  topForms: Array<{ formId: string; count: number }>;
 }
 
+/* ─── Helpers ─── */
+
+const COLORS = ["hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))", "#ec4899"];
+
+const formatBytes = (bytes: number) => {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
+};
+
+const formatCurrency = (amount: number) =>
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(amount);
+
+/** Safe percentage — avoids divide-by-zero */
+const pct = (used: number, max: number) => (max > 0 ? Math.min((used / max) * 100, 100) : 0);
+
+const quotaColor = (p: number) => (p > 90 ? "text-red-500" : p > 75 ? "text-amber-500" : "text-foreground");
+const quotaBarCls = (p: number) => (p > 90 ? "[&>div]:bg-red-500" : p > 75 ? "[&>div]:bg-amber-500" : "");
+
+/* ─── KPI Card ─── */
+
+function KpiCard({ icon: Icon, iconBg, label, value, sub, trend }: {
+  icon: any; iconBg: string; label: string; value: string; sub: string; trend?: number;
+}) {
+  return (
+    <Card className="hover:shadow-lg transition-shadow">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className={`p-2 rounded-lg ${iconBg}`}>
+            <Icon className="h-6 w-6" />
+          </div>
+          {trend !== undefined && (
+            <Badge variant={trend > 0 ? "default" : "secondary"} className="flex items-center gap-1 text-xs">
+              {trend > 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+              {Math.abs(trend)}%
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-muted-foreground">{label}</p>
+        <p className="text-3xl font-bold">{value}</p>
+        <p className="text-xs text-muted-foreground">{sub}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ─── Quota Row ─── */
+
+function QuotaRow({ icon: Icon, iconCls, label, used, max, unit = "" }: {
+  icon: any; iconCls: string; label: string; used: number; max: number; unit?: string;
+}) {
+  const p = pct(used, max);
+  const display = unit ? `${used.toFixed(2)}/${max.toFixed(2)} ${unit}` : `${used}/${max}`;
+  return (
+    <div className="p-4 rounded-lg border bg-card">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Icon className={`h-5 w-5 ${iconCls}`} />
+          <span className="text-sm font-medium">{label}</span>
+        </div>
+        <Badge variant={p > 90 ? "destructive" : "outline"} className="text-xs">{display}</Badge>
+      </div>
+      <Progress value={p} className={`h-2 ${quotaBarCls(p)}`} />
+      <p className="text-xs text-muted-foreground mt-1">{p.toFixed(0)}% utilized</p>
+    </div>
+  );
+}
+
+/* ─── Chart tooltip style ─── */
+const tooltipStyle: React.CSSProperties = {
+  borderRadius: 8,
+  border: "1px solid hsl(var(--border))",
+  background: "hsl(var(--popover))",
+  color: "hsl(var(--popover-foreground))",
+  fontSize: 12,
+};
+
+/* ─── Main Component ─── */
+
 export default function Usage() {
-  const { user, dbUser, loading } = useAuth();
+  const { user, dbUser, loading, handleTokenExpired } = useAuth();
   const [dateRange, setDateRange] = useState("month");
   const isAdmin = dbUser?.role === "admin";
 
-  // Fetch usage summary
+  useEffect(() => {
+    if (!loading && !user) handleTokenExpired();
+  }, [user, loading, handleTokenExpired]);
+
   const { data: summary, isLoading: summaryLoading } = useQuery<UsageSummary>({
     queryKey: ["/api/usage/summary", dateRange],
     queryFn: async () => {
-      const res = await fetch(`/api/usage/summary?dateRange=${dateRange}`, {
-        credentials: "include",
-      });
+      const res = await fetch(`/api/usage/summary?dateRange=${dateRange}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch usage summary");
       return res.json();
     },
     enabled: !!user && isAdmin,
-    staleTime: 60000, // 1 minute
+    staleTime: 60000,
   });
 
-  // Fetch usage trends
   const { data: trends, isLoading: trendsLoading } = useQuery<UsageTrends>({
     queryKey: ["/api/usage/trends", dateRange],
     queryFn: async () => {
-      const res = await fetch(`/api/usage/trends?dateRange=${dateRange}`, {
-        credentials: "include",
-      });
+      const res = await fetch(`/api/usage/trends?dateRange=${dateRange}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch usage trends");
       return res.json();
     },
@@ -152,858 +222,466 @@ export default function Usage() {
     staleTime: 60000,
   });
 
+  /* ─── Access denied ─── */
   if (!isAdmin) {
     return (
-      <div className="flex h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto">
-          <Header title="Usage Statistics" description="Access Denied" />
-          <div className="p-6">
-            <div className="text-center py-12">
-              <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-              <p className="text-gray-600 text-lg">
-                You don't have permission to access this page.
-              </p>
-            </div>
-          </div>
-        </main>
-      </div>
+      <AppLayout title="Usage Statistics" description="Access Denied">
+        <div className="text-center py-12">
+          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <p className="text-muted-foreground text-lg">You don't have permission to access this page.</p>
+        </div>
+      </AppLayout>
     );
   }
 
+  /* ─── Loading ─── */
   if (loading || summaryLoading) {
     return (
-      <div className="flex h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto">
-          <Header title="Usage Statistics" description="Loading..." />
-          <div className="p-6">
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-200 border-t-blue-600"></div>
-            </div>
+      <AppLayout title="Usage Statistics" description="Loading...">
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-36 rounded-lg" />)}
           </div>
-        </main>
-      </div>
+          <Skeleton className="h-96 rounded-lg" />
+        </div>
+      </AppLayout>
     );
   }
 
-  const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
-
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0,
-    }).format(amount);
+  const exportCSV = () => {
+    if (!summary) return;
+    const lines = [
+      "Metric,Value",
+      `Flows This Month,${summary.flows.thisMonth}`,
+      `Form Submissions,${summary.forms.thisMonth}`,
+      `Storage GB,${summary.storage.totalGB.toFixed(2)}`,
+      `Active Users,${summary.users.active}`,
+      `Current Month Cost,${summary.cost.currentMonth}`,
+      `TAT Compliance %,${summary.performance.tatCompliance}`,
+    ];
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `usage-${dateRange}-${Date.now()}.csv`; a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto">
-        <Header 
-          title="Usage Statistics" 
-          description="Monitor your organization's platform usage and performance"
-          actions={
-            <div className="flex gap-3">
-              <select 
-                className="px-4 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-                value={dateRange}
-                onChange={(e) => setDateRange(e.target.value)}
-              >
-                <option value="week">Last 7 Days</option>
-                <option value="month">This Month</option>
-                <option value="quarter">Last 3 Months</option>
-              </select>
-              <Button variant="outline" className="flex items-center gap-2">
-                <Download className="h-4 w-4" />
-                Export Report
-              </Button>
-            </div>
-          }
-        />
-
-        <div className="p-8 space-y-8">
-          {/* Key Metrics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {/* Flow Executions */}
-            <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm hover:shadow-xl transition-all">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <Workflow className="h-6 w-6 text-blue-600" />
-                  </div>
-                  <Badge variant={summary?.flows.trend && summary.flows.trend > 0 ? "default" : "secondary"} className="flex items-center gap-1">
-                    {summary?.flows.trend && summary.flows.trend > 0 ? (
-                      <ArrowUp className="h-3 w-3" />
-                    ) : (
-                      <ArrowDown className="h-3 w-3" />
-                    )}
-                    {Math.abs(summary?.flows.trend || 0)}%
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-1">
-                  <p className="text-sm text-gray-600">Flow Executions</p>
-                  <p className="text-3xl font-bold text-gray-900">{summary?.flows.thisMonth.toLocaleString() || 0}</p>
-                  <p className="text-xs text-gray-500">Total: {summary?.flows.total.toLocaleString() || 0}</p>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Form Submissions */}
-            <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm hover:shadow-xl transition-all">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="p-2 bg-green-100 rounded-lg">
-                    <FileText className="h-6 w-6 text-green-600" />
-                  </div>
-                  <Badge variant={summary?.forms.trend && summary.forms.trend > 0 ? "default" : "secondary"} className="flex items-center gap-1">
-                    {summary?.forms.trend && summary.forms.trend > 0 ? (
-                      <ArrowUp className="h-3 w-3" />
-                    ) : (
-                      <ArrowDown className="h-3 w-3" />
-                    )}
-                    {Math.abs(summary?.forms.trend || 0)}%
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-1">
-                  <p className="text-sm text-gray-600">Form Submissions</p>
-                  <p className="text-3xl font-bold text-gray-900">{summary?.forms.thisMonth.toLocaleString() || 0}</p>
-                  <p className="text-xs text-gray-500">Total: {summary?.forms.total.toLocaleString() || 0}</p>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Storage Usage */}
-            <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm hover:shadow-xl transition-all">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="p-2 bg-purple-100 rounded-lg">
-                    <Database className="h-6 w-6 text-purple-600" />
-                  </div>
-                  <Badge variant={summary?.storage.trend && summary.storage.trend > 0 ? "default" : "secondary"} className="flex items-center gap-1">
-                    {summary?.storage.trend && summary.storage.trend > 0 ? (
-                      <ArrowUp className="h-3 w-3" />
-                    ) : (
-                      <ArrowDown className="h-3 w-3" />
-                    )}
-                    {Math.abs(summary?.storage.trend || 0)}%
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-1">
-                  <p className="text-sm text-gray-600">Storage Used</p>
-                  <p className="text-3xl font-bold text-gray-900">{summary?.storage.totalGB.toFixed(2) || 0} GB</p>
-                  <p className="text-xs text-gray-500">{summary?.storage.totalFiles.toLocaleString() || 0} files</p>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Cost Estimate */}
-            <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm hover:shadow-xl transition-all">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="p-2 bg-amber-100 rounded-lg">
-                    <DollarSign className="h-6 w-6 text-amber-600" />
-                  </div>
-                  <Badge variant={summary?.cost.comparison && summary.cost.comparison > 0 ? "destructive" : "default"} className="flex items-center gap-1">
-                    {summary?.cost.comparison && summary.cost.comparison > 0 ? (
-                      <ArrowUp className="h-3 w-3" />
-                    ) : (
-                      <ArrowDown className="h-3 w-3" />
-                    )}
-                    {Math.abs(summary?.cost.comparison || 0)}%
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-1">
-                  <p className="text-sm text-gray-600">Current Month</p>
-                  <p className="text-3xl font-bold text-gray-900">{formatCurrency(summary?.cost.currentMonth || 0)}</p>
-                  <p className="text-xs text-gray-500">Projected: {formatCurrency(summary?.cost.projected || 0)}</p>
-                </div>
-              </CardContent>
-            </Card>
+    <>
+      <SEOHead
+        title={pageSEO.analytics.title}
+        description={pageSEO.analytics.description}
+        keywords={pageSEO.analytics.keywords}
+        canonical="/usage"
+      />
+      <AppLayout
+        title="Usage Statistics"
+        description="Monitor your organization's platform usage and performance"
+        actions={
+          <div className="flex gap-2 items-center">
+            <Select value={dateRange} onValueChange={setDateRange}>
+              <SelectTrigger className="w-36 h-9 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="week">Last 7 Days</SelectItem>
+                <SelectItem value="month">This Month</SelectItem>
+                <SelectItem value="quarter">Last 3 Months</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" onClick={exportCSV}>
+              <Download className="h-4 w-4 mr-1" /> Export
+            </Button>
           </div>
+        }
+      >
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <KpiCard
+            icon={Workflow} iconBg="bg-blue-500/10 text-blue-500"
+            label="Flow Executions" value={(summary?.flows.thisMonth ?? 0).toLocaleString()}
+            sub={`Total: ${(summary?.flows.total ?? 0).toLocaleString()}`} trend={summary?.flows.trend}
+          />
+          <KpiCard
+            icon={FileText} iconBg="bg-green-500/10 text-green-500"
+            label="Form Submissions" value={(summary?.forms.thisMonth ?? 0).toLocaleString()}
+            sub={`Total: ${(summary?.forms.total ?? 0).toLocaleString()}`} trend={summary?.forms.trend}
+          />
+          <KpiCard
+            icon={Database} iconBg="bg-purple-500/10 text-purple-500"
+            label="Storage Used" value={`${(summary?.storage.totalGB ?? 0).toFixed(2)} GB`}
+            sub={`${(summary?.storage.totalFiles ?? 0).toLocaleString()} files`} trend={summary?.storage.trend}
+          />
+          <KpiCard
+            icon={DollarSign} iconBg="bg-amber-500/10 text-amber-500"
+            label="Current Month" value={formatCurrency(summary?.cost.currentMonth ?? 0)}
+            sub={`Projected: ${formatCurrency(summary?.cost.projected ?? 0)}`} trend={summary?.cost.comparison}
+          />
+        </div>
 
-          {/* Tabs for Different Views */}
-          <Tabs defaultValue="overview" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4 bg-white shadow-sm border border-gray-200 p-1 rounded-lg">
-              <TabsTrigger value="overview" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white flex items-center gap-2">
-                <BarChart3 className="h-4 w-4" />
-                Overview
-              </TabsTrigger>
-              <TabsTrigger value="flows" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white flex items-center gap-2">
-                <Workflow className="h-4 w-4" />
-                Flows
-              </TabsTrigger>
-              <TabsTrigger value="storage" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white flex items-center gap-2">
-                <HardDrive className="h-4 w-4" />
-                Storage
-              </TabsTrigger>
-              <TabsTrigger value="cost" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white flex items-center gap-2">
-                <DollarSign className="h-4 w-4" />
-                Cost Analysis
-              </TabsTrigger>
-            </TabsList>
+        {/* Tabs */}
+        <Tabs defaultValue="overview" className="space-y-6">
+          <TabsList className="bg-muted/50 p-1">
+            <TabsTrigger value="overview" className="flex items-center gap-1.5 text-xs"><BarChart3 className="h-3.5 w-3.5" />Overview</TabsTrigger>
+            <TabsTrigger value="flows" className="flex items-center gap-1.5 text-xs"><Workflow className="h-3.5 w-3.5" />Flows</TabsTrigger>
+            <TabsTrigger value="storage" className="flex items-center gap-1.5 text-xs"><HardDrive className="h-3.5 w-3.5" />Storage</TabsTrigger>
+            <TabsTrigger value="cost" className="flex items-center gap-1.5 text-xs"><DollarSign className="h-3.5 w-3.5" />Cost Analysis</TabsTrigger>
+          </TabsList>
 
-            {/* Overview Tab */}
-            <TabsContent value="overview" className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Usage Trends Chart */}
-                <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-                  <CardHeader className="border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
-                    <CardTitle className="flex items-center gap-2 text-gray-800">
-                      <div className="p-2 bg-blue-100 rounded-lg">
-                        <TrendingUp className="h-5 w-5 text-blue-600" />
-                      </div>
-                      Usage Trends
-                    </CardTitle>
-                    <CardDescription>Daily flow executions and form submissions</CardDescription>
-                  </CardHeader>
-                  <CardContent className="pt-6">
-                    <ResponsiveContainer width="100%" height={300}>
-                      <AreaChart data={trends?.daily || []}>
+          {/* ═══════════ Overview Tab ═══════════ */}
+          <TabsContent value="overview" className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Usage Trends */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-primary" /> Usage Trends
+                  </CardTitle>
+                  <CardDescription>Daily flow executions &amp; form submissions</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {trendsLoading ? (
+                    <Skeleton className="h-[280px] w-full" />
+                  ) : (
+                    <ResponsiveContainer width="100%" height={280}>
+                      <AreaChart data={trends?.daily ?? []}>
                         <defs>
-                          <linearGradient id="colorFlows" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8}/>
-                            <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
+                          <linearGradient id="gFlows" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.5} />
+                            <stop offset="95%" stopColor="hsl(var(--chart-1))" stopOpacity={0} />
                           </linearGradient>
-                          <linearGradient id="colorForms" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
-                            <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
+                          <linearGradient id="gForms" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="hsl(var(--chart-2))" stopOpacity={0.5} />
+                            <stop offset="95%" stopColor="hsl(var(--chart-2))" stopOpacity={0} />
                           </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                        <XAxis dataKey="date" stroke="#6B7280" />
-                        <YAxis stroke="#6B7280" />
-                        <Tooltip />
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+                        <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+                        <Tooltip contentStyle={tooltipStyle} />
                         <Legend />
-                        <Area type="monotone" dataKey="flows" stroke="#3B82F6" fillOpacity={1} fill="url(#colorFlows)" name="Flows" />
-                        <Area type="monotone" dataKey="forms" stroke="#10B981" fillOpacity={1} fill="url(#colorForms)" name="Forms" />
+                        <Area type="monotone" dataKey="flows" stroke="hsl(var(--chart-1))" fill="url(#gFlows)" name="Flows" />
+                        <Area type="monotone" dataKey="forms" stroke="hsl(var(--chart-2))" fill="url(#gForms)" name="Forms" />
                       </AreaChart>
                     </ResponsiveContainer>
-                  </CardContent>
-                </Card>
+                  )}
+                </CardContent>
+              </Card>
 
-                {/* Performance Metrics */}
-                <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-                  <CardHeader className="border-b border-gray-100 bg-gradient-to-r from-green-50 to-emerald-50">
-                    <CardTitle className="flex items-center gap-2 text-gray-800">
-                      <div className="p-2 bg-green-100 rounded-lg">
-                        <Zap className="h-5 w-5 text-green-600" />
-                      </div>
-                      Performance Score
-                    </CardTitle>
-                    <CardDescription>Overall organization efficiency</CardDescription>
-                  </CardHeader>
-                  <CardContent className="pt-6 space-y-6">
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-gray-700">TAT Compliance</span>
-                        <span className="text-sm font-bold text-blue-600">{summary?.performance.tatCompliance || 0}%</span>
-                      </div>
-                      <Progress value={summary?.performance.tatCompliance || 0} className="h-3" />
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-gray-700">On-Time Delivery</span>
-                        <span className="text-sm font-bold text-green-600">{summary?.performance.onTimeRate || 0}%</span>
-                      </div>
-                      <Progress value={summary?.performance.onTimeRate || 0} className="h-3" />
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-gray-700">Flow Success Rate</span>
-                        <span className="text-sm font-bold text-purple-600">{summary?.flows.successRate || 0}%</span>
-                      </div>
-                      <Progress value={summary?.flows.successRate || 0} className="h-3" />
-                    </div>
-                    <div className="pt-4 border-t border-gray-200">
-                      <div className="grid grid-cols-2 gap-4 text-center">
-                        <div>
-                          <p className="text-2xl font-bold text-gray-900">{summary?.flows.avgCompletionTime.toFixed(1) || 0}</p>
-                          <p className="text-xs text-gray-600">Avg. Days/Flow</p>
-                        </div>
-                        <div>
-                          <p className="text-2xl font-bold text-gray-900">{summary?.users.avgTasksPerUser.toFixed(1) || 0}</p>
-                          <p className="text-xs text-gray-600">Tasks/User</p>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Flows by System */}
-              <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-                <CardHeader className="border-b border-gray-100 bg-gradient-to-r from-purple-50 to-pink-50">
-                  <CardTitle className="flex items-center gap-2 text-gray-800">
-                    <div className="p-2 bg-purple-100 rounded-lg">
-                      <PieChart className="h-5 w-5 text-purple-600" />
-                    </div>
-                    Flow Distribution by System
+              {/* Performance */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Zap className="h-4 w-4 text-primary" /> Performance Score
                   </CardTitle>
-                  <CardDescription>Breakdown of flow executions across different systems</CardDescription>
+                  <CardDescription>Organization efficiency metrics</CardDescription>
                 </CardHeader>
-                <CardContent className="pt-6">
+                <CardContent className="space-y-5">
+                  {[
+                    { label: "TAT Compliance", value: summary?.performance.tatCompliance ?? 0, cls: "text-blue-500" },
+                    { label: "On-Time Delivery", value: summary?.performance.onTimeRate ?? 0, cls: "text-green-500" },
+                    { label: "Flow Success Rate", value: summary?.flows.successRate ?? 0, cls: "text-purple-500" },
+                  ].map(m => (
+                    <div key={m.label}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm font-medium">{m.label}</span>
+                        <span className={`text-sm font-bold ${m.cls}`}>{m.value}%</span>
+                      </div>
+                      <Progress value={m.value} className="h-2.5" />
+                    </div>
+                  ))}
+                  <div className="pt-4 border-t grid grid-cols-2 gap-4 text-center">
+                    <div>
+                      <p className="text-2xl font-bold">{(summary?.flows?.avgCompletionTime ?? 0).toFixed(1)}</p>
+                      <p className="text-xs text-muted-foreground">Avg. Days/Flow</p>
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold">{(summary?.users?.avgTasksPerUser ?? 0).toFixed(1)}</p>
+                      <p className="text-xs text-muted-foreground">Tasks/User</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Flows by System */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <PieChart className="h-4 w-4 text-primary" /> Flow Distribution by System
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {trendsLoading ? (
+                  <Skeleton className="h-[280px] w-full" />
+                ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <ResponsiveContainer width="100%" height={300}>
+                    <ResponsiveContainer width="100%" height={280}>
                       <RechartsPie>
                         <Pie
-                          data={trends?.flowsBySystem || []}
-                          cx="50%"
-                          cy="50%"
-                          labelLine={false}
-                          label={(entry) => `${entry.system}: ${entry.percentage}%`}
+                          data={trends?.flowsBySystem ?? []}
+                          cx="50%" cy="50%"
                           outerRadius={100}
-                          fill="#8884d8"
+                          labelLine={false}
+                          label={e => `${e.system}: ${e.percentage}%`}
                           dataKey="count"
                         >
-                          {(trends?.flowsBySystem || []).map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          {(trends?.flowsBySystem ?? []).map((_, idx) => (
+                            <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
                           ))}
                         </Pie>
-                        <Tooltip />
+                        <Tooltip contentStyle={tooltipStyle} />
                       </RechartsPie>
                     </ResponsiveContainer>
-                    <div className="space-y-3">
-                      {trends?.flowsBySystem?.map((system, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="space-y-2">
+                      {trends?.flowsBySystem?.map((s, idx) => (
+                        <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                           <div className="flex items-center gap-3">
-                            <div className="w-4 h-4 rounded" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
-                            <span className="text-sm font-medium text-gray-700">{system.system}</span>
+                            <div className="w-3.5 h-3.5 rounded" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                            <span className="text-sm font-medium">{s.system}</span>
                           </div>
                           <div className="text-right">
-                            <p className="text-sm font-bold text-gray-900">{system.count}</p>
-                            <p className="text-xs text-gray-500">{system.percentage}%</p>
+                            <span className="text-sm font-bold">{s.count}</span>
+                            <span className="text-xs text-muted-foreground ml-2">{s.percentage}%</span>
                           </div>
                         </div>
                       ))}
                     </div>
                   </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* User Activity */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <KpiCard icon={Users} iconBg="bg-blue-500/10 text-blue-500" label="Total Users" value={String(summary?.users.total ?? 0)} sub={`${summary?.users.active ?? 0} active`} />
+              <KpiCard icon={Activity} iconBg="bg-green-500/10 text-green-500" label="Active Today" value={String(summary?.users.activeToday ?? 0)} sub={`${((summary?.users.activeToday ?? 0) / Math.max(summary?.users.total ?? 1, 1) * 100).toFixed(0)}% of total`} />
+              <KpiCard icon={Calendar} iconBg="bg-purple-500/10 text-purple-500" label="Avg Tasks/User" value={(summary?.users?.avgTasksPerUser ?? 0).toFixed(1)} sub="This month" />
+            </div>
+
+            {/* Quota Status */}
+            {summary && (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Settings className="h-4 w-4 text-primary" /> Organization Plan Quotas
+                      </CardTitle>
+                      <CardDescription>Limits configured by super admin</CardDescription>
+                    </div>
+                    <Badge variant="outline" className="text-xs">Admin Controlled</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <QuotaRow icon={Workflow} iconCls="text-blue-500" label="Flow Executions" used={summary.quotas.currentFlows} max={summary.quotas.maxFlows} />
+                    <QuotaRow icon={Users} iconCls="text-green-500" label="Active Users" used={summary.quotas.currentUsers} max={summary.quotas.maxUsers} />
+                    <QuotaRow icon={Database} iconCls="text-purple-500" label="Storage Space" used={summary.quotas.storageUsed} max={summary.quotas.storageLimit} unit="GB" />
+                  </div>
+
+                  {(summary.quotas.currentFlows > summary.quotas.maxFlows ||
+                    summary.quotas.currentUsers > summary.quotas.maxUsers ||
+                    summary.quotas.storageUsed > summary.quotas.storageLimit) && (
+                    <div className="p-4 bg-destructive/10 border border-destructive/30 rounded-lg flex items-start gap-3">
+                      <AlertCircle className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
+                      <div>
+                        <p className="font-medium text-sm">Quota Limit Exceeded</p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Your organization has exceeded one or more plan limits. Contact your system administrator to upgrade.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
+            )}
+          </TabsContent>
 
-              {/* User Activity */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-                  <CardHeader className="pb-3">
-                    <div className="p-2 bg-blue-100 rounded-lg w-fit">
-                      <Users className="h-6 w-6 text-blue-600" />
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-1">
-                      <p className="text-sm text-gray-600">Total Users</p>
-                      <p className="text-3xl font-bold text-gray-900">{summary?.users.total || 0}</p>
-                      <p className="text-xs text-gray-500">{summary?.users.active || 0} active</p>
-                    </div>
-                  </CardContent>
+          {/* ═══════════ Flows Tab ═══════════ */}
+          <TabsContent value="flows" className="space-y-6">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {[
+                { label: "Active Flows", val: summary?.flows.active ?? 0, cls: "text-blue-500" },
+                { label: "Completed", val: summary?.flows.completed ?? 0, cls: "text-green-500" },
+                { label: "Cancelled", val: summary?.flows.cancelled ?? 0, cls: "text-red-500" },
+                { label: "Success Rate", val: `${summary?.flows.successRate ?? 0}%`, cls: "text-purple-500" },
+              ].map(m => (
+                <Card key={m.label}>
+                  <CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">{m.label}</CardTitle></CardHeader>
+                  <CardContent><p className={`text-3xl font-bold ${m.cls}`}>{m.val}</p></CardContent>
                 </Card>
+              ))}
+            </div>
 
-                <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-                  <CardHeader className="pb-3">
-                    <div className="p-2 bg-green-100 rounded-lg w-fit">
-                      <Activity className="h-6 w-6 text-green-600" />
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-1">
-                      <p className="text-sm text-gray-600">Active Today</p>
-                      <p className="text-3xl font-bold text-gray-900">{summary?.users.activeToday || 0}</p>
-                      <p className="text-xs text-gray-500">{((summary?.users.activeToday || 0) / (summary?.users.total || 1) * 100).toFixed(0)}% of total</p>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-                  <CardHeader className="pb-3">
-                    <div className="p-2 bg-purple-100 rounded-lg w-fit">
-                      <Calendar className="h-6 w-6 text-purple-600" />
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-1">
-                      <p className="text-sm text-gray-600">Avg Tasks/User</p>
-                      <p className="text-3xl font-bold text-gray-900">{summary?.users.avgTasksPerUser.toFixed(1) || 0}</p>
-                      <p className="text-xs text-gray-500">This month</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Organization Quota Status - Controlled by Super Admin */}
-              {summary && (
-                <Card className="shadow-lg border-0 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-                  <CardHeader className="border-b border-gray-200">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle className="flex items-center gap-2">
-                          <Settings className="h-5 w-5 text-blue-600" />
-                          Organization Plan Quotas
-                        </CardTitle>
-                        <CardDescription>Limits configured by super admin in organization control panel</CardDescription>
-                      </div>
-                      <Badge variant="outline" className="text-xs">
-                        Admin Controlled
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-6 space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {/* Flow Executions Quota */}
-                      <div className="p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <Workflow className="h-5 w-5 text-blue-600" />
-                            <span className="text-sm font-medium text-gray-700">Flow Executions</span>
-                          </div>
-                          <Badge variant={summary.quotas.currentFlows > summary.quotas.maxFlows ? "destructive" : "default"} className="text-xs">
-                            {summary.quotas.currentFlows}/{summary.quotas.maxFlows}
-                          </Badge>
-                        </div>
-                        <Progress 
-                          value={(summary.quotas.currentFlows / summary.quotas.maxFlows) * 100} 
-                          className={`h-2 ${
-                            (summary.quotas.currentFlows / summary.quotas.maxFlows) * 100 > 90
-                              ? '[&>div]:bg-red-600'
-                              : (summary.quotas.currentFlows / summary.quotas.maxFlows) * 100 > 75
-                              ? '[&>div]:bg-amber-600'
-                              : '[&>div]:bg-blue-600'
-                          }`}
-                        />
-                        <p className="text-xs text-gray-500 mt-2">
-                          {((summary.quotas.currentFlows / summary.quotas.maxFlows) * 100).toFixed(0)}% utilized
-                        </p>
-                      </div>
-
-                      {/* Users Quota */}
-                      <div className="p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <Users className="h-5 w-5 text-green-600" />
-                            <span className="text-sm font-medium text-gray-700">Active Users</span>
-                          </div>
-                          <Badge variant={summary.quotas.currentUsers > summary.quotas.maxUsers ? "destructive" : "default"} className="text-xs">
-                            {summary.quotas.currentUsers}/{summary.quotas.maxUsers}
-                          </Badge>
-                        </div>
-                        <Progress 
-                          value={(summary.quotas.currentUsers / summary.quotas.maxUsers) * 100} 
-                          className={`h-2 ${
-                            (summary.quotas.currentUsers / summary.quotas.maxUsers) * 100 > 90
-                              ? '[&>div]:bg-red-600'
-                              : (summary.quotas.currentUsers / summary.quotas.maxUsers) * 100 > 75
-                              ? '[&>div]:bg-amber-600'
-                              : '[&>div]:bg-green-600'
-                          }`}
-                        />
-                        <p className="text-xs text-gray-500 mt-2">
-                          {((summary.quotas.currentUsers / summary.quotas.maxUsers) * 100).toFixed(0)}% utilized
-                        </p>
-                      </div>
-
-                      {/* Storage Quota */}
-                      <div className="p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <Database className="h-5 w-5 text-purple-600" />
-                            <span className="text-sm font-medium text-gray-700">Storage Space</span>
-                          </div>
-                          <Badge variant={summary.quotas.storageUsed > summary.quotas.storageLimit ? "destructive" : "default"} className="text-xs">
-                            {summary.quotas.storageUsed.toFixed(2)}/{summary.quotas.storageLimit.toFixed(2)} GB
-                          </Badge>
-                        </div>
-                        <Progress 
-                          value={(summary.quotas.storageUsed / summary.quotas.storageLimit) * 100} 
-                          className={`h-2 ${
-                            (summary.quotas.storageUsed / summary.quotas.storageLimit) * 100 > 90
-                              ? '[&>div]:bg-red-600'
-                              : (summary.quotas.storageUsed / summary.quotas.storageLimit) * 100 > 75
-                              ? '[&>div]:bg-amber-600'
-                              : '[&>div]:bg-purple-600'
-                          }`}
-                        />
-                        <p className="text-xs text-gray-500 mt-2">
-                          {((summary.quotas.storageUsed / summary.quotas.storageLimit) * 100).toFixed(0)}% utilized
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Warning Banner if any quota exceeded */}
-                    {(summary.quotas.currentFlows > summary.quotas.maxFlows || 
-                      summary.quotas.currentUsers > summary.quotas.maxUsers || 
-                      summary.quotas.storageUsed > summary.quotas.storageLimit) && (
-                      <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                        <div className="flex items-start gap-3">
-                          <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
-                          <div>
-                            <p className="font-medium text-red-900 text-sm">⚠️ Quota Limit Exceeded</p>
-                            <p className="text-sm text-red-700 mt-1">
-                              Your organization has exceeded one or more plan limits. Contact your system administrator 
-                              to upgrade your plan in the organization control panel or reduce usage.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Info Banner */}
-                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                      <div className="flex items-start gap-3">
-                        <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5" />
-                        <div className="flex-1">
-                          <p className="font-medium text-blue-900 text-sm">About Organization Quotas</p>
-                          <p className="text-sm text-blue-700 mt-1">
-                            These limits are set by your system super admin through the <strong>Organization Control Panel</strong>. 
-                            They define your pricing tier (Starter, Professional, Enterprise, Custom) and can include usage-based billing. 
-                            To request a quota increase or change your pricing tier, contact your administrator.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </TabsContent>
-
-            {/* Flows Tab */}
-            <TabsContent value="flows" className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm text-gray-600">Active Flows</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-3xl font-bold text-blue-600">{summary?.flows.active || 0}</p>
-                  </CardContent>
-                </Card>
-                <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm text-gray-600">Completed</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-3xl font-bold text-green-600">{summary?.flows.completed || 0}</p>
-                  </CardContent>
-                </Card>
-                <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm text-gray-600">Cancelled</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-3xl font-bold text-red-600">{summary?.flows.cancelled || 0}</p>
-                  </CardContent>
-                </Card>
-                <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm text-gray-600">Success Rate</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-3xl font-bold text-purple-600">{summary?.flows.successRate || 0}%</p>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-                <CardHeader className="border-b border-gray-100">
-                  <CardTitle>Top Forms by Submissions</CardTitle>
-                  <CardDescription>Most frequently submitted forms</CardDescription>
-                </CardHeader>
-                <CardContent className="pt-6">
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={trends?.topForms || []}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                      <XAxis dataKey="formId" stroke="#6B7280" />
-                      <YAxis stroke="#6B7280" />
-                      <Tooltip />
-                      <Bar dataKey="count" fill="#3B82F6" radius={[8, 8, 0, 0]} />
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Top Forms by Submissions</CardTitle>
+                <CardDescription>Most frequently submitted forms</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {trendsLoading ? (
+                  <Skeleton className="h-[280px] w-full" />
+                ) : (
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={trends?.topForms ?? []}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis dataKey="formId" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+                      <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+                      <Tooltip contentStyle={tooltipStyle} />
+                      <Bar dataKey="count" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </TabsContent>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-            {/* Storage Tab */}
-            <TabsContent value="storage" className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-                  <CardHeader className="border-b border-gray-100">
-                    <CardTitle>Storage Overview</CardTitle>
-                    <CardDescription>File storage breakdown</CardDescription>
-                  </CardHeader>
-                  <CardContent className="pt-6 space-y-6">
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-gray-700">Storage Used</span>
-                        <span className={`text-sm font-bold ${
-                          ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 90 
-                            ? 'text-red-600' 
-                            : ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 75 
-                            ? 'text-amber-600' 
-                            : 'text-blue-600'
-                        }`}>
-                          {summary?.storage.totalGB.toFixed(2) || 0} GB
-                        </span>
-                      </div>
-                      <Progress 
-                        value={(summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100} 
-                        className={`h-3 ${
-                          ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 90 
-                            ? '[&>div]:bg-red-600' 
-                            : ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 75 
-                            ? '[&>div]:bg-amber-600' 
-                            : ''
-                        }`}
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        {summary?.quotas.storageLimit ? `${((summary?.quotas.storageUsed || 0) / summary.quotas.storageLimit * 100).toFixed(1)}% of ${summary.quotas.storageLimit.toFixed(2)} GB limit` : 'No limit set'}
-                      </p>
-                      {((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 90 && (
-                        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
-                          ⚠️ Storage almost full! You've used over 90% of your {summary?.quotas.storageLimit.toFixed(2)} GB limit. File uploads may fail soon.
-                        </div>
-                      )}
-                      {((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 75 && 
-                       ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) <= 90 && (
-                        <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
-                          ⚠️ Storage warning: You've used over 75% of your {summary?.quotas.storageLimit.toFixed(2)} GB limit.
-                        </div>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="p-4 bg-blue-50 rounded-lg">
-                        <p className="text-sm text-gray-600 mb-1">Total Files</p>
-                        <p className="text-2xl font-bold text-blue-600">{summary?.storage.totalFiles.toLocaleString() || 0}</p>
-                      </div>
-                      <div className="p-4 bg-green-50 rounded-lg">
-                        <p className="text-sm text-gray-600 mb-1">Avg File Size</p>
-                        <p className="text-2xl font-bold text-green-600">{formatBytes(summary?.storage.avgFileSize || 0)}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-                  <CardHeader className="border-b border-gray-100">
-                    <CardTitle>Files by Type</CardTitle>
-                    <CardDescription>Distribution of uploaded files</CardDescription>
-                  </CardHeader>
-                  <CardContent className="pt-6">
-                    <div className="space-y-3">
-                      {Object.entries(summary?.storage.byFileType || {}).map(([type, count], index) => (
-                        <div key={type} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div className="flex items-center gap-3">
-                            <div className="w-4 h-4 rounded" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
-                            <span className="text-sm font-medium text-gray-700">{type}</span>
-                          </div>
-                          <span className="text-sm font-bold text-gray-900">{count}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-
-            {/* Cost Analysis Tab */}
-            <TabsContent value="cost" className="space-y-6">
-              <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-                <CardHeader className="border-b border-gray-100 bg-gradient-to-r from-amber-50 to-orange-50">
-                  <CardTitle className="flex items-center gap-2 text-gray-800">
-                    <div className="p-2 bg-amber-100 rounded-lg">
-                      <DollarSign className="h-5 w-5 text-amber-600" />
-                    </div>
-                    Cost Breakdown
-                  </CardTitle>
-                  <CardDescription>Current month usage-based pricing</CardDescription>
+          {/* ═══════════ Storage Tab ═══════════ */}
+          <TabsContent value="storage" className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Storage Overview</CardTitle>
+                  <CardDescription>Storage usage and quota</CardDescription>
                 </CardHeader>
-                <CardContent className="pt-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                    <div className="p-6 bg-blue-50 rounded-xl border border-blue-200">
-                      <div className="flex items-center gap-3 mb-3">
-                        <Workflow className="h-8 w-8 text-blue-600" />
-                        <div>
-                          <p className="text-sm text-gray-600">Flow Executions</p>
-                          <p className="text-2xl font-bold text-blue-600">{formatCurrency(summary?.cost.flowCost || 0)}</p>
-                        </div>
-                      </div>
-                      <p className="text-xs text-gray-600">{summary?.flows.thisMonth} flows × rate</p>
+                <CardContent className="space-y-5">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium">Storage Used</span>
+                      <span className={`text-sm font-bold ${quotaColor(pct(summary?.quotas.storageUsed ?? 0, summary?.quotas.storageLimit ?? 1))}`}>
+                        {(summary?.storage.totalGB ?? 0).toFixed(2)} GB
+                      </span>
                     </div>
-                    <div className="p-6 bg-green-50 rounded-xl border border-green-200">
-                      <div className="flex items-center gap-3 mb-3">
-                        <Users className="h-8 w-8 text-green-600" />
-                        <div>
-                          <p className="text-sm text-gray-600">Active Users</p>
-                          <p className="text-2xl font-bold text-green-600">{formatCurrency(summary?.cost.userCost || 0)}</p>
-                        </div>
+                    <Progress
+                      value={pct(summary?.quotas.storageUsed ?? 0, summary?.quotas.storageLimit ?? 1)}
+                      className={`h-3 ${quotaBarCls(pct(summary?.quotas.storageUsed ?? 0, summary?.quotas.storageLimit ?? 1))}`}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {summary?.quotas.storageLimit
+                        ? `${pct(summary.quotas.storageUsed, summary.quotas.storageLimit).toFixed(1)}% of ${summary.quotas.storageLimit.toFixed(2)} GB limit`
+                        : "No limit set"}
+                    </p>
+                    {pct(summary?.quotas.storageUsed ?? 0, summary?.quotas.storageLimit ?? 1) > 90 && (
+                      <div className="mt-2 p-2 bg-destructive/10 border border-destructive/30 rounded text-xs font-medium">
+                        Storage almost full! Uploads may fail soon.
                       </div>
-                      <p className="text-xs text-gray-600">{summary?.users.active} users × rate</p>
-                    </div>
-                    <div className="p-6 bg-purple-50 rounded-xl border border-purple-200">
-                      <div className="flex items-center gap-3 mb-3">
-                        <FileText className="h-8 w-8 text-purple-600" />
-                        <div>
-                          <p className="text-sm text-gray-600">Form Submissions</p>
-                          <p className="text-2xl font-bold text-purple-600">{formatCurrency(summary?.cost.formCost || 0)}</p>
-                        </div>
-                      </div>
-                      <p className="text-xs text-gray-600">{summary?.forms.thisMonth} submissions × rate</p>
-                    </div>
+                    )}
                   </div>
-
-                  <div className="p-6 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border-2 border-amber-200">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-600 mb-1">Total Current Month</p>
-                        <p className="text-4xl font-bold text-gray-900">{formatCurrency(summary?.cost.currentMonth || 0)}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm text-gray-600 mb-1">Projected End of Month</p>
-                        <p className="text-2xl font-bold text-amber-600">{formatCurrency(summary?.cost.projected || 0)}</p>
-                      </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-4 rounded-lg bg-muted/50">
+                      <p className="text-xs text-muted-foreground mb-1">Total Files</p>
+                      <p className="text-2xl font-bold text-blue-500">{(summary?.storage.totalFiles ?? 0).toLocaleString()}</p>
                     </div>
-                    <div className="mt-4 pt-4 border-t border-amber-200">
-                      <p className="text-sm text-gray-600">
-                        {summary?.cost.comparison && summary.cost.comparison > 0 ? (
-                          <span className="text-red-600 font-medium">↑ {summary.cost.comparison}% higher than last month</span>
-                        ) : (
-                          <span className="text-green-600 font-medium">↓ {Math.abs(summary?.cost.comparison || 0)}% lower than last month</span>
-                        )}
-                      </p>
+                    <div className="p-4 rounded-lg bg-muted/50">
+                      <p className="text-xs text-muted-foreground mb-1">Avg File Size</p>
+                      <p className="text-2xl font-bold text-green-500">{formatBytes(summary?.storage.avgFileSize ?? 0)}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              {/* Quota Limits */}
-              <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-                <CardHeader className="border-b border-gray-100">
-                  <CardTitle className="flex items-center gap-2">
-                    <Settings className="h-5 w-5 text-blue-600" />
-                    Resource Quotas
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Files by Type</CardTitle>
+                  <CardDescription>Distribution of uploaded files</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {Object.entries(summary?.storage.byFileType ?? {}).map(([type, count], idx) => (
+                      <div key={type} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                        <div className="flex items-center gap-3">
+                          <div className="w-3.5 h-3.5 rounded" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                          <span className="text-sm font-medium">{type}</span>
+                        </div>
+                        <span className="text-sm font-bold">{count as number}</span>
+                      </div>
+                    ))}
+                    {Object.keys(summary?.storage.byFileType ?? {}).length === 0 && (
+                      <p className="text-sm text-muted-foreground text-center py-6">No files uploaded yet</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* ═══════════ Cost Analysis Tab ═══════════ */}
+          <TabsContent value="cost" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <DollarSign className="h-4 w-4 text-primary" /> Cost Breakdown
+                </CardTitle>
+                <CardDescription>Current month usage-based pricing</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {[
+                    { icon: Workflow, label: "Flow Executions", cost: summary?.cost.flowCost ?? 0, detail: `${summary?.flows.thisMonth ?? 0} flows × rate`, cls: "text-blue-500 bg-blue-500/10" },
+                    { icon: Users, label: "Active Users", cost: summary?.cost.userCost ?? 0, detail: `${summary?.users.active ?? 0} users × rate`, cls: "text-green-500 bg-green-500/10" },
+                    { icon: FileText, label: "Form Submissions", cost: summary?.cost.formCost ?? 0, detail: `${summary?.forms.thisMonth ?? 0} submissions × rate`, cls: "text-purple-500 bg-purple-500/10" },
+                  ].map(c => (
+                    <div key={c.label} className="p-5 rounded-xl border bg-card">
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className={`p-2 rounded-lg ${c.cls}`}><c.icon className="h-6 w-6" /></div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">{c.label}</p>
+                          <p className="text-xl font-bold">{formatCurrency(c.cost)}</p>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{c.detail}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="p-6 rounded-xl border-2 border-primary/20 bg-primary/5">
+                  <div className="flex items-center justify-between flex-wrap gap-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Total Current Month</p>
+                      <p className="text-4xl font-bold">{formatCurrency(summary?.cost.currentMonth ?? 0)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground mb-1">Projected End of Month</p>
+                      <p className="text-2xl font-bold text-amber-500">{formatCurrency(summary?.cost.projected ?? 0)}</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-primary/10">
+                    <p className="text-sm">
+                      {(summary?.cost.comparison ?? 0) > 0
+                        ? <span className="text-red-500 font-medium">↑ {summary?.cost.comparison}% higher than last month</span>
+                        : <span className="text-green-500 font-medium">↓ {Math.abs(summary?.cost.comparison ?? 0)}% lower than last month</span>
+                      }
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {summary && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Settings className="h-4 w-4 text-primary" /> Resource Quotas
                   </CardTitle>
                   <CardDescription>Current usage vs. plan limits (configured by super admin)</CardDescription>
                 </CardHeader>
-                <CardContent className="pt-6 space-y-6">
-                  {/* Quota Info Banner */}
-                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <div className="flex items-start gap-3">
-                      <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5" />
-                      <div className="flex-1">
-                        <p className="font-medium text-blue-900 text-sm">Organization Plan Limits</p>
-                        <p className="text-sm text-blue-700 mt-1">
-                          These quotas are controlled by your system administrator through the organization control panel. 
-                          Contact your admin to upgrade limits if you're approaching capacity.
-                        </p>
-                      </div>
-                    </div>
+                <CardContent className="space-y-4">
+                  <div className="p-3 rounded-lg bg-muted/50 border text-sm flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                    <span className="text-muted-foreground">These quotas are controlled by your system administrator. Contact admin to upgrade limits.</span>
                   </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-700">Flow Executions</span>
-                      <span className={`text-sm font-bold ${
-                        ((summary?.quotas.currentFlows || 0) / (summary?.quotas.maxFlows || 1) * 100) > 90 
-                          ? 'text-red-600' 
-                          : ((summary?.quotas.currentFlows || 0) / (summary?.quotas.maxFlows || 1) * 100) > 75 
-                          ? 'text-amber-600' 
-                          : 'text-gray-900'
-                      }`}>
-                        {summary?.quotas.currentFlows || 0} / {summary?.quotas.maxFlows || 0}
-                      </span>
-                    </div>
-                    <Progress 
-                      value={(summary?.quotas.currentFlows || 0) / (summary?.quotas.maxFlows || 1) * 100} 
-                      className={`h-3 ${
-                        ((summary?.quotas.currentFlows || 0) / (summary?.quotas.maxFlows || 1) * 100) > 90 
-                          ? '[&>div]:bg-red-600' 
-                          : ((summary?.quotas.currentFlows || 0) / (summary?.quotas.maxFlows || 1) * 100) > 75 
-                          ? '[&>div]:bg-amber-600' 
-                          : ''
-                      }`}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      {((summary?.quotas.currentFlows || 0) / (summary?.quotas.maxFlows || 1) * 100).toFixed(0)}% of quota used
-                    </p>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-700">Users</span>
-                      <span className={`text-sm font-bold ${
-                        ((summary?.quotas.currentUsers || 0) / (summary?.quotas.maxUsers || 1) * 100) > 90 
-                          ? 'text-red-600' 
-                          : ((summary?.quotas.currentUsers || 0) / (summary?.quotas.maxUsers || 1) * 100) > 75 
-                          ? 'text-amber-600' 
-                          : 'text-gray-900'
-                      }`}>
-                        {summary?.quotas.currentUsers || 0} / {summary?.quotas.maxUsers || 0}
-                      </span>
-                    </div>
-                    <Progress 
-                      value={(summary?.quotas.currentUsers || 0) / (summary?.quotas.maxUsers || 1) * 100} 
-                      className={`h-3 ${
-                        ((summary?.quotas.currentUsers || 0) / (summary?.quotas.maxUsers || 1) * 100) > 90 
-                          ? '[&>div]:bg-red-600' 
-                          : ((summary?.quotas.currentUsers || 0) / (summary?.quotas.maxUsers || 1) * 100) > 75 
-                          ? '[&>div]:bg-amber-600' 
-                          : ''
-                      }`}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      {((summary?.quotas.currentUsers || 0) / (summary?.quotas.maxUsers || 1) * 100).toFixed(0)}% of quota used
-                    </p>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-700">Storage</span>
-                      <span className={`text-sm font-bold ${
-                        ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 90 
-                          ? 'text-red-600' 
-                          : ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 75 
-                          ? 'text-amber-600' 
-                          : 'text-gray-900'
-                      }`}>
-                        {summary?.quotas.storageUsed.toFixed(2) || 0} GB / {summary?.quotas.storageLimit.toFixed(2) || 0} GB
-                      </span>
-                    </div>
-                    <Progress 
-                      value={(summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100} 
-                      className={`h-3 ${
-                        ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 90 
-                          ? '[&>div]:bg-red-600' 
-                          : ((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 75 
-                          ? '[&>div]:bg-amber-600' 
-                          : ''
-                      }`}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      {((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100).toFixed(0)}% of quota used
-                    </p>
-                    {((summary?.quotas.storageUsed || 0) / (summary?.quotas.storageLimit || 1) * 100) > 90 && (
-                      <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700 font-medium">
-                        ⚠️ Critical: Storage limit almost reached! Max file upload size: 10MB
-                      </div>
-                    )}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <QuotaRow icon={Workflow} iconCls="text-blue-500" label="Flow Executions" used={summary.quotas.currentFlows} max={summary.quotas.maxFlows} />
+                    <QuotaRow icon={Users} iconCls="text-green-500" label="Users" used={summary.quotas.currentUsers} max={summary.quotas.maxUsers} />
+                    <QuotaRow icon={Database} iconCls="text-purple-500" label="Storage" used={summary.quotas.storageUsed} max={summary.quotas.storageLimit} unit="GB" />
                   </div>
                 </CardContent>
               </Card>
-            </TabsContent>
-          </Tabs>
-        </div>
-      </main>
-    </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </AppLayout>
+    </>
   );
 }

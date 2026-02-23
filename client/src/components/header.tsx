@@ -183,10 +183,9 @@ export default function Header({ title, description, actions }: HeaderProps) {
                         <TrendingUp className="mr-2 h-4 w-4" />
                         Usage
                       </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => setLocation("/payments")} disabled>
+                      <DropdownMenuItem onSelect={() => setLocation("/payments")}>
                         <CreditCard className="mr-2 h-4 w-4" />
                         Payments
-                        <span className="ml-auto text-xs text-gray-400">Soon</span>
                       </DropdownMenuItem>
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
