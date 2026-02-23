@@ -188,12 +188,6 @@ export default function Header({ title, description, actions }: HeaderProps) {
                         Payments
                         <span className="ml-auto text-xs text-gray-400">Soon</span>
                       </DropdownMenuItem>
-                      
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onSelect={() => setLocation("/settings")}>
-                        <Settings className="mr-2 h-4 w-4" />
-                        All Settings
-                      </DropdownMenuItem>
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
                 )}

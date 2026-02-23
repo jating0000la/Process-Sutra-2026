@@ -143,12 +143,6 @@ export const pageSEO = {
     keywords: 'user management, role management, permissions, team management, access control',
     canonical: '/user-management',
   },
-  settings: {
-    title: 'Settings',
-    description: 'Configure your ProcessSutra account settings, integrations, and preferences.',
-    keywords: 'settings, configuration, account settings, preferences',
-    canonical: '/settings',
-  },
   login: {
     title: 'Login',
     description: 'Sign in to ProcessSutra to access your workflows, tasks, and business automation tools.',

@@ -64,10 +64,10 @@ export default function Payments() {
               </li>
             </ul>
           </div>
-          <Link href="/settings">
+          <Link href="/">
             <button className="inline-flex items-center px-6 py-3 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Settings
+              Back to Dashboard
             </button>
           </Link>
         </div>

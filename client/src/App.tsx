@@ -21,7 +21,6 @@ import AdvancedSimulator from "@/pages/advanced-simulator";
 import UserManagement from "@/pages/user-management";
 import OrganizationSettings from "@/pages/organization-settings";
 import Profile from "@/pages/profile";
-import Settings from "@/pages/settings";
 import { useNotifications } from "@/hooks/useNotifications";
 import ApiStartFlow from "@/pages/api-startflow";
 import OrganizationControl from "@/pages/organization-control";
@@ -102,12 +101,6 @@ function Router() {
               <TATConfig />
             </ProtectedRoute>
           </Route>
-          <Route path="/settings">
-            <ProtectedRoute requireAdmin>
-              <Settings />
-            </ProtectedRoute>
-          </Route>
-          
           <Route path="/data-management">
             <ProtectedRoute requireAdmin>
               <DataManagement />

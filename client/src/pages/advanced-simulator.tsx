@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import Header from "@/components/header";
-import Sidebar from "@/components/sidebar";
+import AppLayout from "@/components/app-layout";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { QueryClient, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader as UIDialogHeader, DialogTitle as UIDialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Activity, BarChart3, Clock, Play, Pause, RotateCcw, AlertTriangle, List, DollarSign, CheckCircle2, TrendingUp, Gauge } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, BarChart, Bar } from "recharts";
-import { addMinutes, format, isAfter, isBefore } from "date-fns";
+import { addMinutes, format } from "date-fns";
 
 type SimStatus = "created" | "started" | "assigned" | "queued" | "pending" | "completed";
 
@@ -23,7 +22,7 @@ interface SimTask {
   taskName: string;
   assignee?: string;
   status: SimStatus;
-  sequence: number; // order within an instance; gate next until previous completes
+  sequence: number; // order within an instance (for display)
   plannedMinutes: number; // baseline processing minutes from flow rules
   createdAt: Date;
   startedAt?: Date;
@@ -34,6 +33,8 @@ interface SimTask {
   waitMinutes: number; // time before assignment/processing
   processMinutes: number; // active work time
   deferredDueToBusy?: boolean;
+  mergeCondition?: "any" | "all"; // if this task is a merge target
+  mergeParentNames?: string[]; // parent task names required for merge
 }
 
 interface SimLog {
@@ -164,14 +165,16 @@ export default function AdvancedSimulator() {
   const tickRef = useRef<number | null>(null);
   const [decisionWeights, setDecisionWeights] = useState<DecisionWeights>({});
   const [resourceCaps, setResourceCaps] = useState<Record<string, number>>({});
-  // instance sequencing: create next task only after previous completes
-  type InstanceState = { nextSeq: number; currentTask: string | null; deferredNext?: Array<{ taskName: string; email?: string; plannedMin: number; sequence: number }>; };
+  // instance state: tracks parallel active tasks, completed tasks, and merge dedup
+  type InstanceState = { nextSeq: number; activeTasks: string[]; completedTasks: string[]; createdMergeTasks: string[]; deferredNext?: Array<{ taskName: string; email?: string; plannedMin: number; sequence: number }>; };
   const [instanceState, setInstanceState] = useState<Record<string, InstanceState>>({});
   const instanceStateRef = useRef<Record<string, InstanceState>>({});
   // arrivals scheduling state
   const [remainingToSpawn, setRemainingToSpawn] = useState(0);
   const [nextArrivalAt, setNextArrivalAt] = useState<Date | null>(null);
   const arrivalSeqRef = useRef(0);
+  const taskIdCounterRef = useRef(0);
+  const tickOnceRef = useRef<(now: Date) => void>(() => {});
   // time series
   type Point = { t: string; created: number; completed: number; queue: number; inProgress: number; util: number };
   const [series, setSeries] = useState<Point[]>([]);
@@ -556,36 +559,7 @@ export default function AdvancedSimulator() {
     return start;
   };
 
-  // Build a linear task list from rules for a system
-  const buildTemplate = (): { name: string; email: string; plannedMin: number }[] => {
-    const rules = getRulesBySystem(flowRules, settings.system);
-    if (!rules.length) return [];
-
-    // Start from the rule with empty currentTask
-    const start = rules.find((r) => r.currentTask === "");
-    if (!start) return [];
-
-    const template: { name: string; email: string; plannedMin: number }[] = [];
-    let cur = start.nextTask as string | undefined;
-    let guard = 0;
-    while (cur && guard++ < 50) {
-      const nextRule = rules.find((r) => r.currentTask === cur && r.status === "Done");
-      if (!nextRule) break;
-      // convert tat to minutes roughly
-      const tat = nextRule.tat || 1;
-      const tatType = (nextRule.tatType || "hourtat").toLowerCase();
-      let plannedMin = 60; // default 1 hour
-      if (tatType === "hourtat") plannedMin = tat * 60;
-      else if (tatType === "daytat") plannedMin = tat * 8 * 60;
-      else if (tatType === "specifytat") plannedMin = tat * 60; // assume hours
-      else if (tatType === "beforetat") plannedMin = Math.max(60, tat * 60);
-      template.push({ name: nextRule.nextTask, email: nextRule.email, plannedMin });
-      cur = nextRule.nextTask;
-    }
-    return template;
-  };
-
-  // Build graph and decisions for current system
+  // Build graph, decisions, forks, and merge detection for current system
   const graph = useMemo(() => {
     const rules = getRulesBySystem(flowRules, settings.system);
     // consider only true transitional edges
@@ -598,8 +572,10 @@ export default function AdvancedSimulator() {
       byCurrent[key].push(r);
     }
 
-    const startRule = edgeRules.find((r: any) => r.currentTask === "");
-    const startNode = startRule?.nextTask || "";
+    // Start rules: all rules with empty currentTask (may be multiple = parallel fork from start)
+    const startRulesList = edgeRules.filter((r: any) => !r.currentTask || r.currentTask === "");
+    const startNodes: string[] = Array.from(new Set(startRulesList.map((r: any) => r.nextTask).filter(Boolean)));
+    const startNode = startNodes[0] || "";
 
     // true decisions: multiple statuses and not simply containing a 'Done' linear continuation
     const decisions: Record<string, { status: string; nextTask: string }[]> = {};
@@ -611,7 +587,27 @@ export default function AdvancedSimulator() {
         decisions[task] = valid.map((a: any) => ({ status: a.status, nextTask: a.nextTask }));
       }
     });
-    return { byCurrent, startNode, decisions, rules: edgeRules };
+
+    // Merge detection: find tasks with multiple distinct parent tasks (different currentTask → same nextTask)
+    const byNext: Record<string, { currentTasks: string[]; condition: string }> = {};
+    for (const r of edgeRules) {
+      const next = r.nextTask;
+      if (!next) continue;
+      if (!byNext[next]) byNext[next] = { currentTasks: [], condition: r.mergeCondition || "all" };
+      const parent = (r.currentTask || "").trim();
+      if (parent && !byNext[next].currentTasks.includes(parent)) {
+        byNext[next].currentTasks.push(parent);
+      }
+      if (r.mergeCondition) byNext[next].condition = r.mergeCondition;
+    }
+    const merges: Record<string, { condition: string; parents: string[] }> = {};
+    for (const [task, info] of Object.entries(byNext)) {
+      if (info.currentTasks.length > 1) {
+        merges[task] = { condition: info.condition, parents: info.currentTasks };
+      }
+    }
+
+    return { byCurrent, startNode, startNodes, decisions, rules: edgeRules, merges };
   }, [flowRules, settings.system]);
 
   // Initialize decision weights when system changes
@@ -689,55 +685,6 @@ export default function AdvancedSimulator() {
     return Math.max(5, Math.round(realisticTime));
   };
 
-  // Build one instance path using decision weights and loop guards
-  const buildInstancePath = (): { name: string; email: string; plannedMin: number }[] => {
-    const path: { name: string; email: string; plannedMin: number }[] = [];
-    const visitedCount: Record<string, number> = {};
-    let cur = graph.startNode;
-    let steps = 0;
-    const maxSteps = 200;
-
-    // Ensure we start from the task whose previous/currentTask is blank
-    const startRuleRec: any = graph.rules.find((r: any) => r.currentTask === "");
-    if (startRuleRec && graph.startNode) {
-      path.push({
-        name: graph.startNode,
-        email: startRuleRec.email,
-        plannedMin: tatToMinutes(startRuleRec.tat, startRuleRec.tatType),
-      });
-    }
-
-    while (cur && steps++ < maxSteps) {
-      const options = graph.byCurrent[cur] || [];
-      if (!options.length) break; // terminal
-
-      let chosenRule: any | null = null;
-      const statuses = Array.from(new Set(options.map((o: any) => (o.status || "").toString())));
-      if (statuses.length <= 1) {
-        // linear
-        chosenRule = options[0];
-      } else {
-        const weights = decisionWeights[cur] || {};
-        const selectedStatus = chooseByWeights(weights) || statuses[0];
-        chosenRule = options.find((o: any) => (o.status || "").toString() === selectedStatus) || options[0];
-      }
-
-      if (!chosenRule) break;
-  const nextName = chosenRule.nextTask;
-      const plannedMin = tatToMinutes(chosenRule.tat, chosenRule.tatType);
-      path.push({ name: nextName, email: chosenRule.email, plannedMin });
-
-      // loop guard
-      visitedCount[cur] = (visitedCount[cur] || 0) + 1;
-      if (visitedCount[cur] > 3) break; // prevent infinite cycles
-
-      cur = nextName;
-      if (!cur) break;
-    }
-
-    return path;
-  };
-
   // Start simulation: create tasks in memory only
   const startSim = () => {
     if (!settings.system) {
@@ -746,17 +693,18 @@ export default function AdvancedSimulator() {
     }
     // Try graph-based path; if no start or no rules, fallback to linear template
     const rules = getRulesBySystem(flowRules, settings.system);
-    if (!rules.length || !graph.startNode) {
+    if (!rules.length || !graph.startNodes.length) {
       toast({ title: "No flow found", description: "Flow rules missing for selected system.", variant: "destructive" });
       return;
     }
 
   // Anchor simulation start time to office start time
+  taskIdCounterRef.current = 0;
   const now = officeStartTime(new Date());
     if (!settings.arrivalMode || settings.arrivalMode === "none") {
-      // Create only the FIRST task for each instance; the rest are generated on completion
-      const startRuleRec: any = graph.rules.find((r: any) => r.currentTask === "");
-      if (!startRuleRec || !graph.startNode) {
+      // Create start tasks for each instance (supports parallel forks from start)
+      const startRules = graph.rules.filter((r: any) => !r.currentTask || r.currentTask === "");
+      if (!startRules.length) {
         toast({ title: "No flow found", description: "Flow rules missing for selected system.", variant: "destructive" });
         return;
       }
@@ -765,31 +713,32 @@ export default function AdvancedSimulator() {
   setRemainingToSpawn(Math.max(0, settings.startEvents || 0));
         setNextArrivalAt(nextWorkingTime(now));
         setTasks([]);
-        setLogs([{ ts: now, instanceId: "-", taskName: graph.startNode, event: `initial creation deferred to ${format(nextWorkingTime(now), "PPpp")}` }]);
+        setLogs([{ ts: now, instanceId: "-", taskName: graph.startNodes.join(", "), event: `initial creation deferred to ${format(nextWorkingTime(now), "PPpp")}` }]);
       } else {
         const newTasks: SimTask[] = [];
         const newLogs: SimLog[] = [];
         const newInstState: Record<string, InstanceState> = {};
-        let taskIdCounter = 1;
-        const firstPlanned = tatToMinutes(startRuleRec.tat, startRuleRec.tatType);
         for (let i = 0; i < settings.startEvents; i++) {
           const instanceId = `SIM-${now.getTime()}-${i + 1}`;
-          newInstState[instanceId] = { nextSeq: 1, currentTask: graph.startNode, deferredNext: [] };
-          const wait = settings.fastMode ? 0 : rand(2, 45);
-          const t: SimTask = {
-            id: `T-${taskIdCounter++}`,
-            instanceId,
-            taskName: graph.startNode,
-            assignee: startRuleRec.email,
-            status: "created",
-            sequence: 0,
-            plannedMinutes: calculateRealisticTime(firstPlanned),
-            createdAt: now,
-            waitMinutes: Math.round(wait),
-            processMinutes: 0,
-          };
-          newTasks.push(t);
-          newLogs.push({ ts: now, instanceId, taskName: t.taskName, event: "created" });
+          newInstState[instanceId] = { nextSeq: 0, activeTasks: graph.startNodes.slice(), completedTasks: [], createdMergeTasks: [], deferredNext: [] };
+          for (const sr of startRules) {
+            const planned = tatToMinutes(sr.tat, sr.tatType);
+            const wait = settings.fastMode ? 0 : rand(2, 45);
+            const t: SimTask = {
+              id: `T-${++taskIdCounterRef.current}`,
+              instanceId,
+              taskName: sr.nextTask,
+              assignee: sr.email,
+              status: "created",
+              sequence: newInstState[instanceId].nextSeq++,
+              plannedMinutes: calculateRealisticTime(planned),
+              createdAt: now,
+              waitMinutes: Math.round(wait),
+              processMinutes: 0,
+            };
+            newTasks.push(t);
+            newLogs.push({ ts: now, instanceId, taskName: t.taskName, event: "created" });
+          }
         }
         instanceStateRef.current = newInstState;
         setInstanceState(newInstState);
@@ -844,6 +793,7 @@ export default function AdvancedSimulator() {
     setElapsedSimMinutes(0);
     setElapsedWorkingMinutes(0);
     setElapsedProcessingWindowMinutes(0);
+    taskIdCounterRef.current = 0;
   };
 
   const runTicker = () => {
@@ -852,7 +802,7 @@ export default function AdvancedSimulator() {
       setSimClock((prev) => {
         if (!prev) return prev;
         const next = addMinutes(prev, settings.speedMinutesPerTick);
-        tickOnce(next);
+        tickOnceRef.current(next);
         return next;
       });
     }, 1000);
@@ -925,7 +875,7 @@ export default function AdvancedSimulator() {
             const spawnedNow: SimTask[] = [];
             for (const def of st.deferredNext) {
               const nt: SimTask = {
-                id: `T-${items.length + spawnedNow.length + 1}`,
+                id: `T-${++taskIdCounterRef.current}`,
                 instanceId: instId,
                 taskName: def.taskName,
                 assignee: def.email,
@@ -949,19 +899,8 @@ export default function AdvancedSimulator() {
       }
 
       for (const t of items) {
-        // Sequential gating: only allow a task to progress if previous in same instance is completed
-        const prevCompleted =
-          t.sequence === 0 ||
-          items.some(
-            (x) =>
-              x.instanceId === t.instanceId &&
-              x.sequence === t.sequence - 1 &&
-              x.status === "completed"
-          );
-
-        // progress tasks through lifecycle
+        // progress tasks through lifecycle (no sequence gating — merge logic handles synchronization at creation time)
         if (t.status === "created") {
-          if (!prevCompleted) continue; // wait until previous completes
           t.status = "queued";
           t.queuedAt = now;
           newLogs.push({ ts: now, instanceId: t.instanceId, taskName: t.taskName, event: "queued" });
@@ -969,7 +908,6 @@ export default function AdvancedSimulator() {
         }
 
         if (t.status === "queued") {
-          if (!prevCompleted) continue; // do not advance until previous completes
           const minutesQueued = t.queuedAt ? (now.getTime() - t.queuedAt.getTime()) / 60000 : 0;
           if (settings.fastMode || minutesQueued >= t.waitMinutes) {
             // capacity check: if resource busy, remain queued
@@ -997,7 +935,6 @@ export default function AdvancedSimulator() {
         }
 
         if (t.status === "pending") {
-          if (!prevCompleted) continue;
           // pending resolves after a short additional delay
           const minutesPending = t.pendingAt ? (now.getTime() - t.pendingAt.getTime()) / 60000 : 0;
           if (settings.fastMode || minutesPending >= Math.min(30, t.waitMinutes * 0.5)) {
@@ -1042,15 +979,20 @@ export default function AdvancedSimulator() {
               if ((activeByTask[t.taskName] || 0) > 0) {
                 activeByTask[t.taskName] = Math.max(0, (activeByTask[t.taskName] || 0) - 1);
               }
-              // sequentially create next task for this instance
+              // Create next task(s) for this instance (supports parallel forks and merge nodes)
               const curState = instanceStateRef.current[t.instanceId];
-              // Only process next task if the completed task is the expected current task for this instance
-              if (curState && curState.currentTask && t.taskName === curState.currentTask) {
+              if (curState) {
+                // Update instance tracking: remove from active, add to completed
+                curState.activeTasks = curState.activeTasks.filter((n: string) => n !== t.taskName);
+                if (!curState.completedTasks.includes(t.taskName)) {
+                  curState.completedTasks.push(t.taskName);
+                }
+
                 const spawned: SimTask[] = [];
-                const pushTask = (taskName: string, email: string | undefined, plannedMin: number) => {
+                const pushTask = (taskName: string, email: string | undefined, plannedMin: number, mergeInfo?: { condition: string; parents: string[] }) => {
                   if (creationAllowedNow) {
                     const nt: SimTask = {
-                      id: `T-${items.length + spawned.length + 1}`,
+                      id: `T-${++taskIdCounterRef.current}`,
                       instanceId: t.instanceId,
                       taskName,
                       assignee: email,
@@ -1060,6 +1002,8 @@ export default function AdvancedSimulator() {
                       createdAt: now,
                       waitMinutes: Math.round(settings.fastMode ? 0 : rand(2, 45)),
                       processMinutes: 0,
+                      mergeCondition: mergeInfo?.condition as any,
+                      mergeParentNames: mergeInfo?.parents,
                     };
                     spawned.push(nt);
                     newLogs.push({ ts: now, instanceId: t.instanceId, taskName, event: "created (next)" });
@@ -1071,60 +1015,91 @@ export default function AdvancedSimulator() {
                     newLogs.push({ ts: now, instanceId: t.instanceId, taskName, event: "creation deferred (off-hours)" });
                   }
                 };
-                // move to next: prefer 'Done' for linear; only use weights for true decisions
+
+                // Find all outgoing rules for this completed task
                 const options = graph.byCurrent[t.taskName] || [];
                 if (options.length) {
-                    let chosen: any = null;
-                    const statuses = Array.from(new Set(options.map((o: any) => (o.status || "").toString())));
-                    const hasDone = statuses.some((s) => s.toLowerCase() === "done");
-                    const hasDecision = !!decisionWeights[t.taskName] && !hasDone && statuses.length > 1;
+                  // Determine status: decision or linear
+                  const statuses = Array.from(new Set(options.map((o: any) => (o.status || "").toString())));
+                  const hasDone = statuses.some((s) => s.toLowerCase() === "done");
+                  const hasDecision = !!decisionWeights[t.taskName] && !hasDone && statuses.length > 1;
 
-                    if (hasDecision) {
-                      const weights = decisionWeights[t.taskName] || {};
-                      const selected = chooseByWeights(weights) || statuses[0];
-                      chosen =
-                        options.find(
-                          (o: any) => (o.status || "").toString() === selected && o.nextTask && String(o.nextTask).trim().length > 0
-                        ) || options.find((o: any) => o.nextTask && String(o.nextTask).trim().length > 0) || null;
-                    } else if (hasDone) {
-                      chosen = options.find(
-                        (o: any) => (o.status || "").toString().toLowerCase() === "done" && o.nextTask && String(o.nextTask).trim().length > 0
-                      ) || options.find((o: any) => o.nextTask && String(o.nextTask).trim().length > 0) || null;
-                    } else {
-                      chosen = options.find((o: any) => o.nextTask && String(o.nextTask).trim().length > 0) || null;
-                    }
-
-                    if (chosen && chosen.nextTask) {
-                      const plannedMin = tatToMinutes(chosen.tat, chosen.tatType);
-                      pushTask(chosen.nextTask, chosen.email, plannedMin);
-                      newLogs.push({ ts: now, instanceId: t.instanceId, taskName: t.taskName, event: `next: ${chosen.nextTask} (status=${String(chosen.status)})` });
-                      curState.currentTask = chosen.nextTask;
-                    } else {
-                      curState.currentTask = null; // end
-                      newLogs.push({ ts: now, instanceId: t.instanceId, taskName: t.taskName, event: "end-of-flow" });
-                    }
+                  let selectedStatus: string;
+                  if (hasDecision) {
+                    const weights = decisionWeights[t.taskName] || {};
+                    selectedStatus = chooseByWeights(weights) || statuses[0];
+                  } else if (hasDone) {
+                    selectedStatus = statuses.find((s) => s.toLowerCase() === "done") || statuses[0];
                   } else {
-                    curState.currentTask = null; // end
+                    selectedStatus = statuses[0];
+                  }
+
+                  // Get ALL rules matching the selected status (fork: may be multiple nextTasks)
+                  const matchedRules = options.filter(
+                    (o: any) => (o.status || "").toString() === selectedStatus && o.nextTask && String(o.nextTask).trim().length > 0
+                  );
+
+                  for (const chosen of matchedRules) {
+                    const nextTaskName = chosen.nextTask;
+                    const plannedMin = tatToMinutes(chosen.tat, chosen.tatType);
+
+                    // Check if this is a merge target
+                    const mergeInfo = graph.merges[nextTaskName];
+                    if (mergeInfo) {
+                      const alreadyCreated = curState.createdMergeTasks.includes(nextTaskName) ||
+                        items.some((x) => x.instanceId === t.instanceId && x.taskName === nextTaskName);
+
+                      if (mergeInfo.condition === "any") {
+                        if (alreadyCreated) {
+                          newLogs.push({ ts: now, instanceId: t.instanceId, taskName: t.taskName, event: `merge-skip: ${nextTaskName} (any, exists)` });
+                          continue; // Skip duplicate
+                        }
+                        // "any" condition met — create the merge task
+                      } else {
+                        // "all" merge: check if all parents completed
+                        const allDone = mergeInfo.parents.every((p) => curState.completedTasks.includes(p));
+                        if (!allDone) {
+                          newLogs.push({ ts: now, instanceId: t.instanceId, taskName: t.taskName, event: `merge-wait: ${nextTaskName} (need all: [${mergeInfo.parents.join(",")}], have: [${curState.completedTasks.join(",")}])` });
+                          continue; // Don't create yet
+                        }
+                        if (alreadyCreated) {
+                          newLogs.push({ ts: now, instanceId: t.instanceId, taskName: t.taskName, event: `merge-skip: ${nextTaskName} (all, already created)` });
+                          continue;
+                        }
+                        // "all" condition met — create the merge task
+                      }
+                      curState.createdMergeTasks.push(nextTaskName);
+                    }
+
+                    pushTask(nextTaskName, chosen.email, plannedMin, mergeInfo);
+                    curState.activeTasks.push(nextTaskName);
+                    newLogs.push({ ts: now, instanceId: t.instanceId, taskName: t.taskName, event: `next: ${nextTaskName} (status=${selectedStatus})` });
+                  }
+
+                  if (curState.activeTasks.length === 0 && matchedRules.length === 0) {
+                    newLogs.push({ ts: now, instanceId: t.instanceId, taskName: t.taskName, event: "end-of-flow" });
+                  }
+                } else {
+                  if (curState.activeTasks.length === 0) {
                     newLogs.push({ ts: now, instanceId: t.instanceId, taskName: t.taskName, event: "end-of-flow (no rules)" });
                   }
-                  if (spawned.length) {
-                    items.push(...spawned);
-                    // In fast mode, attempt immediate promotion of just-spawned tasks in this tick
-                    if (settings.fastMode) {
+                }
+
+                if (spawned.length) {
+                  items.push(...spawned);
+                  // In fast mode, attempt immediate promotion of just-spawned tasks in this tick
+                  if (settings.fastMode) {
                     for (const s of spawned) {
-                      // move created -> queued
                       s.status = "queued";
                       s.queuedAt = now;
                       newLogs.push({ ts: now, instanceId: s.instanceId, taskName: s.taskName, event: "queued (fast)" });
-                      // capacity check for assigned/started
                       const cap = resourceCaps[s.taskName] ?? 1;
                       const inUse = activeByTask[s.taskName] || 0;
                       if (inUse < cap) {
                         s.status = "assigned";
                         s.assignedAt = now;
                         newLogs.push({ ts: now, instanceId: s.instanceId, taskName: s.taskName, event: "assigned (fast)" });
-                        // start immediately if processing allowed
-                        if (settings.fastMode ? true : canProcessNow(now)) {
+                        if (allowProcessing) {
                           s.status = "started";
                           s.startedAt = now;
                           activeByTask[s.taskName] = (activeByTask[s.taskName] || 0) + 1;
@@ -1155,6 +1130,9 @@ export default function AdvancedSimulator() {
       return items;
     });
   };
+
+  // Keep tickOnceRef pointing to the latest tickOnce (avoids stale closures in setInterval)
+  useEffect(() => { tickOnceRef.current = tickOnce; });
 
   // Compute next arrival gap based on mode
   const computeNextArrivalGapMinutes = (now: Date): number => {
@@ -1189,37 +1167,41 @@ export default function AdvancedSimulator() {
     return 60;
   };
 
-  // Spawn a single instance using current path rules
+  // Spawn a single flow instance using ALL start rules (supports parallel start forks)
   const spawnOneInstance = (now: Date) => {
     const rules = getRulesBySystem(flowRules, settings.system);
-    if (!rules.length || !graph.startNode) return;
-    if (!settings.ignoreWorkingHours && !isWorking(now)) return; // gate creations to working hours
-    // respect hard cap from startEvents
+    if (!rules.length || !graph.startNodes.length) return;
+    if (!settings.ignoreWorkingHours && !isWorking(now)) return;
     if (spawnedInstancesCount >= (settings.startEvents || 0)) return;
     const i = ++arrivalSeqRef.current;
     const instanceId = `SIM-${now.getTime()}-A${i}`;
-    const startRuleRec: any = graph.rules.find((r: any) => r.currentTask === "");
-    if (!startRuleRec) return;
-    const baseTat = tatToMinutes(startRuleRec.tat, startRuleRec.tatType);
-    const planned = calculateRealisticTime(baseTat);
-    const wait = settings.fastMode ? 0 : rand(2, 45);
-    const newInst: InstanceState = { nextSeq: 1, currentTask: graph.startNode, deferredNext: [] };
+    const startRules = graph.rules.filter((r: any) => !r.currentTask || r.currentTask === "");
+    if (!startRules.length) return;
+    const newInst: InstanceState = { nextSeq: 0, activeTasks: graph.startNodes.slice(), completedTasks: [], createdMergeTasks: [], deferredNext: [] };
     instanceStateRef.current = { ...instanceStateRef.current, [instanceId]: newInst };
     setInstanceState((s) => ({ ...s, [instanceId]: newInst }));
-    const newTask: SimTask = {
-      id: `T-${tasks.length + 1}`,
-      instanceId,
-      taskName: graph.startNode,
-      assignee: startRuleRec.email,
-      status: "created",
-      sequence: 0,
-      plannedMinutes: planned,
-      createdAt: now,
-      waitMinutes: Math.round(wait),
-      processMinutes: 0,
-    };
-    setTasks((prev) => [newTask, ...prev]);
-    setLogs((l) => [{ ts: now, instanceId, taskName: graph.startNode, event: "created" }, ...l].slice(0, 500));
+    const newTasks: SimTask[] = [];
+    const newLogs: SimLog[] = [];
+    for (const sr of startRules) {
+      const baseTat = tatToMinutes(sr.tat, sr.tatType);
+      const planned = calculateRealisticTime(baseTat);
+      const wait = settings.fastMode ? 0 : rand(2, 45);
+      newTasks.push({
+        id: `T-${++taskIdCounterRef.current}`,
+        instanceId,
+        taskName: sr.nextTask,
+        assignee: sr.email,
+        status: "created",
+        sequence: newInst.nextSeq++,
+        plannedMinutes: planned,
+        createdAt: now,
+        waitMinutes: Math.round(wait),
+        processMinutes: 0,
+      });
+      newLogs.push({ ts: now, instanceId, taskName: sr.nextTask, event: "created" });
+    }
+    setTasks((prev) => [...newTasks, ...prev]);
+    setLogs((l) => [...newLogs, ...l].slice(0, 500));
   };
 
   // Pause/resume when running state toggles
@@ -1240,11 +1222,7 @@ export default function AdvancedSimulator() {
   };
 
   return (
-    <div className="flex h-screen bg-neutral">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto">
-        <Header title="Advanced Simulator" description="Business process simulation with cost and performance metrics (client-only)" />
-
+    <AppLayout title="Advanced Simulator" description="Business process simulation with cost and performance metrics (client-only)">
         <div className="p-6 space-y-6">
           <Card>
             <CardHeader>
@@ -1827,7 +1805,6 @@ export default function AdvancedSimulator() {
             </CardContent>
           </Card>
         </div>
-      </main>
-    </div>
+    </AppLayout>
   );
 }
