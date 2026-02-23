@@ -267,73 +267,13 @@ export const tasks = pgTable(
   ]
 );
 
-// Form Templates - Define form structure (organization-specific)
-export const formTemplates = pgTable(
-  "form_templates", 
-  {
-    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-    organizationId: varchar("organization_id").notNull().references(() => organizations.id),
-    formId: varchar("form_id").notNull(), // Short identifier like "f001"
-    title: varchar("title").notNull(),
-    description: text("description"),
-    questions: jsonb("questions").notNull(), // Array of question objects
-    // Communication configuration for WhatsApp and Email
-    whatsappConfig: jsonb("whatsapp_config").$type<{
-      enabled: boolean;
-      phoneNumber: string;
-      messageTemplate: string;
-    }>(),
-    emailConfig: jsonb("email_config").$type<{
-      enabled: boolean;
-      recipientEmail: string;
-      subject: string;
-      bodyTemplate: string;
-    }>(),
-    createdBy: varchar("created_by").notNull(),
-    createdAt: timestamp("created_at").defaultNow(),
-    updatedAt: timestamp("updated_at").defaultNow(),
-  },
-  (table) => [
-    index("idx_form_templates_org").on(table.organizationId, table.createdAt),
-    index("idx_form_templates_form_id").on(table.formId),
-    index("idx_form_templates_org_form").on(table.organizationId, table.formId),
-    index("idx_form_templates_org_updated").on(table.organizationId, table.updatedAt),
-  ]
-);
-
-// Form Responses - Store submitted form data (organization-specific)
-export const formResponses = pgTable(
-  "form_responses", 
-  {
-    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-    organizationId: varchar("organization_id").notNull().references(() => organizations.id),
-    responseId: varchar("response_id").notNull(), // Unique response identifier
-    flowId: varchar("flow_id").notNull(),
-    taskId: varchar("task_id").notNull(),
-    taskName: varchar("task_name").notNull(),
-    formId: varchar("form_id").notNull(),
-    submittedBy: varchar("submitted_by").notNull(),
-    formData: jsonb("form_data").notNull(), // Form field responses
-    orderNumber: varchar("order_number"), // Order/case number from the flow
-    timestamp: timestamp("timestamp").defaultNow(),
-  },
-  (table) => [
-    index("idx_form_responses_flow").on(table.flowId, table.taskId),
-    index("idx_form_responses_org_form").on(table.organizationId, table.formId),
-    index("idx_form_responses_task").on(table.taskId),
-    // HIGH PRIORITY INDEX
-    index("idx_form_responses_org_time").on(table.organizationId, table.timestamp.desc()),
-    index("idx_form_responses_order").on(table.organizationId, table.orderNumber),
-  ]
-);
+// Form data is now stored in MongoDB Quick Forms (see server/mongo/quickFormClient.ts)
 
 // Relations
 export const organizationsRelations = relations(organizations, ({ many }) => ({
   users: many(users),
   flowRules: many(flowRules),
   tasks: many(tasks),
-  formTemplates: many(formTemplates),
-  formResponses: many(formResponses),
   notifications: many(notifications),
   webhooks: many(webhooks),
 }));
@@ -343,8 +283,6 @@ export const usersRelations = relations(users, ({ one, many }) => ({
     fields: [users.organizationId],
     references: [organizations.id],
   }),
-  createdForms: many(formTemplates),
-  submittedResponses: many(formResponses),
   loginLogs: many(userLoginLogs),
   devices: many(userDevices),
   passwordHistory: many(passwordChangeHistory),
@@ -352,41 +290,9 @@ export const usersRelations = relations(users, ({ one, many }) => ({
 }));
 
 export const flowRulesRelations = relations(flowRules, ({ one }) => ({
-  formTemplate: one(formTemplates, {
-    fields: [flowRules.formId],
-    references: [formTemplates.formId],
-  }),
 }));
 
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
-  formTemplate: one(formTemplates, {
-    fields: [tasks.formId],
-    references: [formTemplates.formId],
-  }),
-  responses: many(formResponses),
-}));
-
-export const formTemplatesRelations = relations(formTemplates, ({ one, many }) => ({
-  createdBy: one(users, {
-    fields: [formTemplates.createdBy],
-    references: [users.id],
-  }),
-  responses: many(formResponses),
-}));
-
-export const formResponsesRelations = relations(formResponses, ({ one }) => ({
-  submittedBy: one(users, {
-    fields: [formResponses.submittedBy],
-    references: [users.id],
-  }),
-  task: one(tasks, {
-    fields: [formResponses.taskId],
-    references: [tasks.id],
-  }),
-  formTemplate: one(formTemplates, {
-    fields: [formResponses.formId],
-    references: [formTemplates.formId],
-  }),
 }));
 
 export const userLoginLogsRelations = relations(userLoginLogs, ({ one }) => ({
@@ -479,17 +385,6 @@ export const insertTaskSchema = createInsertSchema(tasks).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
-});
-
-export const insertFormTemplateSchema = createInsertSchema(formTemplates).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertFormResponseSchema = createInsertSchema(formResponses).omit({
-  id: true,
-  timestamp: true,
 });
 
 export const insertUserLoginLogSchema = createInsertSchema(userLoginLogs).omit({
@@ -601,10 +496,6 @@ export type InsertFlowRule = z.infer<typeof insertFlowRuleSchema>;
 export type FlowRule = typeof flowRules.$inferSelect;
 export type InsertTask = z.infer<typeof insertTaskSchema>;
 export type Task = typeof tasks.$inferSelect;
-export type InsertFormTemplate = z.infer<typeof insertFormTemplateSchema>;
-export type FormTemplate = typeof formTemplates.$inferSelect;
-export type InsertFormResponse = z.infer<typeof insertFormResponseSchema>;
-export type FormResponse = typeof formResponses.$inferSelect;
 export type InsertUserLoginLog = z.infer<typeof insertUserLoginLogSchema>;
 export type UserLoginLog = typeof userLoginLogs.$inferSelect;
 export type InsertUserDevice = z.infer<typeof insertUserDeviceSchema>;

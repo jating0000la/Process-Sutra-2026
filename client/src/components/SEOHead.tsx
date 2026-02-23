@@ -135,7 +135,7 @@ export const pageSEO = {
     title: 'Form Builder - Create Custom Forms',
     description: 'Build custom forms for your workflows with our drag-and-drop form builder. Create surveys, data collection forms, and more.',
     keywords: 'form builder, custom forms, survey builder, data collection, form designer',
-    canonical: '/form-builder',
+    canonical: '/quick-form-builder',
   },
   analytics: {
     title: 'Analytics & Reports',

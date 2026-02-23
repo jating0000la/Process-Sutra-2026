@@ -14,7 +14,7 @@ Allow: /visual-flow-builder
 Allow: /analytics
 Allow: /tasks
 Allow: /flows
-Allow: /form-builder
+Allow: /quick-form-builder
 
 # Disallow admin and API areas
 Disallow: /admin

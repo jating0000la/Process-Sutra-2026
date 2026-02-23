@@ -1,5 +1,6 @@
 import { Express } from "express";
 import { storage } from "./storage";
+import { getQuickFormTemplatesByOrg, getQuickFormResponsesCollection } from "./mongo/quickFormClient";
 
 /**
  * Super Admin Organization Management Routes
@@ -203,13 +204,22 @@ export function registerSuperAdminRoutes(
       }
       
       // Archive data (could export to JSON or backup database)
+      const [users, tasks, flowRules, formTemplates] = await Promise.all([
+        storage.getUsersByOrganization(organizationId),
+        storage.getTasksByOrganization(organizationId),
+        storage.getFlowRulesByOrganization(organizationId),
+        getQuickFormTemplatesByOrg(organizationId),
+      ]);
+      const responsesCol = await getQuickFormResponsesCollection();
+      const formResponses = await responsesCol.find({ organizationId }).toArray();
+
       const archiveData = {
         organization,
-        users: await storage.getUsersByOrganization(organizationId),
-        tasks: await storage.getTasksByOrganization(organizationId),
-        flowRules: await storage.getFlowRulesByOrganization(organizationId),
-        formTemplates: await storage.getFormTemplatesByOrganization(organizationId),
-        formResponses: await storage.getFormResponsesByOrganization(organizationId),
+        users,
+        tasks,
+        flowRules,
+        formTemplates,
+        formResponses,
         archivedAt: new Date().toISOString()
       };
       
@@ -345,7 +355,8 @@ export function registerSuperAdminRoutes(
         organizations.map(async (org) => {
           const users = await storage.getUsersByOrganization(org.id);
           const tasks = await storage.getTasksByOrganization(org.id);
-          const responses = await storage.getFormResponsesByOrganization(org.id);
+          const responsesCol = await getQuickFormResponsesCollection();
+          const responses = await responsesCol.find({ organizationId: org.id }).toArray();
           
           // Calculate current usage
           const currentUsers = users.length;

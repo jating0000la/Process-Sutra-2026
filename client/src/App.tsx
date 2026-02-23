@@ -15,7 +15,6 @@ import LandingLogin from "@/pages/landing-login";
 // import Dashboard from "@/pages/dashboard";
 import Tasks from "@/pages/tasks";
 import Flows from "@/pages/flows";
-import FormBuilder from "@/pages/form-builder";
 import Analytics from "@/pages/analytics";
 import TATConfig from "@/pages/tat-config";
 import FlowData from "@/pages/flow-data";
@@ -27,16 +26,16 @@ import Settings from "@/pages/settings";
 import { useNotifications } from "@/hooks/useNotifications";
 import ApiStartFlow from "@/pages/api-startflow";
 import ApiDocumentation from "@/pages/api-documentation";
-import FormResponses from "@/pages/form-responses";
 import OrganizationControl from "@/pages/organization-control";
 
-import FormDataViewer from "@/pages/form-data-viewer";
-import MongoFormDataViewer from "@/pages/mongo-form-data-viewer";
 import NDASecurityPage from "@/pages/nda-security";
 import VisualFlowBuilder from "@/pages/visual-flow-builder";
 import Usage from "@/pages/usage";
 import Payments from "@/pages/payments";
 import DataManagement from "@/pages/data-management";
+import QuickFormBuilder from "@/pages/quick-form-builder";
+import QuickFormFill from "@/pages/quick-form-fill";
+import QuickFormResponses from "@/pages/quick-form-responses";
 import { useEffect } from "react";
 import { useOrganizationCheck } from "@/hooks/useOrganizationCheck";
 import { useGoogleDriveCheck } from "@/hooks/useGoogleDriveCheck";
@@ -105,11 +104,6 @@ function Router() {
               <Flows />
             </ProtectedRoute>
           </Route>
-          <Route path="/form-builder">
-            <ProtectedRoute requireAdmin>
-              <FormBuilder />
-            </ProtectedRoute>
-          </Route>
           <Route path="/tat-config">
             <ProtectedRoute requireAdmin>
               <TATConfig />
@@ -160,24 +154,7 @@ function Router() {
               <ApiDocumentation />
             </ProtectedRoute>
           </Route>
-          <Route path="/form-responses">
-            <ProtectedRoute requireAdmin>
-              <FormResponses />
-            </ProtectedRoute>
-          </Route>
 
-          <Route path="/form-data-viewer">
-            <ProtectedRoute requireAdmin>
-              <FormDataViewer />
-            </ProtectedRoute>
-          </Route>
-          
-          <Route path="/mongo-form-data-viewer">
-            <ProtectedRoute requireAdmin>
-              <MongoFormDataViewer />
-            </ProtectedRoute>
-          </Route>
-          
           <Route path="/nda-security">
             <ProtectedRoute requireAdmin>
               <NDASecurityPage />
@@ -199,6 +176,19 @@ function Router() {
           <Route path="/payments">
             <ProtectedRoute requireAdmin>
               <Payments />
+            </ProtectedRoute>
+          </Route>
+
+          {/* Quick Form routes */}
+          <Route path="/quick-form-builder">
+            <ProtectedRoute requireAdmin>
+              <QuickFormBuilder />
+            </ProtectedRoute>
+          </Route>
+          <Route path="/quick-form-fill" component={QuickFormFill} />
+          <Route path="/quick-form-responses">
+            <ProtectedRoute requireAdmin>
+              <QuickFormResponses />
             </ProtectedRoute>
           </Route>
         </>

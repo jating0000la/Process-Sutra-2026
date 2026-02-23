@@ -147,7 +147,7 @@ export default function DataManagement() {
       
       // Invalidate all relevant queries to force refresh
       queryClient.invalidateQueries({ queryKey: ['/api/mongo/form-responses'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/form-responses'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/quick-forms'] });
       queryClient.invalidateQueries({ queryKey: ['/api/flows'] });
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
       

@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CheckCircle, Clock, AlertTriangle, Eye, Edit, Plus, Database, Download, UserCheck, Grid, List, MoreHorizontal, Play, XCircle, RefreshCw, Printer } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import FormRenderer from "@/components/form-renderer";
+import QuickFormRenderer from "@/components/quick-form-renderer";
 import { format } from "date-fns";
 import DOMPurify from 'dompurify';
 import { devLog, devError } from '@/lib/logger';
@@ -48,6 +48,7 @@ export default function Tasks() {
   const [taskToComplete, setTaskToComplete] = useState<any>(null);
   const [completionStatus, setCompletionStatus] = useState("");
   const [formTemplate, setFormTemplate] = useState<any>(null);
+  const [isFormSubmitting, setIsFormSubmitting] = useState(false);
   const [isFlowDataDialogOpen, setIsFlowDataDialogOpen] = useState(false);
   const [flowDataForTask, setFlowDataForTask] = useState<any>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -104,18 +105,31 @@ export default function Tasks() {
     }
   }, [tasks, statusFilter]);
 
-  // Fetch form template
-  const { data: formTemplates } = useQuery({
-    queryKey: ["/api/form-templates"],
+  // Fetch form templates (MongoDB)
+  const { data: quickFormTemplates } = useQuery({
+    queryKey: ["/api/quick-forms"],
     enabled: !!user,
-    staleTime: 120000, // 2 minutes - templates change infrequently
+    staleTime: 120000,
   });
 
-  // Fetch form responses for flow data viewer
-  const { data: formResponses } = useQuery({
-    queryKey: ["/api/form-responses"],
-    enabled: !!user,
-    staleTime: 60000, // 1 minute
+  // Batch check which tasks have form responses
+  // Check all tasks that have a formId
+  const formTaskIds = useMemo(() => {
+    if (!tasks || !Array.isArray(tasks)) return [];
+    return (tasks as any[])
+      .filter((t: any) => !!t.formId)
+      .map((t: any) => t.id);
+  }, [tasks]);
+
+  const { data: formSubmissionMap } = useQuery({
+    queryKey: ["/api/quick-forms/responses/check-tasks", formTaskIds],
+    queryFn: async () => {
+      if (!formTaskIds.length) return {};
+      const res = await apiRequest("POST", "/api/quick-forms/responses/check-tasks", { taskIds: formTaskIds });
+      return res.json();
+    },
+    enabled: !!user && formTaskIds.length > 0,
+    staleTime: 30000,
   });
 
   // Fetch flow rules to check transferability and get completion statuses
@@ -151,7 +165,7 @@ export default function Tasks() {
     const readableData: Record<string, any> = {};
     
     // Get form template for better field labeling
-    const template = formTemplates ? (formTemplates as any[])?.find((t: any) => t.formId === formId) : null;
+    const template = quickFormTemplates ? (quickFormTemplates as any[])?.find((t: any) => t.formId === formId) : null;
     let questions = template ? (typeof template.questions === 'string' ? JSON.parse(template.questions) : template.questions) : null;
     
     // Ensure questions is an array and filter out invalid entries
@@ -390,7 +404,38 @@ export default function Tasks() {
         
         // If we have a template with questions, use it for legacy format
         if (!questions || !Array.isArray(questions)) {
-          // No template available - use simple formatting
+          // No template available - handle Quick Form data with smart detection
+          
+          // Detect Google Drive / file URL strings and render as clickable links
+          if (typeof value === 'string' && (
+            value.includes('drive.google.com') || 
+            value.includes('docs.google.com') ||
+            (value.startsWith('http') && /\.(pdf|png|jpg|jpeg|gif|doc|docx|xls|xlsx|csv|zip)(\?|$)/i.test(value))
+          )) {
+            const fileName = value.includes('drive.google.com') ? 'View File on Google Drive' : 
+              value.split('/').pop()?.split('?')[0] || 'View File';
+            readableData[key] = `<a href="${value}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 hover:underline">📎 ${fileName} ↗</a>`;
+            return;
+          }
+          
+          // Detect file upload objects (with driveFileId, url or webViewLink)
+          if (value && typeof value === 'object' && !Array.isArray(value)) {
+            const fileObj = value as any;
+            if (fileObj.webViewLink || fileObj.driveFileId || fileObj.url) {
+              const fileName = fileObj.originalName || fileObj.fileName || 'View File';
+              const fileUrl = fileObj.webViewLink || fileObj.url || 
+                (fileObj.driveFileId ? `https://drive.google.com/file/d/${fileObj.driveFileId}/view` : '#');
+              readableData[key] = `<a href="${fileUrl}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 hover:underline">📎 ${fileName} ↗</a>`;
+              return;
+            }
+          }
+          
+          // Detect array of simple strings (checkbox values etc.)
+          if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'string') {
+            readableData[key] = value.join(', ');
+            return;
+          }
+          
           readableData[key] = value;
           return;
         }
@@ -526,15 +571,12 @@ export default function Tasks() {
 
   // Helper function to check if a task has a submitted form
   const hasSubmittedForm = (task: any): boolean => {
-    if (!task.formId || !formResponses || !Array.isArray(formResponses)) {
+    if (!task.formId) {
       return true; // If no form is required, consider it complete
     }
-    
-    // Check if there's a form response for this task
-    return (formResponses as any[]).some((response: any) => 
-      response.taskId === task.id && 
-      response.flowId === task.flowId
-    );
+
+    // Check form submission via batch-loaded submission map
+    return !!(formSubmissionMap as any)?.[task.id];
   };
 
   // Function to filter tasks based on all criteria
@@ -668,19 +710,17 @@ export default function Tasks() {
     if (!task.formId) return;
     
     console.log('[Tasks] handleFillForm called for task:', task);
-    console.log('[Tasks] Available formTemplates:', formTemplates);
     
-    // Find the form template by formId
-    const template = (formTemplates as any[])?.find((t: any) => t.formId === task.formId);
-    console.log('[Tasks] Found template:', template);
+    // Look up form template from MongoDB quick forms
+    const template = (quickFormTemplates as any[])?.find((t: any) => t.formId === task.formId);
     
     if (template) {
-      setSelectedTask(task); // Set the selected task for form submission
+      setSelectedTask(task);
       setFormTemplate(template);
       setIsFormDialogOpen(true);
-      console.log('[Tasks] Opening form dialog with template');
+      console.log('[Tasks] Opening form dialog with template:', template.title);
     } else {
-      console.error('[Tasks] Template not found for formId:', task.formId);
+      console.error('[Tasks] Form template not found for formId:', task.formId);
       toast({
         title: "Error",
         description: "Form template not found",
@@ -706,32 +746,29 @@ export default function Tasks() {
     
     // Mark as submitting
     submittingFormsRef.current.add(submissionKey);
+    setIsFormSubmitting(true);
     
     try {
-      // Server handles transformation to readable names, so send raw data
-      await apiRequest("POST", "/api/form-responses", {
-        responseId: `resp_${Date.now()}`, // Generate unique ID
+      // Submit to MongoDB via quick-forms API
+      await apiRequest("POST", "/api/quick-forms/responses", {
+        formId: formTemplate?.formId,
+        data: formData, // Simple { label: value } JSON
         flowId: selectedTask?.flowId,
         taskId: selectedTask?.id,
         taskName: selectedTask?.taskName,
-        formId: formTemplate?.formId,
-        formData: formData, // Send as-is, server will transform
       });
-      
+
       toast({
         title: "Success",
         description: "Form submitted successfully",
       });
-      
-      // Invalidate queries to refresh data
-      queryClient.invalidateQueries({ queryKey: ["/api/form-responses"] });
+
+      // Invalidate form submission map and tasks
+      queryClient.invalidateQueries({ queryKey: ["/api/quick-forms/responses/check-tasks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       
       // Don't close dialog immediately - let form renderer show communication buttons
       // The dialog will be closed by the cancel button or after user sends communication
-      // setIsFormDialogOpen(false);
-      // setFormTemplate(null);
-      // setSelectedTask(null);
     } catch (error) {
       devError("Form submission error", error);
       toast({
@@ -740,6 +777,7 @@ export default function Tasks() {
         variant: "destructive",
       });
     } finally {
+      setIsFormSubmitting(false);
       // Clear submission tracking after a delay to prevent rapid re-submissions
       setTimeout(() => {
         submittingFormsRef.current.delete(submissionKey);
@@ -901,7 +939,7 @@ export default function Tasks() {
       // Invalidate all task-related queries including filtered ones
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === "/api/tasks" });
-      queryClient.invalidateQueries({ queryKey: ["/api/form-responses"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/quick-forms/responses/check-tasks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/analytics/metrics"] });
       setIsCompleteDialogOpen(false);
       setTaskToComplete(null);
@@ -1032,8 +1070,8 @@ export default function Tasks() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["/api/tasks"] }),
         queryClient.invalidateQueries({ queryKey: ["/api/flow-rules"] }),
-        queryClient.invalidateQueries({ queryKey: ["/api/form-templates"] }),
-        queryClient.invalidateQueries({ queryKey: ["/api/form-responses"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/quick-forms"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/quick-forms/responses/check-tasks"] }),
       ]);
       toast({
         title: "Refreshed",
@@ -2087,13 +2125,12 @@ export default function Tasks() {
             <DialogTitle>Fill Form</DialogTitle>
           </DialogHeader>
           {formTemplate ? (
-            <FormRenderer
-              template={formTemplate}
-              onSubmit={handleFormSubmit}
-              onCancel={() => setIsFormDialogOpen(false)}
-              isSubmitting={false}
-              flowId={selectedTask?.flowId}
-            />
+              <QuickFormRenderer
+                template={formTemplate}
+                onSubmit={handleFormSubmit}
+                onCancel={() => setIsFormDialogOpen(false)}
+                isSubmitting={isFormSubmitting}
+              />
           ) : (
             <div className="p-6 text-center text-gray-500">
               <p>Loading form template...</p>

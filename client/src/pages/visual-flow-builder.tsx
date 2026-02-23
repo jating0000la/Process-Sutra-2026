@@ -180,6 +180,13 @@ export default function VisualFlowBuilder() {
     staleTime: 120000, // 2 minutes - user list changes infrequently
   });
 
+  // Fetch quick form templates for dropdown
+  const { data: quickFormTemplates = [] } = useQuery<any[]>({
+    queryKey: ["/api/quick-forms"],
+    enabled: isAuthenticated,
+    staleTime: 120000,
+  });
+
   // Get unique systems
   const availableSystems = Array.from(
     new Set((flowRules as FlowRule[]).map((rule) => rule.system))
@@ -248,15 +255,15 @@ export default function VisualFlowBuilder() {
     },
   });
 
-  // Create form template mutation
+  // Create form template mutation (Quick Form — MongoDB)
   const createFormTemplateMutation = useMutation({
     mutationFn: async (data: any) => {
       // Backend automatically adds organizationId from session
-      await apiRequest("POST", "/api/form-templates", {
+      await apiRequest("POST", "/api/quick-forms", {
         formId: data.formId,
         title: data.title,
-        description: data.description,
-        questions: data.questions || [],
+        description: data.description || "",
+        fields: [], // Start with empty fields — admin can configure in Form Builder
       });
     },
     onSuccess: () => {
@@ -266,6 +273,7 @@ export default function VisualFlowBuilder() {
       });
       setIsFormBuilderOpen(false);
       setFormBuilderData({ formId: "", title: "", description: "" });
+      queryClient.invalidateQueries({ queryKey: ["/api/quick-forms"] });
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to create form template", variant: "destructive" });
@@ -1026,7 +1034,7 @@ export default function VisualFlowBuilder() {
       formId: formBuilderData.formId,
       title: formBuilderData.title,
       description: formBuilderData.description,
-      questions: [], // Start with empty questions array
+      fields: [], // Start with empty fields — admin can add in Form Builder
     });
     setPendingFormId("");
   };
@@ -1532,7 +1540,10 @@ export default function VisualFlowBuilder() {
                                   {node.formId && (
                                     <div className="flex items-center justify-between text-xs mt-1">
                                       <span>Form</span>
-                                      <Badge variant="secondary" className="h-5 text-xs">
+                                      <Badge 
+                                        variant="secondary" 
+                                        className="h-5 text-xs"
+                                      >
                                         {node.formId}
                                       </Badge>
                                     </div>
@@ -1652,7 +1663,9 @@ export default function VisualFlowBuilder() {
                           <p className="text-xs text-gray-600">Doer: {editingRule.doer}</p>
                           <p className="text-xs text-gray-600">TAT: {editingRule.tat} {editingRule.tatType}</p>
                           {editingRule.formId && (
-                            <p className="text-xs text-gray-600">Form: {editingRule.formId}</p>
+                            <p className="text-xs text-gray-600">
+                              Form: {editingRule.formId}
+                            </p>
                           )}
                         </div>
 
@@ -1896,21 +1909,32 @@ export default function VisualFlowBuilder() {
                 </div>
               </div>
               <div>
-                <Label>Form ID (Optional)</Label>
-                <Input
-                  value={newRule.formId}
-                  onChange={(e) => handleFormIdChange(e.target.value)}
-                  placeholder="e.g., f001, sales-form"
+                <Label>Form Attachment (Optional)</Label>
+                <Select 
+                  value={newRule.formId || "__none__"} 
+                  onValueChange={(val) => setNewRule({ ...newRule, formId: val === "__none__" ? "" : val })}
                   disabled={availableTasks.includes(newRule.nextTask)}
-                  className={availableTasks.includes(newRule.nextTask) ? "bg-gray-100 cursor-not-allowed" : ""}
-                />
-                {availableTasks.includes(newRule.nextTask) ? (
+                >
+                  <SelectTrigger className={availableTasks.includes(newRule.nextTask) ? "bg-gray-100 cursor-not-allowed" : ""}>
+                    <SelectValue placeholder="No form" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">No Form</SelectItem>
+                    {(quickFormTemplates as any[])?.map((t: any) => (
+                      <SelectItem key={t.formId} value={t.formId}>
+                        {t.title} ({t.formId})
+                      </SelectItem>
+                    ))}
+                    {(!quickFormTemplates || (quickFormTemplates as any[]).length === 0) && (
+                      <SelectItem value="__empty__" disabled>
+                        No form templates — create one in Form Builder
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                {availableTasks.includes(newRule.nextTask) && (
                   <p className="text-xs text-red-500 mt-1">
-                    🚫 Form ID is disabled - This task is already configured in another step
-                  </p>
-                ) : (
-                  <p className="text-xs text-gray-500 mt-1">
-                    💡 Type complete Form ID - builder will auto-open after you finish typing
+                    🚫 Form is disabled - This task is already configured in another step
                   </p>
                 )}
               </div>
@@ -2077,11 +2101,28 @@ export default function VisualFlowBuilder() {
                   </div>
                 </div>
                 <div>
-                  <Label>Form ID (Optional)</Label>
-                  <Input
-                    value={editingRule.formId || ""}
-                    onChange={(e) => setEditingRule({ ...editingRule, formId: e.target.value })}
-                  />
+                  <Label>Form Attachment (Optional)</Label>
+                  <Select 
+                    value={editingRule.formId || "__none__"} 
+                    onValueChange={(val) => setEditingRule({ ...editingRule, formId: val === "__none__" ? "" : val })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="No form" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">No Form</SelectItem>
+                      {(quickFormTemplates as any[])?.map((t: any) => (
+                        <SelectItem key={t.formId} value={t.formId}>
+                          {t.title} ({t.formId})
+                        </SelectItem>
+                      ))}
+                      {(!quickFormTemplates || (quickFormTemplates as any[]).length === 0) && (
+                        <SelectItem value="__empty__" disabled>
+                          No form templates — create one in Form Builder
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label>Merge Condition (For Parallel Steps)</Label>

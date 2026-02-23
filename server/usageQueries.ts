@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { sql, count, countDistinct, avg, and, gte, lte, eq, isNotNull } from "drizzle-orm";
-import { tasks, formResponses, users } from "@shared/schema";
+import { tasks, users } from "@shared/schema";
+import { getQuickFormResponsesCollection } from "./mongo/quickFormClient";
 
 /**
  * Optimized query to get flow statistics for usage page
@@ -46,39 +47,32 @@ export async function getFlowStats(organizationId: string, thisMonthStart: Date,
 }
 
 /**
- * Optimized query to get form statistics
+ * Optimized query to get form statistics (MongoDB)
  */
 export async function getFormStats(organizationId: string, thisMonthStart: Date, lastMonthStart: Date, lastMonthEnd: Date) {
-  const result = await db.execute(sql`
-    SELECT 
-      COUNT(*) as total_forms,
-      COUNT(*) FILTER (WHERE ${formResponses.timestamp} >= ${thisMonthStart}) as month_forms,
-      COUNT(*) FILTER (WHERE ${formResponses.timestamp} >= ${lastMonthStart} AND ${formResponses.timestamp} <= ${lastMonthEnd}) as last_month_forms
-    FROM ${formResponses}
-    WHERE ${formResponses.organizationId} = ${organizationId}
-  `);
-
-  return result.rows[0];
+  const col = await getQuickFormResponsesCollection();
+  const [total_forms, month_forms, last_month_forms] = await Promise.all([
+    col.countDocuments({ organizationId }),
+    col.countDocuments({ organizationId, createdAt: { $gte: thisMonthStart } }),
+    col.countDocuments({ organizationId, createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd } }),
+  ]);
+  return { total_forms, month_forms, last_month_forms };
 }
 
 /**
- * Get form submission counts by form ID
+ * Get form submission counts by form ID (MongoDB)
  */
 export async function getFormsByType(organizationId: string) {
-  const result = await db.execute(sql`
-    SELECT 
-      ${formResponses.formId} as form_id,
-      COUNT(*) as count
-    FROM ${formResponses}
-    WHERE ${formResponses.organizationId} = ${organizationId}
-    GROUP BY ${formResponses.formId}
-  `);
-
+  const col = await getQuickFormResponsesCollection();
+  const pipeline = [
+    { $match: { organizationId } },
+    { $group: { _id: "$formId", count: { $sum: 1 } } },
+  ];
+  const rows = await col.aggregate(pipeline).toArray();
   const formsByType: Record<string, number> = {};
-  (result.rows as any[]).forEach((row: any) => {
-    formsByType[row.form_id] = Number(row.count);
+  rows.forEach((row: any) => {
+    formsByType[row._id] = row.count;
   });
-
   return formsByType;
 }
 
@@ -119,16 +113,18 @@ export async function getDailyTrends(organizationId: string) {
     ORDER BY date
   `);
 
-  const formResult = await db.execute(sql`
-    SELECT 
-      DATE(${formResponses.timestamp}) as date,
-      COUNT(*) as forms
-    FROM ${formResponses}
-    WHERE ${formResponses.organizationId} = ${organizationId}
-      AND ${formResponses.timestamp} >= ${thirtyDaysAgo}
-    GROUP BY DATE(${formResponses.timestamp})
-    ORDER BY date
-  `);
+  const col = await getQuickFormResponsesCollection();
+  const formPipeline = [
+    { $match: { organizationId, createdAt: { $gte: thirtyDaysAgo } } },
+    {
+      $group: {
+        _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+        forms: { $sum: 1 },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ];
+  const formRows = await col.aggregate(formPipeline).toArray();
 
   // Merge results by date
   const tasksByDate = new Map();
@@ -140,11 +136,8 @@ export async function getDailyTrends(organizationId: string) {
   });
 
   const formsByDate = new Map();
-  (formResult.rows as any[]).forEach((row: any) => {
-    const dateStr = row.date instanceof Date 
-      ? row.date.toISOString().split('T')[0]
-      : String(row.date).split('T')[0];
-    formsByDate.set(dateStr, Number(row.forms));
+  formRows.forEach((row: any) => {
+    formsByDate.set(row._id, row.forms);
   });
 
   return { tasksByDate, formsByDate };
@@ -176,23 +169,20 @@ export async function getFlowsBySystem(organizationId: string) {
 }
 
 /**
- * Get top forms by submission count
+ * Get top forms by submission count (MongoDB)
  */
 export async function getTopForms(organizationId: string, limit: number = 10) {
-  const result = await db.execute(sql`
-    SELECT 
-      ${formResponses.formId} as form_id,
-      COUNT(*) as count
-    FROM ${formResponses}
-    WHERE ${formResponses.organizationId} = ${organizationId}
-    GROUP BY ${formResponses.formId}
-    ORDER BY count DESC
-    LIMIT ${limit}
-  `);
-
-  return (result.rows as any[]).map((row: any) => ({
-    formId: row.form_id,
-    count: Number(row.count)
+  const col = await getQuickFormResponsesCollection();
+  const pipeline = [
+    { $match: { organizationId } },
+    { $group: { _id: "$formId", count: { $sum: 1 } } },
+    { $sort: { count: -1 } },
+    { $limit: limit },
+  ];
+  const rows = await col.aggregate(pipeline).toArray();
+  return rows.map((row: any) => ({
+    formId: row._id,
+    count: row.count,
   }));
 }
 

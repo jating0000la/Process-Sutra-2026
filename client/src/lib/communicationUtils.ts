@@ -31,6 +31,35 @@ interface FormTemplate {
   };
 }
 
+// ─── Quick Form types ───────────────────────────────────────────────
+
+interface QuickFormField {
+  label: string;
+  type: string;
+  required: boolean;
+  options?: string[];
+  placeholder?: string;
+  tableColumns?: { label: string; type: string; options?: string[] }[];
+}
+
+interface QuickFormTemplate {
+  formId: string;
+  title: string;
+  description?: string;
+  fields: QuickFormField[];
+  whatsappConfig?: {
+    enabled: boolean;
+    phoneNumber: string;
+    messageTemplate: string;
+  };
+  emailConfig?: {
+    enabled: boolean;
+    recipientEmail: string;
+    subject: string;
+    bodyTemplate: string;
+  };
+}
+
 /**
  * Format form data value for display in messages
  */
@@ -227,6 +256,141 @@ export function isWhatsAppEnabled(template: FormTemplate): boolean {
  * Check if Email is configured and enabled for a template
  */
 export function isEmailEnabled(template: FormTemplate): boolean {
+  return !!(
+    template.emailConfig?.enabled &&
+    template.emailConfig?.recipientEmail &&
+    template.emailConfig?.subject &&
+    template.emailConfig?.bodyTemplate
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Quick Form Communication Utilities
+// Quick Forms use { label: value } — no question IDs.
+// Placeholders use field labels directly: {{Customer Name}}
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Format a Quick Form value for display in messages
+ */
+function formatQuickFormValue(value: any, field: QuickFormField): string {
+  if (value === null || value === undefined) return '';
+
+  // File uploads
+  if (field.type === 'file') {
+    if (typeof value === 'string' && (value.startsWith('https://') || value.startsWith('http://'))) {
+      return value;
+    }
+    if (typeof value === 'object' && (value.url || value.driveFileId)) {
+      return value.url || `https://drive.google.com/file/d/${value.driveFileId}/view`;
+    }
+    return String(value);
+  }
+
+  // Checkbox arrays
+  if (Array.isArray(value)) {
+    if (field.type === 'table') {
+      return value.map((row, index) => {
+        const rowData = Object.entries(row)
+          .filter(([key]) => !key.startsWith('_'))
+          .map(([key, val]) => `${key}: ${val}`)
+          .join(', ');
+        return `${index + 1}. ${rowData}`;
+      }).join('\n');
+    }
+    return value.join(', ');
+  }
+
+  // Dates
+  if (field.type === 'date' && value) {
+    try { return new Date(value).toLocaleDateString(); } catch { return String(value); }
+  }
+
+  return String(value);
+}
+
+/**
+ * Replace {{FieldLabel}} placeholders with Quick Form data.
+ * In Quick Forms, formData keys ARE the field labels.
+ */
+function replaceQuickFormPlaceholders(
+  template: string,
+  formData: Record<string, any>,
+  fields: QuickFormField[]
+): string {
+  let result = template;
+
+  if (!Array.isArray(fields)) return result;
+
+  fields.forEach((field) => {
+    if (!field || !field.label) return;
+    const placeholder = `{{${field.label}}}`;
+    const value = formData[field.label]; // Labels ARE the keys
+    const formatted = formatQuickFormValue(value, field);
+    result = result.split(placeholder).join(formatted);
+  });
+
+  return result;
+}
+
+/**
+ * Generate WhatsApp URL from Quick Form data
+ */
+export function generateQuickFormWhatsAppURL(
+  template: QuickFormTemplate,
+  formData: Record<string, any>
+): string | null {
+  if (!template.whatsappConfig?.enabled) return null;
+
+  const { phoneNumber, messageTemplate } = template.whatsappConfig;
+  if (!phoneNumber || !messageTemplate) return null;
+  if (!Array.isArray(template.fields)) return null;
+
+  const resolvedPhone = replaceQuickFormPlaceholders(phoneNumber, formData, template.fields);
+  const message = replaceQuickFormPlaceholders(messageTemplate, formData, template.fields);
+  const encodedMessage = encodeURIComponent(message);
+
+  let cleanPhone = resolvedPhone.replace(/\D/g, '');
+  if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+
+  return `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodedMessage}`;
+}
+
+/**
+ * Generate Gmail compose URL from Quick Form data
+ */
+export function generateQuickFormEmailURL(
+  template: QuickFormTemplate,
+  formData: Record<string, any>
+): string | null {
+  if (!template.emailConfig?.enabled) return null;
+
+  const { recipientEmail, subject, bodyTemplate } = template.emailConfig;
+  if (!recipientEmail || !subject || !bodyTemplate) return null;
+  if (!Array.isArray(template.fields)) return null;
+
+  const resolvedEmail = replaceQuickFormPlaceholders(recipientEmail, formData, template.fields);
+  const replacedSubject = replaceQuickFormPlaceholders(subject, formData, template.fields);
+  const replacedBody = replaceQuickFormPlaceholders(bodyTemplate, formData, template.fields);
+
+  return `https://mail.google.com/mail/u/0/?view=cm&fs=1&tf=1&to=${encodeURIComponent(resolvedEmail)}&su=${encodeURIComponent(replacedSubject)}&body=${encodeURIComponent(replacedBody)}`;
+}
+
+/**
+ * Check if WhatsApp is enabled for a Quick Form template
+ */
+export function isQuickFormWhatsAppEnabled(template: QuickFormTemplate): boolean {
+  return !!(
+    template.whatsappConfig?.enabled &&
+    template.whatsappConfig?.phoneNumber &&
+    template.whatsappConfig?.messageTemplate
+  );
+}
+
+/**
+ * Check if Email is enabled for a Quick Form template
+ */
+export function isQuickFormEmailEnabled(template: QuickFormTemplate): boolean {
   return !!(
     template.emailConfig?.enabled &&
     template.emailConfig?.recipientEmail &&

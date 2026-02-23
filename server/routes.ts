@@ -12,8 +12,6 @@ import { healthCheck } from './health.js';
 import {
   insertFlowRuleSchema,
   insertTaskSchema,
-  insertFormTemplateSchema,
-  insertFormResponseSchema,
   insertOrganizationSchema,
   users,
   tasks,
@@ -24,10 +22,12 @@ import { randomBytes } from "crypto";
 import { calculateTAT, TATConfig } from "./tatCalculator.js";
 import uploadsRouter from './uploads.js';
 import oauthRouter from './oauthRoutes.js';
+import quickFormRouter from './quickFormRoutes.js';
 import * as crypto from 'crypto';
 import { sanitizeFlowRule, sanitizeFlowRules } from './inputSanitizer.js';
 import archiver from 'archiver';
 import { registerSuperAdminRoutes } from './superAdminRoutes.js';
+import { createQuickFormResponse, getQuickFormResponsesCollection } from './mongo/quickFormClient.js';
 
 
 // Analytics cache - 5 minute TTL to reduce database load
@@ -259,6 +259,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   // Auth routes are now handled in firebaseAuth.ts
+
+  // Quick Form API — MongoDB-only, simple JSON responses
+  app.use('/api/quick-forms', isAuthenticated, addUserToRequest, quickFormRouter);
 
   // Flow Rules API (Organization-specific, Admin only)
   app.get("/api/flow-rules", isAuthenticated, addUserToRequest, async (req: any, res) => {
@@ -506,17 +509,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Transform flowInitialFormData if it exists and has a formId
-      if (task.flowInitialFormData && task.formId) {
-        try {
-          const template = await storage.getFormTemplateByFormId(task.formId);
-          if (template) {
-            task.flowInitialFormData = transformFormDataToReadableNames(task.flowInitialFormData, template);
-          }
-        } catch (transformError) {
-          console.error("Error transforming task form data:", transformError);
-          // Continue with untransformed data
-        }
-      }
+      // Quick Forms use readable labels as keys already, no transformation needed
       
       res.json(task);
     } catch (error) {
@@ -572,13 +565,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if task has a form that requires submission before completion
       if (task.formId) {
-        const formResponses = await storage.getFormResponsesWithTaskDetails(
-          user.organizationId, 
-          task.flowId, 
-          task.id
-        );
+        const respCol = await getQuickFormResponsesCollection();
+        const formResponseCount = await respCol.countDocuments({
+          orgId: user.organizationId,
+          flowId: task.flowId,
+          taskId: task.id,
+        });
         
-        if (!formResponses || formResponses.length === 0) {
+        if (formResponseCount === 0) {
           return res.status(400).json({ 
             message: "Cannot complete task: Form must be submitted before marking task as complete",
             requiresForm: true,
@@ -931,19 +925,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         flowInitialFormData: parsedInitialFormData,
       });
 
-      // Create a FormResponse record for the initial form data if provided
+      // Create a Quick Form response record for the initial form data if provided
       if (parsedInitialFormData && startRule.formId) {
         try {
-          await storage.createFormResponse({
-            responseId: randomUUID(),
+          await createQuickFormResponse({
+            orgId: user.organizationId,
+            formId: startRule.formId,
+            formTitle: startRule.nextTask,
+            submittedBy: userId,
+            data: parsedInitialFormData,
             flowId,
             taskId: task.id,
             taskName: startRule.nextTask,
-            formId: startRule.formId,
-            formData: parsedInitialFormData,
-            submittedBy: userId,
-            organizationId: user.organizationId,
-            orderNumber,
           });
         } catch (formResponseError) {
           console.error("Error creating form response for initial data:", formResponseError);
@@ -1473,19 +1466,18 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
         flowInitialFormData: initialFormData || null,
       });
 
-      // Create a FormResponse record for the initial form data if provided
+      // Create a Quick Form response record for the initial form data if provided
       if (initialFormData && startRule.formId) {
         try {
-          await storage.createFormResponse({
-            responseId: randomUUID(),
+          await createQuickFormResponse({
+            orgId: organizationId,
+            formId: startRule.formId,
+            formTitle: startRule.nextTask,
+            submittedBy: actorEmail || "external-api",
+            data: initialFormData,
             flowId,
             taskId: task.id,
             taskName: startRule.nextTask,
-            formId: startRule.formId,
-            formData: initialFormData,
-            submittedBy: actorEmail || "external-api",
-            organizationId,
-            orderNumber,
           });
         } catch (formResponseError) {
           console.error("Error creating form response for initial data:", formResponseError);
@@ -1631,269 +1623,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     });
   });
 
-  // Form Templates API (Organization-specific)
-  app.get("/api/form-templates", isAuthenticated, addUserToRequest, async (req: any, res) => {
-    try {
-      const user = req.currentUser;
-      const templates = await storage.getFormTemplatesByOrganization(user.organizationId);
-      res.json(templates);
-    } catch (error) {
-      console.error("Error fetching form templates:", error);
-      res.status(500).json({ message: "Failed to fetch form templates" });
-    }
-  });
-
-  app.get("/api/form-templates/:formId", isAuthenticated, addUserToRequest, async (req: any, res) => {
-    try {
-      const { formId } = req.params;
-      const user = req.currentUser;
-      
-      const template = await storage.getFormTemplateByFormId(formId);
-      if (!template) {
-        return res.status(404).json({ message: "Form template not found" });
-      }
-
-      // Enforce organization isolation
-      if (template.organizationId !== user.organizationId) {
-        return res.status(403).json({ message: "Access denied to this form template" });
-      }
-      
-      res.json(template);
-    } catch (error) {
-      console.error("Error fetching form template:", error);
-      res.status(500).json({ message: "Failed to fetch form template" });
-    }
-  });
-
-  // Auto-prefill endpoint - get previous form responses for a flow (organization-aware)
-  app.get("/api/flows/:flowId/responses", isAuthenticated, addUserToRequest, async (req: any, res) => {
-    try {
-      const { flowId } = req.params;
-      const user = req.currentUser;
-      
-      // Use MongoDB instead of PostgreSQL for fetching previous form responses
-      const responses = await storage.getMongoFormResponsesByFlowId(user.organizationId, flowId);
-
-      res.json(responses);
-    } catch (error) {
-      console.error("Error fetching flow responses from MongoDB:", error);
-      res.status(500).json({ message: "Failed to fetch flow responses" });
-    }
-  });
-
-  app.post("/api/form-templates", isAuthenticated, requireAdmin, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = req.currentUser; // Get the user from the request
-      
-      const validatedData = insertFormTemplateSchema.parse({
-        ...req.body,
-        createdBy: userId,
-        organizationId: user.organizationId, // Add the organization ID
-      });
-      
-      const template = await storage.createFormTemplate(validatedData);
-      res.status(201).json(template);
-    } catch (error) {
-      console.error("Error creating form template:", error);
-      res.status(400).json({ message: "Invalid form template data" });
-    }
-  });
-
-  app.put("/api/form-templates/:id", isAuthenticated, requireAdmin, async (req, res) => {
-    try {
-      const { id } = req.params;
-      const validatedData = insertFormTemplateSchema.partial().parse(req.body);
-      const template = await storage.updateFormTemplate(id, validatedData);
-      res.json(template);
-    } catch (error) {
-      console.error("Error updating form template:", error);
-      res.status(400).json({ message: "Invalid form template data" });
-    }
-  });
-
-  app.delete("/api/form-templates/:id", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      const { deleteResponses } = req.query; // Optional: force delete with responses
-      const user = req.currentUser;
-
-      // 1. Get template and verify organization ownership
-      const template = await storage.getFormTemplateById(id);
-      if (!template) {
-        return res.status(404).json({ message: "Form template not found" });
-      }
-      
-      if (template.organizationId !== user.organizationId) {
-        return res.status(403).json({ message: "Access denied to this form template" });
-      }
-      
-      // 2. Check if form is used in flow rules
-      const flowRules = await storage.getFlowRulesByOrganization(user.organizationId);
-      const rulesUsingForm = flowRules.filter(rule => rule.formId === template.formId);
-      
-      if (rulesUsingForm.length > 0) {
-        return res.status(400).json({
-          message: `Cannot delete form template. It is currently used in ${rulesUsingForm.length} flow rule(s).`,
-          usage: rulesUsingForm.map(rule => ({
-            system: rule.system,
-            task: rule.nextTask
-          }))
-        });
-      }
-      
-      // 3. Handle MongoDB form responses
-      let deletedResponseCount = 0;
-      try {
-        const { MongoClient } = await import('mongodb');
-        const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/processSutra';
-        const client = new MongoClient(mongoUri);
-        await client.connect();
-        const database = client.db();
-        const col = database.collection('formResponses');
-        
-        const responseCount = await col.countDocuments({ 
-          organizationId: user.organizationId,
-          formId: template.formId 
-        });
-        
-        if (responseCount > 0) {
-          if (deleteResponses === 'true') {
-            // Force delete: delete all MongoDB responses first
-            const deleteResult = await col.deleteMany({ 
-              organizationId: user.organizationId,
-              formId: template.formId 
-            });
-            deletedResponseCount = deleteResult.deletedCount || 0;
-            console.log(`[DELETE] Deleted ${deletedResponseCount} MongoDB responses for form ${template.formId}`);
-          } else {
-            // Prevent deletion if responses exist
-            await client.close();
-            return res.status(400).json({
-              message: `Cannot delete form template. It has ${responseCount} submitted response(s).`,
-              responseCount,
-              hint: "Add ?deleteResponses=true to force delete including all responses"
-            });
-          }
-        }
-        
-        await client.close();
-      } catch (mongoError) {
-        console.warn("Could not check/delete MongoDB form responses:", mongoError);
-        // Continue with template deletion if MongoDB operation fails
-      }
-      
-      // 4. Delete the form template
-      await storage.deleteFormTemplate(id);
-      
-      // Return success with details
-      if (deletedResponseCount > 0) {
-        res.json({ 
-          message: "Form template and responses deleted successfully",
-          deletedResponses: deletedResponseCount 
-        });
-      } else {
-        res.status(204).send();
-      }
-    } catch (error) {
-      console.error("Error deleting form template:", error);
-      res.status(500).json({ message: "Failed to delete form template" });
-    }
-  });
-
-  // Form Responses API (Organization-specific)
-  app.get("/api/form-responses", isAuthenticated, addUserToRequest, async (req: any, res) => {
-    try {
-      const user = req.currentUser;
-      const { flowId, taskId } = req.query;
-      const responses = await storage.getFormResponsesWithTaskDetails(user.organizationId, flowId as string, taskId as string);
-      res.json(responses);
-    } catch (error) {
-      console.error("Error fetching form responses:", error);
-      res.status(500).json({ message: "Failed to fetch form responses" });
-    }
-  });
-
-  app.post("/api/form-responses", isAuthenticated, addUserToRequest, formSubmissionLimiter, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = req.currentUser;
-      
-      // Fetch the task to get orderNumber
-      const task = await storage.getTaskById(req.body.taskId);
-      if (!task) {
-        return res.status(404).json({ message: "Task not found" });
-      }
-      
-      // Verify task belongs to user's organization
-      if (task.organizationId !== user.organizationId) {
-        return res.status(403).json({ message: "Access denied to this task" });
-      }
-      
-      const validatedData = insertFormResponseSchema.parse({
-        ...req.body,
-        organizationId: user.organizationId,
-        submittedBy: userId,
-        responseId: randomUUID(),
-        orderNumber: task.orderNumber, // Include orderNumber from task
-      });
-      const response = await storage.createFormResponse(validatedData);
-
-      // Fire webhooks (non-blocking with proper logging and retry)
-      (async () => {
-        try {
-          const { fireWebhooksForEvent } = await import('./webhookUtils.js');
-          
-          // Check if webhooks already fired for this responseId (prevent duplicates)
-          const existingDeliveries = await storage.getWebhookDeliveriesByPayloadId(response.responseId);
-          if (existingDeliveries && existingDeliveries.length > 0) {
-            console.log('[Webhook] Skipping duplicate webhook fire for responseId:', response.responseId);
-            return;
-          }
-          
-          // Fetch form template to get questions for data transformation
-          let formTemplateQuestions;
-          try {
-            const formTemplate = await storage.getFormTemplateById(response.formId);
-            if (formTemplate?.questions) {
-              formTemplateQuestions = formTemplate.questions;
-            }
-          } catch (err) {
-            console.error('[Webhook] Could not fetch form template for transformation:', err);
-          }
-          
-          // CRITICAL: Don't fire webhooks if transformation will fail (no questions)
-          if (!Array.isArray(formTemplateQuestions) || formTemplateQuestions.length === 0) {
-            console.error('[Webhook] Cannot fire webhooks - no form template questions for transformation. FormId:', response.formId);
-            return;
-          }
-          
-          await fireWebhooksForEvent(
-            user.organizationId, 
-            'form.submitted', 
-            {
-              responseId: response.responseId,
-              taskId: response.taskId,
-              flowId: response.flowId,
-              formId: response.formId,
-              formData: response.formData,
-              submittedBy: response.submittedBy,
-              orderNumber: response.orderNumber,
-              timestamp: response.timestamp
-            },
-            formTemplateQuestions
-          );
-        } catch (err) {
-          console.error('[Webhook] Error firing form.submitted webhooks:', err);
-        }
-      })();
-
-      res.status(201).json(response);
-    } catch (error) {
-      console.error("Error creating form response:", error);
-      res.status(400).json({ message: "Invalid form response data" });
-    }
-  });
+  // Old Form Templates & Responses API removed — replaced by Quick Form (MongoDB) routes at /api/quick-forms
 
   // Webhook CRUD (admin)
   app.get('/api/webhooks', isAuthenticated, addUserToRequest, async (req: any, res) => {
@@ -2147,21 +1877,37 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
         return res.status(403).json({ message: "Access denied. You don't have permission to view this flow data." });
       }
       
-      // Get all form responses for this flow - organization-specific
-      const allResponses = await storage.getFormResponsesByOrganization(user.organizationId);
-      const flowResponses = allResponses.filter(response => response.flowId === flowId);
+      // Get form responses from MongoDB Quick Form collection
+      let flowResponses: any[] = [];
+      try {
+        const { getQuickFormResponsesByFlowId } = await import('./mongo/quickFormClient.js');
+        const qfResponses = await getQuickFormResponsesByFlowId(user.organizationId, flowId);
+        flowResponses = qfResponses.map(doc => ({
+          id: doc._id?.toString(),
+          responseId: doc._id?.toString(),
+          flowId: doc.flowId || flowId,
+          taskId: doc.taskId,
+          taskName: doc.taskName || "Unknown Task",
+          formId: doc.formId,
+          submittedBy: doc.submittedBy,
+          formData: doc.data, // Quick Form uses 'data' field, normalize to 'formData'
+          timestamp: doc.createdAt ? doc.createdAt.toISOString() : new Date().toISOString(),
+          submittedAt: doc.createdAt ? doc.createdAt.toISOString() : new Date().toISOString(),
+        }));
+      } catch (mongoErr) {
+        console.warn("Could not fetch Quick Form responses for flow data:", mongoErr);
+      }
       
       // Combine task data with form responses
       const tasksWithFormData = flowTasks.map(task => {
-        // Find corresponding form response for this task
-        const formResponse = flowResponses.find(response => 
+        const formResponse = flowResponses.find((response: any) => 
           response.taskId === task.id
         );
         
         return {
           ...task,
           formResponse: formResponse?.formData || null,
-          initialData: task.flowInitialFormData || null // Include initial flow data if available
+          initialData: task.flowInitialFormData || null
         };
       });
       
@@ -2176,13 +1922,13 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       const firstTask = tasksWithFormData[0];
       
       // Also return all form responses with task names for better organization
-      const formResponsesWithTaskNames = flowResponses.map(response => {
+      const formResponsesWithTaskNames = flowResponses.map((response: any) => {
         const responseTask = flowTasks.find(task => task.id === response.taskId);
         return {
           ...response,
-          taskName: responseTask?.taskName || "Unknown Task",
+          taskName: response.taskName || responseTask?.taskName || "Unknown Task",
           taskCreatedAt: responseTask?.createdAt || null,
-          doerEmail: responseTask?.doerEmail || "Unknown"
+          doerEmail: response.doerEmail || responseTask?.doerEmail || "Unknown"
         };
       });
       
@@ -2412,24 +2158,10 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
             console.warn(`[AUDIT] Large form export - User: ${user.email}, Records: ${allFormResponses.length} (may be truncated)`);
           }
           
-          // Transform form responses to have readable question titles
-          const transformedFormResponses = await Promise.all(
-            allFormResponses.map(async (response: any) => {
-              try {
-                const template = await storage.getFormTemplateByFormId(response.formId);
-                if (template) {
-                  const transformedData = transformFormDataToReadableNames(response.formData, template);
-                  return { ...response, formData: transformedData };
-                }
-              } catch (error) {
-                console.error(`Error transforming form response ${response.id}:`, error);
-              }
-              return response;
-            })
-          );
+          // Quick Form data already uses readable labels as keys — no transformation needed
           
           // Group responses by formId
-          const formResponsesByFormId = transformedFormResponses.reduce((acc: any, response: any) => {
+          const formResponsesByFormId = allFormResponses.reduce((acc: any, response: any) => {
             const formId = response.formId || 'unknown';
             if (!acc[formId]) {
               acc[formId] = [];
@@ -2494,21 +2226,8 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
             return res.status(404).json({ message: "No form data found for this organization" });
           }
           
-          // Transform form responses to have readable question titles
-          const transformedFileFormResponses = await Promise.all(
-            formSubmissionsData.data.map(async (response: any) => {
-              try {
-                const template = await storage.getFormTemplateByFormId(response.formId);
-                if (template) {
-                  const transformedData = transformFormDataToReadableNames(response.formData, template);
-                  return { ...response, formData: transformedData };
-                }
-              } catch (error) {
-                console.error(`Error transforming form response ${response.id}:`, error);
-              }
-              return response;
-            })
-          );
+          // Quick Form data already uses readable labels as keys — no transformation needed
+          const fileFormResponses = formSubmissionsData.data;
           
           // Create ZIP archive
           const archive = archiver('zip', { zlib: { level: 9 } });
@@ -2520,9 +2239,9 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           archive.pipe(res);
           
           // Add form submission data as CSV files grouped by formId
-          if (transformedFileFormResponses && transformedFileFormResponses.length > 0) {
+          if (fileFormResponses && fileFormResponses.length > 0) {
             // Group responses by formId
-            const responsesByForm = transformedFileFormResponses.reduce((acc: any, response: any) => {
+            const responsesByForm = fileFormResponses.reduce((acc: any, response: any) => {
               const formId = response.formId || 'unknown';
               if (!acc[formId]) {
                 acc[formId] = [];
@@ -2712,31 +2431,23 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
     }
   });
 
-  // Export API with comprehensive data
-  app.get("/api/export/flow-data", isAuthenticated, async (req, res) => {
+  // Export API with comprehensive data (reads from MongoDB)
+  app.get("/api/export/flow-data", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
-      // Get all tasks with their associated form responses
-      const tasks = await storage.getTasks();
-      const formResponses = await storage.getFormResponses();
+      const user = req.currentUser;
+      // Get all tasks for this organization
+      const allTasks = await storage.getTasksByOrganization(user.organizationId);
       
-      // Transform form responses to have readable question titles
-      const transformedExportResponses = await Promise.all(
-        formResponses.map(async (response: any) => {
-          try {
-            const template = await storage.getFormTemplateByFormId(response.formId);
-            if (template) {
-              const transformedData = transformFormDataToReadableNames(response.formData, template);
-              return { ...response, formData: transformedData };
-            }
-          } catch (error) {
-            console.error(`Error transforming form response ${response.id}:`, error);
-          }
-          return response;
-        })
-      );
+      // Get form responses from MongoDB (Quick Form data already has readable labels)
+      const formResponsesData = await storage.getMongoFormResponsesByOrgAndForm({
+        orgId: user.organizationId,
+        page: 1,
+        pageSize: 50000,
+      });
+      const allFormResponses = formResponsesData.data || [];
       
       // Group form responses by task ID for quick lookup
-      const responsesByTask = transformedExportResponses.reduce((acc: any, response: any) => {
+      const responsesByTask = allFormResponses.reduce((acc: any, response: any) => {
         if (!acc[response.taskId]) {
           acc[response.taskId] = [];
         }
@@ -2745,7 +2456,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
       }, {});
       
       // Group tasks by flow ID and calculate comprehensive metrics
-      const flowGroups = tasks.reduce((acc: any, task: any) => {
+      const flowGroups = allTasks.reduce((acc: any, task: any) => {
         if (!acc[task.flowId]) {
           acc[task.flowId] = {
             flowId: task.flowId,
@@ -3731,10 +3442,11 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
           const uniqueFlowIds = new Set(tasks.map((t: any) => t.flowId));
           const currentFlows = uniqueFlowIds.size;
           
-          // Calculate current storage from form responses
-          const responses = await storage.getFormResponsesByOrganization(org.id);
+          // Calculate current storage from form responses (MongoDB)
+          const respCol = await getQuickFormResponsesCollection();
+          const responseCount = await respCol.countDocuments({ organizationId: org.id });
           // Rough estimate: 0.5 MB per response
-          const currentStorage = Math.round(responses.length * 0.5);
+          const currentStorage = Math.round(responseCount * 0.5);
           
           return {
             ...org,
@@ -4122,7 +3834,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
         storage.getUsersByOrganization(organizationId),
         storage.getTasksByOrganization(organizationId),
         storage.getFlowRulesByOrganization(organizationId),
-        storage.getFormResponsesByOrganization(organizationId),
+        getQuickFormResponsesCollection().then(col => col.find({ organizationId }).toArray()),
         storage.getOrganizationLoginLogs(organizationId),
         storage.getOrganizationDevices(organizationId)
       ]);
@@ -4218,7 +3930,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/start-flow" -Method Post -Head
         data: {
           totalFlows,
           totalFormResponses,
-          totalFileUploads,
+          totalFileUploads: 0,
           avgResponsesPerFlow: totalFlows > 0 ? (totalFormResponses / totalFlows).toFixed(1) : 0
         },
         activity: {

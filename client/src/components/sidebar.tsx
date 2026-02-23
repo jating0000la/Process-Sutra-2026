@@ -49,7 +49,7 @@ const allNavigationItems = [
   },
   {
     name: "Form Builder",
-    href: "/form-builder", 
+    href: "/quick-form-builder",
     icon: FileText,
     badge: null,
     adminOnly: true,
@@ -74,9 +74,9 @@ const allNavigationItems = [
   },
   {
     name: "Form Data", 
-    href: "/mongo-form-data-viewer",
+    href: "/quick-form-responses",
     icon: Database,
-    badge: "New",
+    badge: null,
     adminOnly: true,
     section: "data",
   },
