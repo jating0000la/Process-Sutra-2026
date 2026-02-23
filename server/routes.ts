@@ -24,7 +24,7 @@ import uploadsRouter from './uploads.js';
 import oauthRouter from './oauthRoutes.js';
 import quickFormRouter from './quickFormRoutes.js';
 import reportRouter from './reportRoutes.js';
-import billingRouter from './billingRoutes.js';
+import billingRouter, { handlePayUSuccess, handlePayUFailure, handlePayUWebhook } from './billingRoutes.js';
 import * as crypto from 'crypto';
 import { sanitizeFlowRule, sanitizeFlowRules } from './inputSanitizer.js';
 import archiver from 'archiver';
@@ -268,15 +268,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Report Builder API — admin-only analytics over form data
   app.use('/api/reports', isAuthenticated, requireAdmin, addUserToRequest, reportRouter);
 
-  // Billing & Payments API — challan generation, PayU payment flow
-  // Note: PayU callback routes (/payu-success, /payu-failure, /payu-webhook) are unauthenticated
-  // The authenticated routes (GET /, GET /:id, POST /generate, POST /pay/:id, GET /transactions)
-  // are protected by isAuthenticated + requireAdmin middleware
-  app.use('/api/billing', (req, res, next) => {
-    // Skip auth for PayU callback endpoints
-    if (req.path.startsWith('/payu-')) return next();
-    return isAuthenticated(req as any, res, () => requireAdmin(req as any, res, () => addUserToRequest(req as any, res, next)));
-  }, billingRouter);
+  // PayU callback routes — registered as standalone handlers WITHOUT auth middleware
+  // PayU POSTs form data back to these URLs after payment (no session/cookie available)
+  app.post('/api/billing/payu-success', handlePayUSuccess);
+  app.post('/api/billing/payu-failure', handlePayUFailure);
+  app.post('/api/billing/payu-webhook', handlePayUWebhook);
+
+  // Billing & Payments API — authenticated routes (list, generate, pay, transactions)
+  app.use('/api/billing', isAuthenticated, requireAdmin, addUserToRequest, billingRouter);
 
   // Flow Rules API (Organization-specific, Admin only)
   app.get("/api/flow-rules", isAuthenticated, addUserToRequest, async (req: any, res) => {

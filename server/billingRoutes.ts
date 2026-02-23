@@ -355,9 +355,14 @@ router.post("/pay/:id", async (req: any, res: Response) => {
 
 // ── POST /payu-success – PayU Success Redirect ──────────────────────
 
-router.post("/payu-success", async (req: Request, res: Response) => {
+export async function handlePayUSuccess(req: Request, res: Response) {
   try {
     const data = req.body as PayUCallbackData;
+
+    logger.info("PayU success callback - FULL BODY", {
+      body: JSON.stringify(req.body),
+      contentType: req.headers['content-type'],
+    });
 
     logger.info("PayU success callback received", {
       txnid: data.txnid,
@@ -365,6 +370,9 @@ router.post("/payu-success", async (req: Request, res: Response) => {
       mihpayid: data.mihpayid,
       amount: data.amount,
       mode: data.mode,
+      udf1: data.udf1,
+      udf2: data.udf2,
+      hash: data.hash?.slice(0, 20),
     });
 
     const hashValid = verifyPayUHash(data);
@@ -381,35 +389,79 @@ router.post("/payu-success", async (req: Request, res: Response) => {
 
     // Only mark as success if PayU says success
     const isPaymentSuccess = data.status?.toLowerCase() === "success";
+    logger.info("Payment status check", { rawStatus: data.status, isPaymentSuccess });
 
     // Update payment transaction
-    await db
+    // NOTE: Drizzle crashes on raw `null` in .set() (is() calls value.constructor)
+    //       so we must guard every potentially-null PayU field.
+    const txnUpdateResult = await db
       .update(paymentTransactions)
       .set({
-        payuPaymentId: data.mihpayid,
-        payuStatus: data.status,
-        payuMode: data.mode,
-        payuHash: data.hash,
-        payuResponse: data,
+        payuPaymentId: data.mihpayid ?? "",
+        payuStatus: data.status ?? "",
+        payuMode: data.mode ?? "",
+        payuHash: data.hash ?? "",
+        payuResponse: { ...data },
         status: isPaymentSuccess ? "success" : "failed",
-        failureReason: isPaymentSuccess ? null : (data.error_Message || data.error || "Payment not successful"),
+        failureReason: isPaymentSuccess ? "" : (data.error_Message || data.error || "Payment not successful"),
         updatedAt: new Date(),
       })
-      .where(eq(paymentTransactions.payuTxnId, data.txnid));
+      .where(eq(paymentTransactions.payuTxnId, data.txnid))
+      .returning();
+
+    logger.info("Payment transaction update result", {
+      txnid: data.txnid,
+      rowsUpdated: txnUpdateResult.length,
+      updatedStatus: txnUpdateResult[0]?.status,
+    });
 
     // Update challan if payment succeeded
     if (isPaymentSuccess) {
       const challanId = data.udf1;
+      logger.info("Updating challan status to paid", { challanId, txnid: data.txnid });
+
       if (challanId) {
-        await db
+        const challanUpdateResult = await db
           .update(challans)
           .set({
             status: "paid",
             paidAt: new Date(),
-            paymentId: data.mihpayid,
+            paymentId: data.mihpayid ?? "",
             updatedAt: new Date(),
           })
-          .where(eq(challans.id, challanId));
+          .where(eq(challans.id, challanId))
+          .returning();
+
+        logger.info("Challan update result", {
+          challanId,
+          rowsUpdated: challanUpdateResult.length,
+          updatedStatus: challanUpdateResult[0]?.status,
+        });
+      } else {
+        // Fallback: find challan via the transaction record
+        logger.warn("No udf1 (challanId) in PayU callback, attempting fallback lookup", { txnid: data.txnid });
+        
+        if (txnUpdateResult.length > 0 && txnUpdateResult[0].challanId) {
+          const fallbackChallanId = txnUpdateResult[0].challanId;
+          const challanUpdateResult = await db
+            .update(challans)
+            .set({
+              status: "paid",
+              paidAt: new Date(),
+              paymentId: data.mihpayid ?? "",
+              updatedAt: new Date(),
+            })
+            .where(eq(challans.id, fallbackChallanId))
+            .returning();
+
+          logger.info("Challan fallback update result", {
+            challanId: fallbackChallanId,
+            rowsUpdated: challanUpdateResult.length,
+            updatedStatus: challanUpdateResult[0]?.status,
+          });
+        } else {
+          logger.error("Could not find challan to update", { txnid: data.txnid });
+        }
       }
 
       logger.info("Payment successful", {
@@ -427,11 +479,12 @@ router.post("/payu-success", async (req: Request, res: Response) => {
     logger.error("PayU success callback error", err);
     res.redirect("/payments?status=error");
   }
-});
+}
+router.post("/payu-success", handlePayUSuccess);
 
 // ── POST /payu-failure – PayU Failure Redirect ──────────────────────
 
-router.post("/payu-failure", async (req: Request, res: Response) => {
+export async function handlePayUFailure(req: Request, res: Response) {
   try {
     const data = req.body as PayUCallbackData;
 
@@ -439,11 +492,11 @@ router.post("/payu-failure", async (req: Request, res: Response) => {
     await db
       .update(paymentTransactions)
       .set({
-        payuPaymentId: data.mihpayid,
-        payuStatus: data.status,
-        payuMode: data.mode,
-        payuHash: data.hash,
-        payuResponse: data,
+        payuPaymentId: data.mihpayid ?? "",
+        payuStatus: data.status ?? "",
+        payuMode: data.mode ?? "",
+        payuHash: data.hash ?? "",
+        payuResponse: { ...data },
         status: "failed",
         failureReason: data.error_Message || data.error || "Payment failed",
         updatedAt: new Date(),
@@ -460,11 +513,12 @@ router.post("/payu-failure", async (req: Request, res: Response) => {
     logger.error("PayU failure callback error", err);
     res.redirect("/payments?status=error");
   }
-});
+}
+router.post("/payu-failure", handlePayUFailure);
 
 // ── POST /payu-webhook – PayU Server-to-Server Notification ─────────
 
-router.post("/payu-webhook", async (req: Request, res: Response) => {
+export async function handlePayUWebhook(req: Request, res: Response) {
   try {
     const data = req.body as PayUCallbackData;
 
@@ -493,10 +547,10 @@ router.post("/payu-webhook", async (req: Request, res: Response) => {
       await db
         .update(paymentTransactions)
         .set({
-          payuPaymentId: data.mihpayid,
-          payuStatus: data.status,
-          payuMode: data.mode,
-          payuResponse: data,
+          payuPaymentId: data.mihpayid ?? "",
+          payuStatus: data.status ?? "",
+          payuMode: data.mode ?? "",
+          payuResponse: { ...data },
           status: "success",
           updatedAt: new Date(),
         })
@@ -508,7 +562,7 @@ router.post("/payu-webhook", async (req: Request, res: Response) => {
           .set({
             status: "paid",
             paidAt: new Date(),
-            paymentId: data.mihpayid,
+            paymentId: data.mihpayid ?? "",
             updatedAt: new Date(),
           })
           .where(eq(challans.id, txn.challanId));
@@ -519,8 +573,8 @@ router.post("/payu-webhook", async (req: Request, res: Response) => {
       await db
         .update(paymentTransactions)
         .set({
-          payuStatus: data.status,
-          payuResponse: data,
+          payuStatus: data.status ?? "",
+          payuResponse: { ...data },
           status: "failed",
           failureReason: data.error_Message || "Payment failed",
           updatedAt: new Date(),
@@ -535,6 +589,7 @@ router.post("/payu-webhook", async (req: Request, res: Response) => {
     logger.error("PayU webhook error", err);
     res.status(500).json({ message: "Webhook processing error" });
   }
-});
+}
+router.post("/payu-webhook", handlePayUWebhook);
 
 export default router;
