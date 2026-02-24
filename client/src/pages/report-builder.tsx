@@ -172,12 +172,40 @@ export default function ReportBuilder() {
   }, [user, loading, handleTokenExpired]);
 
   /* ─── state ─── */
-  const [config, setConfig] = useState<ReportConfig>({ ...defaultConfig });
+  const [config, setConfig] = useState<ReportConfig>(() => {
+    // Restore AI-generated report config if navigated from AI Assistant
+    try {
+      const pending = localStorage.getItem("ai-pending-report");
+      if (pending) {
+        const parsed = JSON.parse(pending);
+        const cfg: ReportConfig = parsed.config || parsed;
+        // Ensure required defaults are present
+        return { ...defaultConfig, ...cfg };
+      }
+    } catch {}
+    return { ...defaultConfig };
+  });
   const [activeView, setActiveView] = useState<"table" | "chart">("table");
   const [page, setPage] = useState(1);
   const pageSize = 50;
   const [queryResult, setQueryResult] = useState<any>(null);
   const [summaryData, setSummaryData] = useState<any>(null);
+
+  // Show toast and clear pending report if loaded from AI Assistant
+  useEffect(() => {
+    try {
+      const pending = localStorage.getItem("ai-pending-report");
+      if (pending) {
+        const parsed = JSON.parse(pending);
+        localStorage.removeItem("ai-pending-report");
+        toast({
+          title: "AI report config loaded",
+          description: `"${parsed.reportName || "Report"}" — click Run to execute`,
+        });
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState("");

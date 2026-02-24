@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -36,6 +37,7 @@ import {
   ChevronDown,
   Cpu,
   GitBranch,
+  BarChart3,
 } from "lucide-react";
 import {
   Select,
@@ -56,7 +58,7 @@ interface ChatMessage {
 }
 
 interface ParsedBlock {
-  type: "flowrules" | "forms" | "simulation" | "text";
+  type: "flowrules" | "forms" | "simulation" | "report" | "text";
   content: any;
   raw: string;
 }
@@ -96,7 +98,7 @@ interface FormData {
 function parseAIResponse(text: string): ParsedBlock[] {
   if (!text) return [{ type: "text", content: text || "", raw: text || "" }];
   const blocks: ParsedBlock[] = [];
-  const regex = /```json:(flowrules|forms|simulation)\n([\s\S]*?)```/g;
+  const regex = /```json:(flowrules|forms|simulation|report)\n([\s\S]*?)```/g;
   let lastIndex = 0;
   let match;
 
@@ -343,6 +345,87 @@ function SimulationCard({ data }: { data: any }) {
   );
 }
 
+// ─── Report Config Preview Card ─────────────
+
+function ReportConfigCard({ data, onOpen }: { data: any; onOpen: () => void }) {
+  const cfg = data.config || {};
+  return (
+    <Card className="border-indigo-200 bg-indigo-50/50 dark:border-indigo-800 dark:bg-indigo-950/30 my-3">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-5 h-5 text-indigo-600" />
+            <CardTitle className="text-base">{data.reportName || "AI Report"}</CardTitle>
+          </div>
+          <Badge variant="outline" className="text-indigo-600 border-indigo-300">
+            {cfg.chartType || "bar"} chart
+          </Badge>
+        </div>
+        {data.description && (
+          <CardDescription className="text-xs mt-1">{data.description}</CardDescription>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div className="text-sm space-y-1">
+          {cfg.formId && (
+            <div className="flex items-center gap-2">
+              <FileText className="w-3.5 h-3.5 text-indigo-500" />
+              <span className="text-gray-500">Data source:</span>
+              <span className="font-medium">{cfg.formId}</span>
+            </div>
+          )}
+          {cfg.columns?.length > 0 && (
+            <div className="flex items-start gap-2">
+              <span className="text-gray-500 text-xs mt-0.5">Columns:</span>
+              <div className="flex flex-wrap gap-1">
+                {cfg.columns.map((c: string) => (
+                  <Badge key={c} variant="secondary" className="text-[10px] px-1.5 py-0">{c}</Badge>
+                ))}
+              </div>
+            </div>
+          )}
+          {cfg.groupBy && (
+            <div className="flex items-center gap-2">
+              <span className="text-gray-500 text-xs">Group by:</span>
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-purple-600 border-purple-300">{cfg.groupBy}</Badge>
+              {cfg.aggregation && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-blue-600 border-blue-300">
+                  {cfg.aggregation.operation}({cfg.aggregation.field})
+                </Badge>
+              )}
+            </div>
+          )}
+          {cfg.filters?.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-gray-500 text-xs">Filters:</span>
+              <span className="text-xs font-medium">{cfg.filters.length} applied</span>
+            </div>
+          )}
+        </div>
+        <Separator />
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            onClick={onOpen}
+            className="bg-indigo-600 hover:bg-indigo-700"
+          >
+            <BarChart3 className="w-4 h-4 mr-1" />
+            Open in Report Builder
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => navigator.clipboard.writeText(JSON.stringify(data, null, 2))}
+          >
+            <Copy className="w-4 h-4 mr-1" />
+            Copy JSON
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Quick Prompt Chips ───────────────────────
 
 const QUICK_PROMPTS = [
@@ -351,6 +434,7 @@ const QUICK_PROMPTS = [
   { label: "Simulate flow", icon: Play, prompt: "Please simulate my existing workflow and show me step-by-step how it executes, including all decision branches, parallel paths, and merge points." },
   { label: "Improve process", icon: Lightbulb, prompt: "Analyze my existing workflows and suggest improvements for efficiency, bottlenecks, decision logic, and optimization. Also suggest where decision boxes, parallel steps, or merge conditions could help." },
   { label: "Modify workflow", icon: GitBranch, prompt: "I want to modify an existing workflow. Please review my current flow rules and help me update, extend, or restructure them — including adding decision branches, parallel steps, merge points, or new forms." },
+  { label: "Build a report", icon: BarChart3, prompt: "I want to analyze my form responses and build a report. Please review my existing forms and help me design a report with the right columns, filters, grouping, aggregation, and chart type to understand my data." },
 ];
 
 // ─── Main Component ───────────────────────────
@@ -361,6 +445,7 @@ export default function AIAssistant() {
   const queryClient = useQueryClient();
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [, navigate] = useLocation();
 
   // Scope localStorage keys to user to prevent cross-user data leakage
   const storagePrefix = dbUser?.id ? `ai-chat-${dbUser.id}` : "ai-chat";
@@ -508,7 +593,13 @@ export default function AIAssistant() {
               }))
             : undefined,
           existingForms: existingForms.length > 0
-            ? existingForms.map((f: any) => ({ formId: f.formId, title: f.title, fieldCount: f.fields?.length }))
+            ? existingForms.map((f: any) => ({
+                formId: f.formId,
+                title: f.title,
+                fieldCount: f.fields?.length,
+                // Include field labels+types so AI can design accurate report columns/filters/groupBy
+                fields: (f.fields || []).map((fld: any) => ({ label: fld.label, type: fld.type })),
+              }))
             : undefined,
           users: orgUsers.length > 0
             ? orgUsers.map((u: any) => ({ email: u.email, role: u.role, name: `${u.firstName || ""} ${u.lastName || ""}`.trim() }))
@@ -993,6 +1084,20 @@ export default function AIAssistant() {
                         }
                         if (block.type === "simulation") {
                           return <SimulationCard key={bi} data={block.content} />;
+                        }
+                        if (block.type === "report") {
+                          return (
+                            <ReportConfigCard
+                              key={bi}
+                              data={block.content}
+                              onOpen={() => {
+                                try {
+                                  localStorage.setItem("ai-pending-report", JSON.stringify(block.content));
+                                } catch {}
+                                navigate("/report-builder");
+                              }}
+                            />
+                          );
                         }
                         return (
                           <div key={bi} className="text-sm">
