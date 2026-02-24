@@ -36,7 +36,9 @@ import {
   Receipt,
   Calendar,
   Loader2,
+  AlertTriangle,
 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 /* ─── Types ─── */
 
@@ -55,6 +57,8 @@ interface Challan {
   storageMb: number;
   storageCost: number;
   baseCost: number;
+  previousOutstanding: number;
+  cancelledChallanIds: string | null;
   subtotal: number;
   taxPercent: number;
   taxAmount: number;
@@ -90,6 +94,21 @@ interface PayUFormResponse {
   paymentUrl: string;
   formData: Record<string, string>;
   txnId: string;
+}
+
+interface OutstandingInfo {
+  totalOutstanding: number;
+  overdueAmount: number;
+  unpaidCount: number;
+  overdueCount: number;
+  challans: {
+    id: string;
+    challanNumber: string;
+    billingPeriodStart: string;
+    totalAmount: number;
+    status: string;
+    dueDate: string | null;
+  }[];
 }
 
 /* ─── Helpers ─── */
@@ -180,6 +199,7 @@ export default function Payments() {
       toast({ title: "Payment successful!", description: "Your challan has been marked as paid." });
       queryClient.invalidateQueries({ queryKey: ["/api/billing"] });
       queryClient.invalidateQueries({ queryKey: ["/api/billing/transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/outstanding"] });
     } else if (status === "failed") {
       toast({ title: "Payment failed", description: "Please try again or use a different method.", variant: "destructive" });
     } else if (status === "hash-mismatch") {
@@ -205,6 +225,14 @@ export default function Payments() {
     refetchOnMount: "always",
   });
 
+  const { data: outstandingInfo } = useQuery<OutstandingInfo>({
+    queryKey: ["/api/billing/outstanding"],
+    queryFn: getQueryFn({ on401: "redirect" }),
+    enabled: isAdmin,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+
   // ── Mutations ──
 
   const generateMutation = useMutation({
@@ -215,6 +243,7 @@ export default function Payments() {
     onSuccess: (data: Challan) => {
       toast({ title: "Challan generated", description: `${data.challanNumber} — ${formatPaise(data.totalAmount)}` });
       queryClient.invalidateQueries({ queryKey: ["/api/billing"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/outstanding"] });
     },
     onError: (err: Error) => {
       toast({ title: "Generation failed", description: err.message, variant: "destructive" });
@@ -298,6 +327,27 @@ export default function Payments() {
             </>
           )}
         </div>
+
+        {/* Outstanding Amount Alert */}
+        {outstandingInfo && outstandingInfo.totalOutstanding > 0 && (
+          <Alert variant="destructive" className="mb-6 border-red-300 bg-red-50 dark:bg-red-950/30">
+            <AlertTriangle className="h-5 w-5" />
+            <AlertTitle className="text-base font-semibold">
+              Outstanding Amount: {formatPaise(outstandingInfo.totalOutstanding)}
+            </AlertTitle>
+            <AlertDescription className="mt-1">
+              <p className="text-sm">
+                You have {outstandingInfo.unpaidCount} unpaid challan{outstandingInfo.unpaidCount > 1 ? "s" : ""} from previous months
+                {outstandingInfo.overdueCount > 0 && (
+                  <span className="font-medium text-red-700 dark:text-red-400">
+                    {" "}({outstandingInfo.overdueCount} overdue — {formatPaise(outstandingInfo.overdueAmount)})
+                  </span>
+                )}
+                . When you generate a new challan, this outstanding amount will be automatically included.
+              </p>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Tabs */}
         <Tabs defaultValue="challans" className="space-y-4">
@@ -479,6 +529,9 @@ export default function Payments() {
                     {selectedChallan.storageCost > 0 && (
                       <LineItem label="Storage" qty={`${selectedChallan.storageMb} MB`} cost={selectedChallan.storageCost} />
                     )}
+                    {(selectedChallan.previousOutstanding ?? 0) > 0 && (
+                      <LineItem label="Previous Outstanding" qty="—" cost={selectedChallan.previousOutstanding} highlight />
+                    )}
                   </div>
                 </div>
 
@@ -494,6 +547,12 @@ export default function Payments() {
                     <span className="text-muted-foreground">GST ({selectedChallan.taxPercent}%)</span>
                     <span>{formatPaise(selectedChallan.taxAmount)}</span>
                   </div>
+                  {(selectedChallan.previousOutstanding ?? 0) > 0 && (
+                    <div className="flex justify-between text-amber-700 dark:text-amber-400">
+                      <span>Previous Outstanding</span>
+                      <span>{formatPaise(selectedChallan.previousOutstanding)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between font-bold text-base pt-1 border-t">
                     <span>Total</span>
                     <span>{formatPaise(selectedChallan.totalAmount)}</span>
@@ -536,9 +595,9 @@ export default function Payments() {
 
 /* ─── Line Item Row ─── */
 
-function LineItem({ label, qty, cost }: { label: string; qty: string; cost: number }) {
+function LineItem({ label, qty, cost, highlight }: { label: string; qty: string; cost: number; highlight?: boolean }) {
   return (
-    <div className="grid grid-cols-3 gap-2 p-3 text-sm border-t">
+    <div className={`grid grid-cols-3 gap-2 p-3 text-sm border-t ${highlight ? "bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-200 font-medium" : ""}`}>
       <span>{label}</span>
       <span className="text-center text-muted-foreground">{qty}</span>
       <span className="text-right">{formatPaise(cost)}</span>

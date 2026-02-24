@@ -737,11 +737,14 @@ export const challans = pgTable(
     storageMb: integer("storage_mb").default(0),
     storageCost: integer("storage_cost").default(0),  // in paise
     baseCost: integer("base_cost").default(0),        // monthly base price in paise
+    // Previous outstanding (carry-forward from unpaid challans)
+    previousOutstanding: integer("previous_outstanding").default(0), // in paise
+    cancelledChallanIds: text("cancelled_challan_ids"), // JSON array of cancelled challan IDs
     // Totals
-    subtotal: integer("subtotal").default(0),         // in paise
+    subtotal: integer("subtotal").default(0),         // in paise (current month only)
     taxPercent: integer("tax_percent").default(18),    // GST 18%
-    taxAmount: integer("tax_amount").default(0),       // in paise
-    totalAmount: integer("total_amount").default(0),   // in paise
+    taxAmount: integer("tax_amount").default(0),       // in paise (on current month subtotal)
+    totalAmount: integer("total_amount").default(0),   // in paise (subtotal + tax + previousOutstanding)
     // Status
     status: varchar("status").default("generated").$type<"generated" | "sent" | "paid" | "overdue" | "cancelled">(),
     dueDate: timestamp("due_date"),

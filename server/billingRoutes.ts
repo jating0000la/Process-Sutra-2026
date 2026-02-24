@@ -21,7 +21,7 @@ import {
   tasks,
   flowRules,
 } from "@shared/schema";
-import { eq, and, desc, sql, gte, lte, count as drizzleCount } from "drizzle-orm";
+import { eq, and, desc, sql, gte, lte, inArray, or, count as drizzleCount } from "drizzle-orm";
 import {
   isPayUConfigured,
   generatePayUHash,
@@ -90,6 +90,59 @@ router.get("/transactions", async (req: any, res: Response) => {
   } catch (err) {
     logger.error("Failed to list transactions", err);
     res.status(500).json({ message: "Failed to fetch transactions" });
+  }
+});
+
+// ── GET /outstanding – Outstanding amount for org ────────────────────
+
+router.get("/outstanding", async (req: any, res: Response) => {
+  try {
+    const orgId = req.currentUser?.organizationId;
+    if (!orgId) return res.status(400).json({ message: "No organization" });
+
+    const unpaidChallans = await db
+      .select()
+      .from(challans)
+      .where(
+        and(
+          eq(challans.organizationId, orgId),
+          or(
+            eq(challans.status, "generated"),
+            eq(challans.status, "sent"),
+            eq(challans.status, "overdue")
+          )
+        )
+      )
+      .orderBy(desc(challans.billingPeriodStart));
+
+    const totalOutstanding = unpaidChallans.reduce(
+      (sum, ch) => sum + (ch.totalAmount ?? 0),
+      0
+    );
+
+    const overdueChallans = unpaidChallans.filter((ch) => ch.status === "overdue");
+    const overdueAmount = overdueChallans.reduce(
+      (sum, ch) => sum + (ch.totalAmount ?? 0),
+      0
+    );
+
+    res.json({
+      totalOutstanding,
+      overdueAmount,
+      unpaidCount: unpaidChallans.length,
+      overdueCount: overdueChallans.length,
+      challans: unpaidChallans.map((ch) => ({
+        id: ch.id,
+        challanNumber: ch.challanNumber,
+        billingPeriodStart: ch.billingPeriodStart,
+        totalAmount: ch.totalAmount,
+        status: ch.status,
+        dueDate: ch.dueDate,
+      })),
+    });
+  } catch (err) {
+    logger.error("Failed to fetch outstanding", err);
+    res.status(500).json({ message: "Failed to fetch outstanding" });
   }
 });
 
@@ -225,7 +278,30 @@ router.post("/generate", async (req: any, res: Response) => {
     const subtotal = baseCost + flowCost + userCost + formCost + storageCost;
     const taxPercent = 18; // GST
     const taxAmount = Math.round(subtotal * taxPercent / 100);
-    const totalAmount = subtotal + taxAmount;
+
+    // ── Carry-forward outstanding from unpaid challans ──
+
+    const unpaidChallans = await db
+      .select()
+      .from(challans)
+      .where(
+        and(
+          eq(challans.organizationId, orgId),
+          or(
+            eq(challans.status, "generated"),
+            eq(challans.status, "sent"),
+            eq(challans.status, "overdue")
+          )
+        )
+      );
+
+    const previousOutstanding = unpaidChallans.reduce(
+      (sum, ch) => sum + (ch.totalAmount ?? 0),
+      0
+    );
+    const cancelledChallanIds = unpaidChallans.map((ch) => ch.id);
+
+    const totalAmount = subtotal + taxAmount + previousOutstanding;
 
     logger.info("Challan cost breakdown", {
       orgId,
@@ -235,7 +311,10 @@ router.post("/generate", async (req: any, res: Response) => {
       userCount, userCost,
       formCount, formCost,
       storageMb, storageCost,
-      subtotal, taxAmount, totalAmount,
+      subtotal, taxAmount,
+      previousOutstanding,
+      cancelledChallanCount: cancelledChallanIds.length,
+      totalAmount,
     });
 
     // Due date: 15 days after billing period end
@@ -260,6 +339,8 @@ router.post("/generate", async (req: any, res: Response) => {
         storageMb,
         storageCost,
         baseCost,
+        previousOutstanding,
+        cancelledChallanIds: cancelledChallanIds.length > 0 ? JSON.stringify(cancelledChallanIds) : null,
         subtotal,
         taxPercent,
         taxAmount,
@@ -269,6 +350,23 @@ router.post("/generate", async (req: any, res: Response) => {
         generatedBy: req.currentUser?.email ?? "system",
       })
       .returning();
+
+    // Cancel old unpaid challans that were rolled into this one
+    if (cancelledChallanIds.length > 0) {
+      await db
+        .update(challans)
+        .set({
+          status: "cancelled",
+          notes: `Rolled into challan ${challanNumber}`,
+          updatedAt: new Date(),
+        })
+        .where(inArray(challans.id, cancelledChallanIds));
+
+      logger.info("Cancelled previous unpaid challans", {
+        cancelledIds: cancelledChallanIds,
+        rolledIntoChallan: challanNumber,
+      });
+    }
 
     logger.info("Challan generated", {
       challanNumber,
