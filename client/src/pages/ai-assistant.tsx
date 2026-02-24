@@ -35,6 +35,7 @@ import {
   RotateCcw,
   ChevronDown,
   Cpu,
+  GitBranch,
 } from "lucide-react";
 import {
   Select,
@@ -345,10 +346,11 @@ function SimulationCard({ data }: { data: any }) {
 // ─── Quick Prompt Chips ───────────────────────
 
 const QUICK_PROMPTS = [
-  { label: "Design a workflow", icon: Workflow, prompt: "I want to create a new workflow for my business. Let's start by understanding my business process." },
-  { label: "Create forms", icon: FileText, prompt: "I need to build forms for data collection in my workflow. Help me design them." },
-  { label: "Simulate flow", icon: Play, prompt: "Please simulate my existing workflow and show me step-by-step how it executes." },
-  { label: "Improve process", icon: Lightbulb, prompt: "Analyze my existing workflows and suggest improvements for efficiency, bottlenecks, and optimization." },
+  { label: "Design a workflow", icon: Workflow, prompt: "I want to create a new workflow for my business. Let's start by understanding my business process, industry, team structure, and what I want to automate." },
+  { label: "Create forms", icon: FileText, prompt: "I need to build forms for data collection in my workflow. Please understand my business type and customer type first, then help me design the right forms with relevant fields." },
+  { label: "Simulate flow", icon: Play, prompt: "Please simulate my existing workflow and show me step-by-step how it executes, including all decision branches, parallel paths, and merge points." },
+  { label: "Improve process", icon: Lightbulb, prompt: "Analyze my existing workflows and suggest improvements for efficiency, bottlenecks, decision logic, and optimization. Also suggest where decision boxes, parallel steps, or merge conditions could help." },
+  { label: "Modify workflow", icon: GitBranch, prompt: "I want to modify an existing workflow. Please review my current flow rules and help me update, extend, or restructure them — including adding decision branches, parallel steps, merge points, or new forms." },
 ];
 
 // ─── Main Component ───────────────────────────
@@ -360,14 +362,42 @@ export default function AIAssistant() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Scope localStorage keys to user to prevent cross-user data leakage
+  const storagePrefix = dbUser?.id ? `ai-chat-${dbUser.id}` : "ai-chat";
+  const chatStorageKey = `${storagePrefix}-messages`;
+  const modelStorageKey = `${storagePrefix}-model`;
+
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    try {
+      const saved = localStorage.getItem(chatStorageKey);
+      if (!saved) return [];
+      const parsed: ChatMessage[] = JSON.parse(saved);
+      // Restore Date objects and re-parse AI blocks from content
+      return parsed.map((m) => ({
+        ...m,
+        timestamp: new Date(m.timestamp),
+        parsedBlocks: m.role === "assistant" ? parseAIResponse(m.content) : undefined,
+      }));
+    } catch {
+      return [];
+    }
+  });
   const [inputValue, setInputValue] = useState("");
   const [showApiKeySetup, setShowApiKeySetup] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [deployingFlow, setDeployingFlow] = useState(false);
   const [deployingForms, setDeployingForms] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("gemini-2.0-flash");
+  const [selectedModel, setSelectedModel] = useState(() => {
+    try {
+      // dbUser may not be available on first render for lazy init, use fallback key
+      const key = dbUser?.id ? `ai-chat-${dbUser.id}-model` : null;
+      const saved = key ? localStorage.getItem(key) : null;
+      return saved || "gemini-2.0-flash";
+    } catch {
+      return "gemini-2.0-flash";
+    }
+  });
   const [keyProvider, setKeyProvider] = useState<"gemini" | "openai">("gemini");
 
   // ─── Queries ────────────────────────────────
@@ -593,6 +623,25 @@ export default function AIAssistant() {
     }
   };
 
+  // ─── Persist chat & model (scoped to user) ──
+
+  useEffect(() => {
+    try {
+      // Strip parsedBlocks before saving — they're re-parsed from content on restore.
+      // This prevents storing duplicate data that would fill the 5MB localStorage limit.
+      const slim = messages.map(({ parsedBlocks, ...rest }) => rest);
+      localStorage.setItem(chatStorageKey, JSON.stringify(slim));
+    } catch {
+      // ignore storage errors (private mode / quota)
+    }
+  }, [messages, chatStorageKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(modelStorageKey, selectedModel);
+    } catch {}
+  }, [selectedModel, modelStorageKey]);
+
   // ─── Auto scroll ────────────────────────────
 
   useEffect(() => {
@@ -632,35 +681,46 @@ export default function AIAssistant() {
                 <SelectValue placeholder="Select model" />
               </SelectTrigger>
               <SelectContent>
-                {geminiModels.length > 0 && (
-                  <>
-                    <div className="px-2 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Google Gemini</div>
-                    {geminiModels.map((m) => (
-                      <SelectItem key={m.id} value={m.id} className="text-xs" disabled={!m.available}>
-                        <div className="flex items-center gap-2 w-full">
-                          <span className={!m.available ? "text-gray-400" : ""}>{m.label}</span>
-                          {!m.available && <span className="text-[10px] text-amber-500">No key</span>}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </>
-                )}
-                {openaiModels.length > 0 && (
-                  <>
-                    <div className="px-2 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider mt-1">OpenAI</div>
-                    {openaiModels.map((m) => (
-                      <SelectItem key={m.id} value={m.id} className="text-xs" disabled={!m.available}>
-                        <div className="flex items-center gap-2 w-full">
-                          <span className={!m.available ? "text-gray-400" : ""}>{m.label}</span>
-                          {!m.available && <span className="text-[10px] text-amber-500">No key</span>}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </>
-                )}
-                {availableModels.length === 0 && (
-                  <SelectItem value="gemini-2.0-flash" className="text-xs">Gemini 2.0 Flash</SelectItem>
-                )}
+                {(() => {
+                  const neitherConfigured = !geminiConfigured && !openaiConfigured;
+                  // When no keys configured show all with "No key" label (setup mode)
+                  // Otherwise show ONLY models whose provider key is configured
+                  const visibleGemini = neitherConfigured
+                    ? geminiModels
+                    : geminiModels.filter((m) => m.available);
+                  const visibleOpenai = neitherConfigured
+                    ? openaiModels
+                    : openaiModels.filter((m) => m.available);
+                  if (visibleGemini.length === 0 && visibleOpenai.length === 0) {
+                    return <SelectItem value="gemini-2.0-flash" className="text-xs">Gemini 2.0 Flash</SelectItem>;
+                  }
+                  return (
+                    <>
+                      {visibleGemini.length > 0 && (
+                        <>
+                          <div className="px-2 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Google Gemini</div>
+                          {visibleGemini.map((m) => (
+                            <SelectItem key={m.id} value={m.id} className="text-xs" disabled={!m.available}>
+                              <span>{m.label}</span>
+                              {!m.available && <span className="ml-1 text-[10px] text-amber-500">No key</span>}
+                            </SelectItem>
+                          ))}
+                        </>
+                      )}
+                      {visibleOpenai.length > 0 && (
+                        <>
+                          <div className="px-2 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider mt-1">OpenAI</div>
+                          {visibleOpenai.map((m) => (
+                            <SelectItem key={m.id} value={m.id} className="text-xs" disabled={!m.available}>
+                              <span>{m.label}</span>
+                              {!m.available && <span className="ml-1 text-[10px] text-amber-500">No key</span>}
+                            </SelectItem>
+                          ))}
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
               </SelectContent>
             </Select>
             {/* Status badges */}
@@ -691,7 +751,10 @@ export default function AIAssistant() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setMessages([])}
+                onClick={() => {
+                  setMessages([]);
+                  try { localStorage.removeItem(chatStorageKey); } catch {}
+                }}
               >
                 <RotateCcw className="w-4 h-4 mr-1" />
                 New Chat
@@ -864,7 +927,18 @@ export default function AIAssistant() {
 
                 {/* Quick prompts */}
                 <div className="grid grid-cols-2 gap-3 max-w-lg w-full">
-                  {QUICK_PROMPTS.map((qp) => (
+                  {QUICK_PROMPTS.map((qp, idx) => (
+                    idx === QUICK_PROMPTS.length - 1 && QUICK_PROMPTS.length % 2 !== 0 ? (
+                      <button
+                        key={qp.label}
+                        onClick={() => sendMessage(qp.prompt)}
+                        disabled={!isConfigured || !selectedProviderConfigured || chatMutation.isPending}
+                        className="col-span-2 flex items-center gap-3 p-3 rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/20 hover:bg-orange-50 dark:hover:bg-orange-900/30 transition text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <qp.icon className="w-5 h-5 text-orange-500 flex-shrink-0" />
+                        <span className="text-sm font-medium">{qp.label}</span>
+                      </button>
+                    ) : (
                     <button
                       key={qp.label}
                       onClick={() => sendMessage(qp.prompt)}
@@ -874,6 +948,7 @@ export default function AIAssistant() {
                       <qp.icon className="w-5 h-5 text-blue-500 flex-shrink-0" />
                       <span className="text-sm font-medium">{qp.label}</span>
                     </button>
+                    )
                   ))}
                 </div>
               </div>
