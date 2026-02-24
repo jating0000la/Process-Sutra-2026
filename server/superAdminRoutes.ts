@@ -1,6 +1,9 @@
 import { Express } from "express";
 import { storage } from "./storage";
 import { getQuickFormTemplatesByOrg, getQuickFormResponsesCollection } from "./mongo/quickFormClient";
+import { db } from "./db.js";
+import { challans, paymentTransactions, organizations, users, tasks, flowRules, auditLogs, userLoginLogs } from "@shared/schema";
+import { eq, desc, sql, and, gte, lte } from "drizzle-orm";
 
 /**
  * Super Admin Organization Management Routes
@@ -405,6 +408,457 @@ export function registerSuperAdminRoutes(
     } catch (error) {
       console.error("Error calculating billing summary:", error);
       res.status(500).json({ message: "Failed to calculate billing summary" });
+    }
+  });
+
+  // ── Cross-org Challans ─────────────────────────────────────────────
+  app.get("/api/super-admin/all-challans", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 200;
+      const status = req.query.status as string | undefined;
+      const orgId = req.query.organizationId as string | undefined;
+
+      let query = db
+        .select({
+          challan: challans,
+          orgName: organizations.name,
+        })
+        .from(challans)
+        .leftJoin(organizations, eq(challans.organizationId, organizations.id));
+
+      const conditions: any[] = [];
+      if (status) conditions.push(eq(challans.status, status as any));
+      if (orgId) conditions.push(eq(challans.organizationId, orgId));
+
+      if (conditions.length > 0) {
+        query = query.where(and(...conditions)) as any;
+      }
+
+      const rows = await (query as any)
+        .orderBy(desc(challans.createdAt))
+        .limit(limit);
+
+      res.json(rows.map((r: any) => ({ ...r.challan, organizationName: r.orgName })));
+    } catch (error) {
+      console.error("Error fetching all challans:", error);
+      res.status(500).json({ message: "Failed to fetch challans" });
+    }
+  });
+
+  // ── Cross-org Payment Transactions ─────────────────────────────────
+  app.get("/api/super-admin/all-transactions", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 200;
+      const status = req.query.status as string | undefined;
+      const orgId = req.query.organizationId as string | undefined;
+
+      let query = db
+        .select({
+          txn: paymentTransactions,
+          orgName: organizations.name,
+        })
+        .from(paymentTransactions)
+        .leftJoin(organizations, eq(paymentTransactions.organizationId, organizations.id));
+
+      const conditions: any[] = [];
+      if (status) conditions.push(eq(paymentTransactions.status, status as any));
+      if (orgId) conditions.push(eq(paymentTransactions.organizationId, orgId));
+
+      if (conditions.length > 0) {
+        query = query.where(and(...conditions)) as any;
+      }
+
+      const rows = await (query as any)
+        .orderBy(desc(paymentTransactions.createdAt))
+        .limit(limit);
+
+      res.json(rows.map((r: any) => ({ ...r.txn, organizationName: r.orgName })));
+    } catch (error) {
+      console.error("Error fetching all transactions:", error);
+      res.status(500).json({ message: "Failed to fetch transactions" });
+    }
+  });
+
+  // ── Audit Logs ─────────────────────────────────────────────────────
+  app.get("/api/super-admin/audit-logs", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const action = req.query.action as string | undefined;
+      const targetType = req.query.targetType as string | undefined;
+      const organizationId = req.query.organizationId as string | undefined;
+
+      const logs = await storage.getAuditLogs({
+        action: action || undefined,
+        targetType: targetType || undefined,
+        organizationId: organizationId || undefined,
+        limit,
+      });
+
+      res.json(logs);
+    } catch (error) {
+      console.error("Error fetching audit logs:", error);
+      res.status(500).json({ message: "Failed to fetch audit logs" });
+    }
+  });
+
+  // ── Change user role (user ↔ admin) cross-org ─────────────────────
+  app.put("/api/super-admin/users/:userId/role", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const userId = req.params.userId;
+      const { role } = req.body;
+
+      if (!['user', 'admin'].includes(role)) {
+        return res.status(400).json({ message: "Role must be 'user' or 'admin'" });
+      }
+
+      const oldUser = await storage.getUser(userId);
+      if (!oldUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const user = await storage.updateUser(userId, { role });
+
+      await storage.createAuditLog({
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        action: "CHANGE_USER_ROLE",
+        targetType: "user",
+        targetId: userId,
+        oldValue: JSON.stringify({ role: oldUser.role }),
+        newValue: JSON.stringify({ role }),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId: oldUser.organizationId || undefined,
+      });
+
+      res.json(user);
+    } catch (error) {
+      console.error("Error changing user role:", error);
+      res.status(500).json({ message: "Failed to change user role" });
+    }
+  });
+
+  // ── Update challan status (super admin can mark paid, cancel, etc.) ─
+  app.put("/api/super-admin/challans/:id/status", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const challanId = req.params.id;
+      const { status, notes } = req.body;
+
+      if (!['generated', 'sent', 'paid', 'overdue', 'cancelled'].includes(status)) {
+        return res.status(400).json({ message: "Invalid status" });
+      }
+
+      const updates: any = { status, updatedAt: new Date() };
+      if (notes) updates.notes = notes;
+      if (status === 'paid') updates.paidAt = new Date();
+
+      const [updated] = await db
+        .update(challans)
+        .set(updates)
+        .where(eq(challans.id, challanId))
+        .returning();
+
+      if (!updated) {
+        return res.status(404).json({ message: "Challan not found" });
+      }
+
+      await storage.createAuditLog({
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        action: "UPDATE_CHALLAN_STATUS",
+        targetType: "challan",
+        targetId: challanId,
+        newValue: JSON.stringify({ status, notes }),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId: updated.organizationId,
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating challan status:", error);
+      res.status(500).json({ message: "Failed to update challan status" });
+    }
+  });
+
+  // ── Organization Full Details ───────────────────────────────────────
+  app.get("/api/super-admin/organizations/:id/details", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const organizationId = req.params.id;
+      const org = await storage.getOrganization(organizationId);
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+
+      const [orgUsers, orgTasks, orgFlows, orgChallansRows, orgTxnRows, loginLogs] = await Promise.all([
+        storage.getUsersByOrganization(organizationId),
+        storage.getTasksByOrganization(organizationId),
+        storage.getFlowRulesByOrganization(organizationId),
+        db.select().from(challans).where(eq(challans.organizationId, organizationId)).orderBy(desc(challans.createdAt)).limit(20),
+        db.select().from(paymentTransactions).where(eq(paymentTransactions.organizationId, organizationId)).orderBy(desc(paymentTransactions.createdAt)).limit(20),
+        storage.getOrganizationLoginLogs(organizationId),
+      ]);
+
+      const formTemplates = await getQuickFormTemplatesByOrg(organizationId);
+      const responsesCol = await getQuickFormResponsesCollection();
+      const formResponseCount = await responsesCol.countDocuments({ orgId: organizationId });
+
+      const activeUsers = orgUsers.filter(u => u.status === "active").length;
+      const completedTasks = orgTasks.filter(t => t.status === "completed").length;
+      const overdueTasks = orgTasks.filter(t => {
+        if (t.status === "pending" || t.status === "in_progress") {
+          return t.plannedTime && new Date(t.plannedTime) < new Date();
+        }
+        return false;
+      }).length;
+      const uniqueSystems = [...new Set(orgFlows.map(f => f.system))];
+
+      const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const recentLogins = loginLogs.filter((l: any) => new Date(l.loginTime) >= thirtyDaysAgo).length;
+
+      const totalChallanAmount = orgChallansRows.reduce((s, c) => s + (c.totalAmount || 0), 0);
+      const paidChallans = orgChallansRows.filter(c => c.status === "paid");
+      const paidAmount = paidChallans.reduce((s, c) => s + (c.totalAmount || 0), 0);
+
+      res.json({
+        organization: org,
+        stats: {
+          totalUsers: orgUsers.length,
+          activeUsers,
+          totalTasks: orgTasks.length,
+          completedTasks,
+          overdueTasks,
+          taskCompletionRate: orgTasks.length > 0 ? ((completedTasks / orgTasks.length) * 100).toFixed(1) : "0",
+          totalFlowRules: orgFlows.length,
+          uniqueSystems,
+          totalFormTemplates: formTemplates.length,
+          totalFormResponses: formResponseCount,
+          recentLogins30d: recentLogins,
+          totalChallans: orgChallansRows.length,
+          totalChallanAmount,
+          paidAmount,
+          outstandingAmount: totalChallanAmount - paidAmount,
+          totalTransactions: orgTxnRows.length,
+        },
+        users: orgUsers.map(u => ({
+          id: u.id, email: u.email, firstName: u.firstName, lastName: u.lastName,
+          role: u.role, status: u.status, department: u.department,
+          lastLoginAt: u.lastLoginAt, createdAt: u.createdAt,
+        })),
+        recentChallans: orgChallansRows,
+        recentTransactions: orgTxnRows,
+      });
+    } catch (error) {
+      console.error("Error fetching org details:", error);
+      res.status(500).json({ message: "Failed to fetch organization details" });
+    }
+  });
+
+  // ── CSV Export Helper ──────────────────────────────────────────────
+  function toCsv(headers: string[], rows: any[][]): string {
+    const escape = (val: any) => {
+      if (val == null) return "";
+      const str = String(val);
+      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+    return [headers.join(","), ...rows.map(r => r.map(escape).join(","))].join("\n");
+  }
+
+  // ── CSV Export Endpoint ────────────────────────────────────────────
+  app.get("/api/super-admin/export/:type", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const type = req.params.type;
+      const from = req.query.from ? new Date(req.query.from as string) : undefined;
+      const to = req.query.to ? new Date(req.query.to as string) : undefined;
+      const orgId = req.query.organizationId as string | undefined;
+
+      // Set end-of-day for 'to' date
+      if (to) { to.setHours(23, 59, 59, 999); }
+
+      let csvContent = "";
+      let filename = "";
+
+      switch (type) {
+        case "organizations": {
+          const allOrgs = await storage.getAllOrganizations();
+          const headers = ["ID","Name","Domain","Company Name","Industry","Customer Type","Business Type","GST Number","Plan Type","Pricing Tier","Monthly Price (₹)","Is Active","Is Suspended","Suspension Reason","Max Users","Max Flows","Max Storage (MB)","Health Score","Health Status","Owner Email","Usage Based Billing","Price/Flow (₹)","Price/User (₹)","Price/GB (₹)","Created At"];
+          const rows = allOrgs
+            .filter(o => {
+              if (from && o.createdAt && new Date(o.createdAt) < from) return false;
+              if (to && o.createdAt && new Date(o.createdAt) > to) return false;
+              return true;
+            })
+            .map(o => [
+              o.id, o.name, o.domain, o.companyName || "", o.industry || "", o.customerType || "", o.businessType || "", o.gstNumber || "",
+              o.planType, o.pricingTier, ((o.monthlyPrice || 0) / 100).toFixed(2),
+              o.isActive ? "Yes" : "No", o.isSuspended ? "Yes" : "No", o.suspensionReason || "",
+              o.maxUsers, o.maxFlows, o.maxStorage, o.healthScore, o.healthStatus, o.ownerEmail || "",
+              o.usageBasedBilling ? "Yes" : "No", ((o.pricePerFlow || 0) / 100).toFixed(2),
+              ((o.pricePerUser || 0) / 100).toFixed(2), ((o.pricePerGb || 0) / 100).toFixed(2),
+              o.createdAt ? new Date(o.createdAt).toISOString() : "",
+            ]);
+          csvContent = toCsv(headers, rows);
+          filename = "organizations";
+          break;
+        }
+        case "users": {
+          const conditions: any[] = [];
+          if (from) conditions.push(gte(users.createdAt, from));
+          if (to) conditions.push(lte(users.createdAt, to));
+          if (orgId) conditions.push(eq(users.organizationId, orgId));
+          let query = db.select({ user: users, orgName: organizations.name }).from(users).leftJoin(organizations, eq(users.organizationId, organizations.id));
+          if (conditions.length) query = query.where(and(...conditions)) as any;
+          const rows = await (query as any).orderBy(desc(users.createdAt));
+          const headers = ["ID","Email","First Name","Last Name","Role","Department","Designation","Status","Is Super Admin","Organization","Phone","Employee ID","Last Login","Created At"];
+          csvContent = toCsv(headers, rows.map((r: any) => [
+            r.user.id, r.user.email, r.user.firstName || "", r.user.lastName || "",
+            r.user.role, r.user.department || "", r.user.designation || "", r.user.status,
+            r.user.isSuperAdmin ? "Yes" : "No", r.orgName || "", r.user.phoneNumber || "",
+            r.user.employeeId || "",
+            r.user.lastLoginAt ? new Date(r.user.lastLoginAt).toISOString() : "",
+            r.user.createdAt ? new Date(r.user.createdAt).toISOString() : "",
+          ]));
+          filename = "users";
+          break;
+        }
+        case "tasks": {
+          const conditions: any[] = [];
+          if (from) conditions.push(gte(tasks.createdAt, from));
+          if (to) conditions.push(lte(tasks.createdAt, to));
+          if (orgId) conditions.push(eq(tasks.organizationId, orgId));
+          let query = db.select({ task: tasks, orgName: organizations.name }).from(tasks).leftJoin(organizations, eq(tasks.organizationId, organizations.id));
+          if (conditions.length) query = query.where(and(...conditions)) as any;
+          const rows = await (query as any).orderBy(desc(tasks.createdAt)).limit(5000);
+          const headers = ["ID","Organization","System","Flow ID","Order Number","Task Name","Doer Email","Status","Planned Time","Actual Completion","Initiated By","Created At"];
+          csvContent = toCsv(headers, rows.map((r: any) => [
+            r.task.id, r.orgName || "", r.task.system, r.task.flowId, r.task.orderNumber || "",
+            r.task.taskName, r.task.doerEmail, r.task.status,
+            r.task.plannedTime ? new Date(r.task.plannedTime).toISOString() : "",
+            r.task.actualCompletionTime ? new Date(r.task.actualCompletionTime).toISOString() : "",
+            r.task.flowInitiatedBy || "",
+            r.task.createdAt ? new Date(r.task.createdAt).toISOString() : "",
+          ]));
+          filename = "tasks";
+          break;
+        }
+        case "challans": {
+          const conditions: any[] = [];
+          if (from) conditions.push(gte(challans.createdAt, from));
+          if (to) conditions.push(lte(challans.createdAt, to));
+          if (orgId) conditions.push(eq(challans.organizationId, orgId));
+          let query = db.select({ challan: challans, orgName: organizations.name }).from(challans).leftJoin(organizations, eq(challans.organizationId, organizations.id));
+          if (conditions.length) query = query.where(and(...conditions)) as any;
+          const rows = await (query as any).orderBy(desc(challans.createdAt));
+          const headers = ["Challan Number","Organization","Period Start","Period End","Flow Count","Flow Cost (₹)","User Count","User Cost (₹)","Form Count","Form Cost (₹)","Storage MB","Storage Cost (₹)","Base Cost (₹)","Subtotal (₹)","Tax %","Tax (₹)","Total (₹)","Status","Due Date","Paid At","Created At"];
+          csvContent = toCsv(headers, rows.map((r: any) => [
+            r.challan.challanNumber, r.orgName || "",
+            r.challan.billingPeriodStart ? new Date(r.challan.billingPeriodStart).toISOString() : "",
+            r.challan.billingPeriodEnd ? new Date(r.challan.billingPeriodEnd).toISOString() : "",
+            r.challan.flowCount, ((r.challan.flowCost || 0) / 100).toFixed(2),
+            r.challan.userCount, ((r.challan.userCost || 0) / 100).toFixed(2),
+            r.challan.formCount, ((r.challan.formCost || 0) / 100).toFixed(2),
+            r.challan.storageMb, ((r.challan.storageCost || 0) / 100).toFixed(2),
+            ((r.challan.baseCost || 0) / 100).toFixed(2),
+            ((r.challan.subtotal || 0) / 100).toFixed(2),
+            r.challan.taxPercent, ((r.challan.taxAmount || 0) / 100).toFixed(2),
+            ((r.challan.totalAmount || 0) / 100).toFixed(2),
+            r.challan.status || "generated",
+            r.challan.dueDate ? new Date(r.challan.dueDate).toISOString() : "",
+            r.challan.paidAt ? new Date(r.challan.paidAt).toISOString() : "",
+            r.challan.createdAt ? new Date(r.challan.createdAt).toISOString() : "",
+          ]));
+          filename = "challans";
+          break;
+        }
+        case "transactions": {
+          const conditions: any[] = [];
+          if (from) conditions.push(gte(paymentTransactions.createdAt, from));
+          if (to) conditions.push(lte(paymentTransactions.createdAt, to));
+          if (orgId) conditions.push(eq(paymentTransactions.organizationId, orgId));
+          let query = db.select({ txn: paymentTransactions, orgName: organizations.name }).from(paymentTransactions).leftJoin(organizations, eq(paymentTransactions.organizationId, organizations.id));
+          if (conditions.length) query = query.where(and(...conditions)) as any;
+          const rows = await (query as any).orderBy(desc(paymentTransactions.createdAt));
+          const headers = ["ID","Organization","Challan ID","PayU TxnID","PayU PaymentID","PayU Status","PayU Mode","Amount (₹)","Currency","Status","Failure Reason","Initiated By","Created At"];
+          csvContent = toCsv(headers, rows.map((r: any) => [
+            r.txn.id, r.orgName || "", r.txn.challanId || "",
+            r.txn.payuTxnId || "", r.txn.payuPaymentId || "", r.txn.payuStatus || "", r.txn.payuMode || "",
+            ((r.txn.amount || 0) / 100).toFixed(2), r.txn.currency || "INR",
+            r.txn.status || "initiated", r.txn.failureReason || "", r.txn.initiatedBy || "",
+            r.txn.createdAt ? new Date(r.txn.createdAt).toISOString() : "",
+          ]));
+          filename = "transactions";
+          break;
+        }
+        case "audit-logs": {
+          const conditions: any[] = [];
+          if (from) conditions.push(gte(auditLogs.createdAt, from));
+          if (to) conditions.push(lte(auditLogs.createdAt, to));
+          if (orgId) conditions.push(eq(auditLogs.organizationId, orgId));
+          let query = db.select().from(auditLogs);
+          if (conditions.length) query = query.where(and(...conditions)) as any;
+          const rows = await (query as any).orderBy(desc(auditLogs.createdAt)).limit(5000);
+          const headers = ["ID","Actor Email","Action","Target Type","Target ID","Target Email","Old Value","New Value","IP Address","Organization ID","Created At"];
+          csvContent = toCsv(headers, rows.map((r: any) => [
+            r.id, r.actorEmail, r.action, r.targetType || "", r.targetId || "", r.targetEmail || "",
+            r.oldValue || "", r.newValue || "", r.ipAddress || "", r.organizationId || "",
+            r.createdAt ? new Date(r.createdAt).toISOString() : "",
+          ]));
+          filename = "audit-logs";
+          break;
+        }
+        case "login-logs": {
+          const conditions: any[] = [];
+          if (from) conditions.push(gte(userLoginLogs.loginTime, from));
+          if (to) conditions.push(lte(userLoginLogs.loginTime, to));
+          if (orgId) conditions.push(eq(userLoginLogs.organizationId, orgId));
+          let query = db.select({ log: userLoginLogs, orgName: organizations.name }).from(userLoginLogs).leftJoin(organizations, eq(userLoginLogs.organizationId, organizations.id));
+          if (conditions.length) query = query.where(and(...conditions)) as any;
+          const rows = await (query as any).orderBy(desc(userLoginLogs.loginTime)).limit(5000);
+          const headers = ["ID","Organization","User ID","Device Name","Device Type","Browser","OS","IP Address","Login Time","Logout Time","Session Duration (min)","Login Status","Failure Reason"];
+          csvContent = toCsv(headers, rows.map((r: any) => [
+            r.log.id, r.orgName || "", r.log.userId, r.log.deviceName || "", r.log.deviceType || "",
+            r.log.browserName ? `${r.log.browserName} ${r.log.browserVersion || ""}`.trim() : "",
+            r.log.operatingSystem || "", r.log.ipAddress || "",
+            r.log.loginTime ? new Date(r.log.loginTime).toISOString() : "",
+            r.log.logoutTime ? new Date(r.log.logoutTime).toISOString() : "",
+            r.log.sessionDuration ?? "", r.log.loginStatus || "", r.log.failureReason || "",
+          ]));
+          filename = "login-logs";
+          break;
+        }
+        case "flow-rules": {
+          const conditions: any[] = [];
+          if (from) conditions.push(gte(flowRules.createdAt, from));
+          if (to) conditions.push(lte(flowRules.createdAt, to));
+          if (orgId) conditions.push(eq(flowRules.organizationId, orgId));
+          let query = db.select({ rule: flowRules, orgName: organizations.name }).from(flowRules).leftJoin(organizations, eq(flowRules.organizationId, organizations.id));
+          if (conditions.length) query = query.where(and(...conditions)) as any;
+          const rows = await (query as any).orderBy(desc(flowRules.createdAt));
+          const headers = ["ID","Organization","System","Current Task","Status","Next Task","TAT","TAT Type","Doer","Email","Form ID","Transferable","Created At"];
+          csvContent = toCsv(headers, rows.map((r: any) => [
+            r.rule.id, r.orgName || "", r.rule.system, r.rule.currentTask || "", r.rule.status || "",
+            r.rule.nextTask, r.rule.tat, r.rule.tatType, r.rule.doer, r.rule.email,
+            r.rule.formId || "", r.rule.transferable ? "Yes" : "No",
+            r.rule.createdAt ? new Date(r.rule.createdAt).toISOString() : "",
+          ]));
+          filename = "flow-rules";
+          break;
+        }
+        default:
+          return res.status(400).json({ message: `Unknown export type: ${type}. Use: organizations, users, tasks, challans, transactions, audit-logs, login-logs, flow-rules` });
+      }
+
+      const dateSuffix = from || to
+        ? `_${from ? from.toISOString().slice(0, 10) : "start"}_to_${to ? to.toISOString().slice(0, 10) : "now"}`
+        : "";
+
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}${dateSuffix}_${new Date().toISOString().slice(0, 10)}.csv"`);
+      res.send(csvContent);
+    } catch (error) {
+      console.error("Error exporting CSV:", error);
+      res.status(500).json({ message: "Failed to export data" });
     }
   });
 }

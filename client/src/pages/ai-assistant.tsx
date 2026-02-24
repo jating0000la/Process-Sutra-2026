@@ -396,12 +396,30 @@ export default function AIAssistant() {
 
   const { data: modelsData } = useQuery<any>({
     queryKey: ["/api/ai-assistant/models"],
-    staleTime: 60 * 60 * 1000,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
-  const availableModels: Array<{ id: string; label: string; maxTokens: number; provider: string }> = modelsData?.models || [];
+  const availableModels: Array<{ id: string; label: string; maxTokens: number; provider: string; available: boolean }> = modelsData?.models || [];
   const geminiModels = availableModels.filter((m) => m.provider === "gemini");
   const openaiModels = availableModels.filter((m) => m.provider === "openai");
+
+  // ─── Auto-select model based on configured API keys ─────────────
+  useEffect(() => {
+    if (!modelsData) return;
+    const currentProvider = availableModels.find((m) => m.id === selectedModel)?.provider || "gemini";
+    const currentProviderOk = currentProvider === "openai"
+      ? modelsData.openaiConfigured
+      : modelsData.geminiConfigured;
+
+    if (!currentProviderOk) {
+      // Switch to the server-suggested default (which is already provider-aware)
+      const suggested = modelsData.default as string;
+      if (suggested && suggested !== selectedModel) {
+        setSelectedModel(suggested);
+      }
+    }
+  }, [modelsData]);
 
   // ─── Mutations ──────────────────────────────
 
@@ -412,8 +430,15 @@ export default function AIAssistant() {
     },
     onSuccess: (_data: any, variables: { key: string; provider: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/ai-assistant/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-assistant/models"] });
       setShowApiKeySetup(false);
       setApiKeyInput("");
+      // Auto-select a model matching the newly saved provider
+      if (variables.provider === "openai") {
+        setSelectedModel("gpt-4o");
+      } else {
+        setSelectedModel("gemini-2.0-flash");
+      }
       toast({ title: "API key saved", description: `${variables.provider === "openai" ? "OpenAI" : "Gemini"} API key configured successfully` });
     },
     onError: (err: any) => {
@@ -426,8 +451,16 @@ export default function AIAssistant() {
       const res = await apiRequest("DELETE", "/api/ai-assistant/api-key", { provider });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data: any, provider: string) => {
       queryClient.invalidateQueries({ queryKey: ["/api/ai-assistant/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-assistant/models"] });
+      // If the removed provider was the selected model's provider, switch to the other
+      const currentProvider = availableModels.find((m) => m.id === selectedModel)?.provider || "gemini";
+      if (currentProvider === provider) {
+        const other = provider === "openai" ? "gemini" : "openai";
+        const fallback = other === "openai" ? "gpt-4o" : "gemini-2.0-flash";
+        setSelectedModel(fallback);
+      }
       toast({ title: "API key removed" });
     },
   });
@@ -603,10 +636,10 @@ export default function AIAssistant() {
                   <>
                     <div className="px-2 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Google Gemini</div>
                     {geminiModels.map((m) => (
-                      <SelectItem key={m.id} value={m.id} className="text-xs">
+                      <SelectItem key={m.id} value={m.id} className="text-xs" disabled={!m.available}>
                         <div className="flex items-center gap-2 w-full">
-                          <span>{m.label}</span>
-                          {!geminiConfigured && <span className="text-[10px] text-amber-500">No key</span>}
+                          <span className={!m.available ? "text-gray-400" : ""}>{m.label}</span>
+                          {!m.available && <span className="text-[10px] text-amber-500">No key</span>}
                         </div>
                       </SelectItem>
                     ))}
@@ -616,10 +649,10 @@ export default function AIAssistant() {
                   <>
                     <div className="px-2 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider mt-1">OpenAI</div>
                     {openaiModels.map((m) => (
-                      <SelectItem key={m.id} value={m.id} className="text-xs">
+                      <SelectItem key={m.id} value={m.id} className="text-xs" disabled={!m.available}>
                         <div className="flex items-center gap-2 w-full">
-                          <span>{m.label}</span>
-                          {!openaiConfigured && <span className="text-[10px] text-amber-500">No key</span>}
+                          <span className={!m.available ? "text-gray-400" : ""}>{m.label}</span>
+                          {!m.available && <span className="text-[10px] text-amber-500">No key</span>}
                         </div>
                       </SelectItem>
                     ))}

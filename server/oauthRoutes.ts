@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { randomBytes } from 'crypto';
 import { getAuthorizationUrl, getTokensFromCode, verifyIdToken } from './services/googleOAuth';
 import { isAuthenticated } from './firebaseAuth';
 import { storage } from './storage';
@@ -13,8 +14,17 @@ oauthRouter.get('/google/authorize', isAuthenticated, async (req: any, res) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    // Generate state with user ID for verification
-    const state = Buffer.from(JSON.stringify({ userId: sessionUser.id })).toString('base64');
+    // SECURITY: Generate CSRF token and store in session
+    const csrfToken = randomBytes(32).toString('hex');
+    (req.session as any).driveOAuthState = csrfToken;
+    
+    // Save session before generating URL
+    await new Promise<void>((resolve, reject) => {
+      req.session.save((err: any) => err ? reject(err) : resolve());
+    });
+
+    // Generate state with user ID AND CSRF token for verification
+    const state = Buffer.from(JSON.stringify({ userId: sessionUser.id, csrf: csrfToken })).toString('base64');
     const authUrl = getAuthorizationUrl(state, true); // true = Drive flow
 
     res.json({ authUrl });
@@ -43,6 +53,15 @@ oauthRouter.get('/google/callback', async (req, res) => {
     try {
       const stateData = JSON.parse(Buffer.from(state as string, 'base64').toString());
       userId = stateData.userId;
+      
+      // SECURITY: Verify CSRF token from session
+      const sessionCsrf = (req.session as any)?.driveOAuthState;
+      if (!sessionCsrf || sessionCsrf !== stateData.csrf) {
+        console.error('Drive OAuth CSRF mismatch');
+        return res.redirect('/profile?error=invalid_state');
+      }
+      // Clear the CSRF token after use
+      delete (req.session as any).driveOAuthState;
     } catch (e) {
       console.error('Failed to decode OAuth state:', e);
       return res.redirect('/profile?error=invalid_state');

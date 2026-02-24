@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import Header from "@/components/header";
@@ -106,6 +106,41 @@ export default function QuickFormBuilder() {
   const [emailRecipient, setEmailRecipient] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
+
+  // Refs for communication text fields (used for cursor-position tag insertion)
+  const whatsappPhoneRef = useRef<HTMLInputElement>(null);
+  const whatsappMessageRef = useRef<HTMLTextAreaElement>(null);
+  const emailRecipientRef = useRef<HTMLInputElement>(null);
+  const emailSubjectRef = useRef<HTMLInputElement>(null);
+  const emailBodyRef = useRef<HTMLTextAreaElement>(null);
+
+  /** Insert {{tag}} at cursor position in a ref'd input/textarea and update state */
+  const insertTagAtCursor = useCallback(
+    (
+      ref: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>,
+      currentValue: string,
+      setter: (v: string) => void,
+      tag: string
+    ) => {
+      const el = ref.current;
+      const placeholder = `{{${tag}}}`;
+      if (el) {
+        const start = el.selectionStart ?? currentValue.length;
+        const end = el.selectionEnd ?? currentValue.length;
+        const newVal = currentValue.slice(0, start) + placeholder + currentValue.slice(end);
+        setter(newVal);
+        // Restore cursor after the inserted tag
+        requestAnimationFrame(() => {
+          const pos = start + placeholder.length;
+          el.focus();
+          el.setSelectionRange(pos, pos);
+        });
+      } else {
+        setter(currentValue + placeholder);
+      }
+    },
+    []
+  );
 
   // Builder active tab: "fields" | "communication"
   const [builderTab, setBuilderTab] = useState<"fields" | "communication">("fields");
@@ -639,13 +674,16 @@ export default function QuickFormBuilder() {
             ) : (
             /* ─── Communication Settings Tab ───────────────────────── */
             <div className="flex-1 overflow-y-auto p-6 space-y-8">
-              {/* Available placeholders hint */}
-              {fields.length > 0 && (
+              {/* Field tag instructions */}
+              {fields.length > 0 ? (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
-                  <p className="font-medium text-blue-800 mb-1">Available Placeholders</p>
-                  <p className="text-blue-600">
-                    Use these in your templates: {fields.map(f => `{{${f.label}}}`).join(", ")}
-                  </p>
+                  <p className="font-medium text-blue-800 mb-1">Click tags below each field to auto-insert placeholders</p>
+                  <p className="text-blue-600 text-xs">Tags are based on your form fields. The value submitted by the user will replace the tag.</p>
+                </div>
+              ) : (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+                  <p className="font-medium text-amber-800">Add form fields first</p>
+                  <p className="text-amber-600 text-xs">Switch to "Form Fields" tab and add fields — they will appear as clickable tags here.</p>
                 </div>
               )}
 
@@ -665,25 +703,54 @@ export default function QuickFormBuilder() {
                   </label>
                 </div>
                 {whatsappEnabled && (
-                  <div className="ml-6 space-y-3 border-l-2 border-green-200 pl-4">
+                  <div className="ml-6 space-y-4 border-l-2 border-green-200 pl-4">
                     <div>
                       <label className="block text-sm font-medium mb-1">Phone Number</label>
                       <Input
-                        placeholder="e.g. 919876543210 or {{Phone}}"
+                        ref={whatsappPhoneRef}
+                        placeholder="e.g. 919876543210"
                         value={whatsappPhone}
                         onChange={(e) => setWhatsappPhone(e.target.value)}
                       />
-                      <p className="text-xs text-gray-500 mt-1">Country code + number, no + or spaces. You can use a placeholder like {"{{Phone}}"}</p>
+                      <p className="text-xs text-gray-500 mt-1">Country code + number, no + or spaces</p>
+                      {fields.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {fields.map((f) => (
+                            <button
+                              key={f.label}
+                              type="button"
+                              onClick={() => insertTagAtCursor(whatsappPhoneRef, whatsappPhone, setWhatsappPhone, f.label)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-100 text-green-700 hover:bg-green-200 border border-green-300 transition cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3" />{f.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">Message Template</label>
+                      {fields.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {fields.map((f) => (
+                            <button
+                              key={f.label}
+                              type="button"
+                              onClick={() => insertTagAtCursor(whatsappMessageRef, whatsappMessage, setWhatsappMessage, f.label)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-100 text-green-700 hover:bg-green-200 border border-green-300 transition cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3" />{f.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <textarea
+                        ref={whatsappMessageRef}
                         className="w-full border rounded-md p-2 text-sm min-h-[120px] resize-y"
-                        placeholder={"Hello! A new form submission:\n\n{{Name}}: {{Email}}\n\nThank you!"}
+                        placeholder={"Hello! A new form submission:\n\nName: ...\nEmail: ...\n\nThank you!"}
                         value={whatsappMessage}
                         onChange={(e) => setWhatsappMessage(e.target.value)}
                       />
-                      <p className="text-xs text-gray-500 mt-1">Use {"{{FieldLabel}}"} to insert form values</p>
                     </div>
                   </div>
                 )}
@@ -705,33 +772,76 @@ export default function QuickFormBuilder() {
                   </label>
                 </div>
                 {emailEnabled && (
-                  <div className="ml-6 space-y-3 border-l-2 border-blue-200 pl-4">
+                  <div className="ml-6 space-y-4 border-l-2 border-blue-200 pl-4">
                     <div>
                       <label className="block text-sm font-medium mb-1">Recipient Email</label>
                       <Input
-                        placeholder="e.g. admin@example.com or {{Email}}"
+                        ref={emailRecipientRef}
+                        placeholder="e.g. admin@example.com"
                         value={emailRecipient}
                         onChange={(e) => setEmailRecipient(e.target.value)}
                       />
-                      <p className="text-xs text-gray-500 mt-1">You can use a placeholder like {"{{Email}}"}</p>
+                      {fields.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {fields.map((f) => (
+                            <button
+                              key={f.label}
+                              type="button"
+                              onClick={() => insertTagAtCursor(emailRecipientRef, emailRecipient, setEmailRecipient, f.label)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300 transition cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3" />{f.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">Subject</label>
                       <Input
-                        placeholder={"e.g. New Form Submission from {{Name}}"}
+                        ref={emailSubjectRef}
+                        placeholder={"e.g. New Form Submission"}
                         value={emailSubject}
                         onChange={(e) => setEmailSubject(e.target.value)}
                       />
+                      {fields.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {fields.map((f) => (
+                            <button
+                              key={f.label}
+                              type="button"
+                              onClick={() => insertTagAtCursor(emailSubjectRef, emailSubject, setEmailSubject, f.label)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300 transition cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3" />{f.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">Body Template</label>
+                      {fields.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {fields.map((f) => (
+                            <button
+                              key={f.label}
+                              type="button"
+                              onClick={() => insertTagAtCursor(emailBodyRef, emailBody, setEmailBody, f.label)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300 transition cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3" />{f.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <textarea
+                        ref={emailBodyRef}
                         className="w-full border rounded-md p-2 text-sm min-h-[120px] resize-y"
-                        placeholder={"Hello,\n\nNew submission received:\nName: {{Name}}\nEmail: {{Email}}\n\nRegards"}
+                        placeholder={"Hello,\n\nNew submission received:\n\nRegards"}
                         value={emailBody}
                         onChange={(e) => setEmailBody(e.target.value)}
                       />
-                      <p className="text-xs text-gray-500 mt-1">Use {"{{FieldLabel}}"} to insert form values</p>
                     </div>
                   </div>
                 )}

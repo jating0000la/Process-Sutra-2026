@@ -99,6 +99,16 @@ const allNavigationItems = [
     adminOnly: true,
     section: "analytics",
   },
+  // Super Admin section — only visible to super admins (filtered below)
+  {
+    name: "Organization Control",
+    href: "/organization-control",
+    icon: Shield,
+    badge: null,
+    adminOnly: true,
+    section: "superadmin",
+    superAdminOnly: true,
+  },
 ];
 
 export default function Sidebar() {
@@ -117,9 +127,11 @@ export default function Sidebar() {
   const isSuperAdmin = dbUser?.isSuperAdmin === true;
   
   // Filter navigation items based on user role
-  const navigationItems = allNavigationItems.filter(item => 
-    !item.adminOnly || isAdmin
-  );
+  const navigationItems = allNavigationItems.filter(item => {
+    if ((item as any).superAdminOnly && !isSuperAdmin) return false;
+    if (item.adminOnly && !isAdmin) return false;
+    return true;
+  });
 
   return (
     <>

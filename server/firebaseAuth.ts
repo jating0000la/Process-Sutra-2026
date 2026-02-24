@@ -679,47 +679,8 @@ export async function setupAuth(app: Express) {
     }
   });
 
-  // Debug session endpoint
-  app.get('/api/auth/session-debug', (req, res) => {
-    res.json({
-      sessionID: req.sessionID,
-      hasSession: !!req.session,
-      sessionData: req.session,
-      cookies: req.headers.cookie,
-      userAgent: req.headers['user-agent'],
-      nodeEnv: process.env.NODE_ENV,
-      cookieSecure: process.env.COOKIE_SECURE,
-      databaseUrl: process.env.DATABASE_URL ? 'configured' : 'missing'
-    });
-  });
-
-  // Test login endpoint for production debugging
-  app.post('/api/auth/test-login', async (req, res) => {
-    try {
-      console.log('🧪 Test login endpoint called');
-      
-      // Create a test user session
-      (req.session as any).user = {
-        id: 'test-user-id',
-        email: 'test@processsutra.com',
-        claims: { sub: 'test-user-id', email: 'test@processsutra.com' }
-      };
-      
-      await new Promise<void>((resolve, reject) => {
-        req.session.save((err) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve();
-          }
-        });
-      });
-      
-      res.json({ success: true, message: 'Test login successful' });
-    } catch (error) {
-      res.status(500).json({ error: 'Test login failed' });
-    }
-  });
+  // SECURITY: Debug and test endpoints removed — were exposing session data and allowing
+  // unauthenticated session creation. See security audit for details.
 
   // Get current user with status check
   app.get('/api/auth/user', isAuthenticated, async (req, res) => {

@@ -449,15 +449,53 @@ router.post("/chat", aiLimiter, async (req: any, res) => {
   }
 });
 
-/** GET /api/ai-assistant/models — list available models */
-router.get("/models", (_req: any, res) => {
-  const models = Object.entries(AVAILABLE_MODELS).map(([id, info]) => ({
-    id,
-    label: info.label,
-    maxTokens: info.maxTokens,
-    provider: info.provider,
-  }));
-  res.json({ models, default: DEFAULT_MODEL });
+/** GET /api/ai-assistant/models — list available models (filtered by configured keys) */
+router.get("/models", async (req: any, res) => {
+  try {
+    const orgId = req.currentUser?.organizationId;
+    let geminiConfigured = false;
+    let openaiConfigured = false;
+
+    if (orgId) {
+      const keys = await getOrgKeys(orgId);
+      geminiConfigured = !!keys.gemini;
+      openaiConfigured = !!keys.openai;
+    }
+
+    const models = Object.entries(AVAILABLE_MODELS).map(([id, info]) => ({
+      id,
+      label: info.label,
+      maxTokens: info.maxTokens,
+      provider: info.provider,
+      available: info.provider === "openai" ? openaiConfigured : geminiConfigured,
+    }));
+
+    // Suggest the best default based on what keys are configured
+    let suggestedDefault = DEFAULT_MODEL;
+    if (!geminiConfigured && openaiConfigured) {
+      suggestedDefault = "gpt-4o";
+    } else if (geminiConfigured) {
+      suggestedDefault = DEFAULT_MODEL;
+    }
+
+    res.json({
+      models,
+      default: suggestedDefault,
+      geminiConfigured,
+      openaiConfigured,
+    });
+  } catch (err: any) {
+    console.error("[AI] models error:", err);
+    // Fallback: return all models without availability info
+    const models = Object.entries(AVAILABLE_MODELS).map(([id, info]) => ({
+      id,
+      label: info.label,
+      maxTokens: info.maxTokens,
+      provider: info.provider,
+      available: true,
+    }));
+    res.json({ models, default: DEFAULT_MODEL, geminiConfigured: false, openaiConfigured: false });
+  }
 });
 
 export default router;

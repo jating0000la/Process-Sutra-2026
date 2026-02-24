@@ -94,7 +94,7 @@ const exportLimiter = rateLimit({
   // Use authenticated user as key instead of IP to avoid trust proxy issues
   keyGenerator: (req) => {
     const user = (req as any).currentUser;
-    return user?.email || req.ip || 'anonymous';
+    return user?.email || 'anonymous';
   },
 });
 
@@ -107,7 +107,7 @@ const flowRuleLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => {
     const user = (req as any).currentUser;
-    return user?.email || req.ip || 'anonymous';
+    return user?.email || 'anonymous';
   },
 });
 
@@ -119,7 +119,7 @@ const bulkFlowRuleLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => {
     const user = (req as any).currentUser;
-    return user?.email || req.ip || 'anonymous';
+    return user?.email || 'anonymous';
   },
 });
 
@@ -142,7 +142,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       legacyHeaders: false,
       keyGenerator: (req) => {
         const user = (req as any).currentUser;
-        return user?.email || (req as any).sessionID || req.ip || 'anonymous';
+        return user?.email || (req as any).sessionID || 'anonymous';
       },
     });
     app.use('/api', globalLimiter);
@@ -459,7 +459,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Access denied to this flow rule" });
       }
 
-      const validatedData = insertFlowRuleSchema.partial().parse(req.body);
+      // SECURITY: Sanitize input before validation
+      const sanitizedInput = sanitizeFlowRule(req.body);
+      const validatedData = insertFlowRuleSchema.partial().parse(sanitizedInput);
       const flowRule = await storage.updateFlowRule(id, validatedData);
       console.log(`[AUDIT] Flow rule ${id} updated by ${user.email} at ${new Date().toISOString()}`);
       console.log(`[AUDIT] Updated fields:`, Object.keys(validatedData));
@@ -518,16 +520,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/tasks/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/tasks/:id", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const { id } = req.params;
+      const user = req.currentUser;
       const task = await storage.getTaskById(id);
       if (!task) {
         return res.status(404).json({ message: "Task not found" });
       }
       
-      // Transform flowInitialFormData if it exists and has a formId
-      // Quick Forms use readable labels as keys already, no transformation needed
+      // SECURITY: Verify task belongs to user's organization
+      if (task.organizationId !== user.organizationId) {
+        console.log(`[SECURITY] User ${user.email} attempted to access task ${id} from another organization`);
+        return res.status(403).json({ message: "Access denied to this task" });
+      }
       
       res.json(task);
     } catch (error) {
@@ -536,9 +542,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/tasks", isAuthenticated, async (req, res) => {
+  app.post("/api/tasks", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
-      const validatedData = insertTaskSchema.parse(req.body);
+      const user = req.currentUser;
+      // SECURITY: Enforce organization context and require admin
+      if (user.role !== 'admin') {
+        return res.status(403).json({ message: "Admin access required to create tasks" });
+      }
+      const validatedData = insertTaskSchema.parse({
+        ...req.body,
+        organizationId: user.organizationId,
+      });
       const task = await storage.createTask(validatedData);
       res.status(201).json(task);
     } catch (error) {
@@ -547,10 +561,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/tasks/:id", isAuthenticated, async (req, res) => {
+  app.put("/api/tasks/:id", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const { id } = req.params;
+      const user = req.currentUser;
+      
+      // SECURITY: Verify task belongs to user's organization
+      const existingTask = await storage.getTaskById(id);
+      if (!existingTask) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+      if (existingTask.organizationId !== user.organizationId) {
+        console.log(`[SECURITY] User ${user.email} attempted to update task ${id} from another organization`);
+        return res.status(403).json({ message: "Access denied to this task" });
+      }
+      
       const validatedData = insertTaskSchema.partial().parse(req.body);
+      // SECURITY: Prevent overriding organizationId
+      delete (validatedData as any).organizationId;
       const task = await storage.updateTask(id, validatedData);
       res.json(task);
     } catch (error) {
@@ -1696,6 +1724,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.currentUser;
       if (user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+      
+      // SECURITY: Verify webhook belongs to user's organization
+      const existing = await storage.getWebhookById(req.params.id);
+      if (!existing || existing.organizationId !== user.organizationId) {
+        return res.status(404).json({ message: 'Webhook not found' });
+      }
+      
+      // SECURITY: Validate URL if being updated
+      if (req.body.targetUrl) {
+        const { isSafeWebhookUrl } = await import('./webhookUtils.js');
+        if (!isSafeWebhookUrl(req.body.targetUrl)) {
+          return res.status(400).json({ message: 'Invalid webhook URL.' });
+        }
+      }
+      
+      // Prevent changing organizationId
+      delete req.body.organizationId;
       const record = await storage.updateWebhook(req.params.id, req.body);
       res.json(record);
     } catch (e) {
@@ -1707,6 +1752,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.currentUser;
       if (user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+      
+      // SECURITY: Verify webhook belongs to user's organization
+      const existing = await storage.getWebhookById(req.params.id);
+      if (!existing || existing.organizationId !== user.organizationId) {
+        return res.status(404).json({ message: 'Webhook not found' });
+      }
+      
       await storage.deleteWebhook(req.params.id);
       res.status(204).send();
     } catch (e) {
@@ -3437,8 +3489,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/devices/:deviceId/trust", isAuthenticated, async (req: any, res) => {
+  app.put("/api/devices/:deviceId/trust", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
+      const user = req.currentUser;
+      
+      // SECURITY: Only admins can change device trust
+      if (user.role !== 'admin') {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+      
+      // SECURITY: Validate isTrusted is a boolean
+      if (typeof req.body.isTrusted !== 'boolean') {
+        return res.status(400).json({ message: "isTrusted must be a boolean" });
+      }
+      
       const device = await storage.updateDeviceTrust(req.params.deviceId, req.body.isTrusted);
       res.json(device);
     } catch (error) {
