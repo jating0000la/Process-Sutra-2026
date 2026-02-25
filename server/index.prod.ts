@@ -112,20 +112,8 @@ const app = express();
 
 // Security: Helmet middleware for security headers
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "accounts.google.com", "https://accounts.google.com", "https://www.youtube.com", "https://www.youtube-nocookie.com", "https://s.ytimg.com"],
-      styleSrc: ["'self'", "'unsafe-inline'", "accounts.google.com", "https://accounts.google.com"],
-      imgSrc: ["'self'", "data:", "https:", "blob:"],
-      connectSrc: ["'self'", "accounts.google.com", "https://accounts.google.com", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
-      frameSrc: ["accounts.google.com", "https://accounts.google.com", "https://www.youtube.com", "https://youtube.com", "https://www.youtube-nocookie.com", "https://youtube-nocookie.com"],
-      fontSrc: ["'self'", "data:"],
-      objectSrc: ["'none'"],
-      mediaSrc: ["'self'", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
-      workerSrc: ["'self'", "blob:"],
-    },
-  },
+  contentSecurityPolicy: false, // Handled by Caddy - disabling here to avoid blocking YouTube embeds and other third-party content
+  crossOriginEmbedderPolicy: false, // Required for YouTube iframes to work
   hsts: {
     maxAge: 31536000, // 1 year
     includeSubDomains: true,
