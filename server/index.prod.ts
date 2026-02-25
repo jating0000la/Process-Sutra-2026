@@ -119,7 +119,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", "accounts.google.com", "https://accounts.google.com"],
       imgSrc: ["'self'", "data:", "https:", "blob:"],
       connectSrc: ["'self'", "accounts.google.com", "https://accounts.google.com"],
-      frameSrc: ["accounts.google.com", "https://accounts.google.com"],
+      frameSrc: ["accounts.google.com", "https://accounts.google.com", "https://www.youtube.com", "https://youtube.com"],
       fontSrc: ["'self'", "data:"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
