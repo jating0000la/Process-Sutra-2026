@@ -115,14 +115,14 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "accounts.google.com", "https://accounts.google.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "accounts.google.com", "https://accounts.google.com", "https://www.youtube.com", "https://www.youtube-nocookie.com", "https://s.ytimg.com"],
       styleSrc: ["'self'", "'unsafe-inline'", "accounts.google.com", "https://accounts.google.com"],
       imgSrc: ["'self'", "data:", "https:", "blob:"],
-      connectSrc: ["'self'", "accounts.google.com", "https://accounts.google.com"],
-      frameSrc: ["accounts.google.com", "https://accounts.google.com", "https://www.youtube.com", "https://youtube.com"],
+      connectSrc: ["'self'", "accounts.google.com", "https://accounts.google.com", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
+      frameSrc: ["accounts.google.com", "https://accounts.google.com", "https://www.youtube.com", "https://youtube.com", "https://www.youtube-nocookie.com", "https://youtube-nocookie.com"],
       fontSrc: ["'self'", "data:"],
       objectSrc: ["'none'"],
-      mediaSrc: ["'self'"],
+      mediaSrc: ["'self'", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
       workerSrc: ["'self'", "blob:"],
     },
   },
