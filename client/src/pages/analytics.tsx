@@ -49,7 +49,7 @@ import { useOrganizationCheck } from "@/hooks/useOrganizationCheck";
 import { useGoogleDriveCheck } from "@/hooks/useGoogleDriveCheck";
 import { useLocation } from "wouter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Eye, X } from "lucide-react";
+import { Eye, X, FileText, Loader2 } from "lucide-react";
 
 export default function Analytics() {
   const { toast } = useToast();
@@ -73,6 +73,9 @@ export default function Analytics() {
     doerEmail: "",
     performanceLevel: "", // 'excellent' (>=80), 'good' (60-79), 'needs-improvement' (<60)
   });
+
+  // Performance report generation state
+  const [reportGenerating, setReportGenerating] = useState(false);
 
   // Reporting state
   const [reportFilters, setReportFilters] = useState({
@@ -255,6 +258,474 @@ export default function Analytics() {
     );
   };
 
+  // Generate "Voice of Business" PDF report — direct download, no popup
+  const generatePerformanceReport = async () => {
+    setReportGenerating(true);
+    try {
+      const res = await fetch(`/api/analytics/performance-report?costPerHour=500&includeAI=true`);
+      if (!res.ok) throw new Error('Failed to generate report');
+      const data = await res.json();
+      
+      // Build HTML, render in hidden container, convert to PDF, download
+      const html = buildReportHTML(data);
+      const container = document.createElement('div');
+      container.style.position = 'fixed';
+      container.style.left = '-9999px';
+      container.style.top = '0';
+      container.style.width = '1050px';
+      container.innerHTML = html;
+      document.body.appendChild(container);
+
+      // Wait for fonts/images to settle
+      await new Promise(resolve => setTimeout(resolve, 600));
+
+      const html2canvas = (await import('html2canvas')).default;
+      const { jsPDF } = await import('jspdf');
+
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        width: 1050,
+        windowWidth: 1050,
+      });
+
+      document.body.removeChild(container);
+
+      const imgWidth = 210; // A4 mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageHeight = 297;
+      let heightLeft = imgHeight;
+      let position = 0;
+      const imgData = canvas.toDataURL('image/jpeg', 0.92);
+
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      while (heightLeft > 0) {
+        position -= pageHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      const orgName = (data.organization?.name || 'Business').replace(/[^a-zA-Z0-9]/g, '_');
+      pdf.save(`Voice_of_Business_${orgName}_${new Date().toISOString().split('T')[0]}.pdf`);
+
+      toast({ title: "Report Downloaded", description: "Voice of Business report saved as PDF" });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to generate report", variant: "destructive" });
+    } finally {
+      setReportGenerating(false);
+    }
+  };
+
+  // Build "Voice of Business" report — professional document with SVG charts
+  const buildReportHTML = (r: any) => {
+    const genDate = new Date(r.generatedAt).toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const s = r.summary;
+
+    // --- SVG Chart Helpers ---
+    const donutChart = (pct: number, label: string, color: string, size = 120) => {
+      const radius = 44;
+      const circ = 2 * Math.PI * radius;
+      const dash = (pct / 100) * circ;
+      return `<div style="text-align:center;">
+        <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+          <circle cx="${size/2}" cy="${size/2}" r="${radius}" fill="none" stroke="#E5E7EB" stroke-width="10"/>
+          <circle cx="${size/2}" cy="${size/2}" r="${radius}" fill="none" stroke="${color}" stroke-width="10" stroke-dasharray="${dash} ${circ}" stroke-dashoffset="${circ * 0.25}" stroke-linecap="round" transform="rotate(-90 ${size/2} ${size/2})"/>
+          <text x="${size/2}" y="${size/2 - 4}" text-anchor="middle" font-size="22" font-weight="800" fill="${color}">${pct}%</text>
+          <text x="${size/2}" y="${size/2 + 14}" text-anchor="middle" font-size="9" fill="#6B7280" font-weight="600" text-transform="uppercase">${label}</text>
+        </svg>
+      </div>`;
+    };
+
+    // Horizontal bar chart
+    const hBarChart = (items: {label: string; value: number; max: number; color: string}[]) => {
+      if (!items.length) return '<div style="padding:20px;text-align:center;color:#9CA3AF;">No data available</div>';
+      return items.map(it => {
+        const pct = it.max > 0 ? Math.min((it.value / it.max) * 100, 100) : 0;
+        return `<div style="margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+            <span style="font-size:12px;font-weight:500;color:#374151;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.label}</span>
+            <span style="font-size:12px;font-weight:700;color:${it.color};">${it.value}${typeof it.value === 'number' && it.value > 0 ? 'h' : ''}</span>
+          </div>
+          <div style="height:10px;background:#F1F5F9;border-radius:5px;overflow:hidden;">
+            <div style="height:100%;width:${pct}%;background:${it.color};border-radius:5px;transition:width 0.3s;"></div>
+          </div>
+        </div>`;
+      }).join('');
+    };
+
+    // Vertical bar chart (SVG)
+    const vBarChart = (items: {label: string; value: number; color: string}[], height = 180) => {
+      if (!items.length) return '<div style="padding:20px;text-align:center;color:#9CA3AF;">No data available</div>';
+      const maxVal = Math.max(...items.map(i => i.value), 1);
+      const barW = Math.min(40, Math.floor(480 / items.length) - 8);
+      const chartW = items.length * (barW + 12) + 20;
+      return `<svg width="100%" height="${height + 30}" viewBox="0 0 ${chartW} ${height + 30}" style="display:block;margin:0 auto;">
+        ${items.map((it, i) => {
+          const barH = Math.max(4, (it.value / maxVal) * (height - 24));
+          const x = 10 + i * (barW + 12);
+          const y = height - barH;
+          return `<g>
+            <rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="4" fill="${it.color}" />
+            <text x="${x + barW/2}" y="${y - 5}" text-anchor="middle" font-size="10" font-weight="700" fill="${it.color}">${it.value}</text>
+            <text x="${x + barW/2}" y="${height + 14}" text-anchor="middle" font-size="8" fill="#6B7280" font-weight="500">${it.label.length > 10 ? it.label.slice(0,9) + '..' : it.label}</text>
+          </g>`;
+        }).join('')}
+        <line x1="5" y1="${height}" x2="${chartW - 5}" y2="${height}" stroke="#E5E7EB" stroke-width="1"/>
+      </svg>`;
+    };
+
+    // Pie chart (SVG)
+    const pieChart = (slices: {label: string; value: number; color: string}[], size = 150) => {
+      const total = slices.reduce((a, s) => a + s.value, 0);
+      if (total === 0) return '<div style="padding:20px;text-align:center;color:#9CA3AF;">No data</div>';
+      let cumulativeAngle = 0;
+      const cx = size / 2, cy = size / 2, rad = size / 2 - 10;
+      const paths = slices.filter(sl => sl.value > 0).map(sl => {
+        const angle = (sl.value / total) * 360;
+        const startAngle = cumulativeAngle;
+        cumulativeAngle += angle;
+        const endAngle = cumulativeAngle;
+        const startRad = (startAngle - 90) * Math.PI / 180;
+        const endRad = (endAngle - 90) * Math.PI / 180;
+        const x1 = cx + rad * Math.cos(startRad), y1 = cy + rad * Math.sin(startRad);
+        const x2 = cx + rad * Math.cos(endRad), y2 = cy + rad * Math.sin(endRad);
+        const largeArc = angle > 180 ? 1 : 0;
+        return `<path d="M${cx},${cy} L${x1},${y1} A${rad},${rad} 0 ${largeArc},1 ${x2},${y2} Z" fill="${sl.color}"/>`;
+      }).join('');
+      const legend = slices.filter(sl => sl.value > 0).map(sl => `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;"><div style="width:10px;height:10px;border-radius:2px;background:${sl.color};flex-shrink:0;"></div><span style="font-size:11px;color:#374151;">${sl.label}: <strong>${sl.value}</strong></span></div>`).join('');
+      return `<div style="display:flex;align-items:center;gap:20px;justify-content:center;flex-wrap:wrap;">
+        <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${paths}</svg>
+        <div>${legend}</div>
+      </div>`;
+    };
+
+    // --- Data for charts ---
+    const bottleneckItems = (r.bottlenecks || []).slice(0, 6).map((b: any) => ({
+      label: b.taskName, value: b.avgCycleHours,
+      color: b.avgCycleHours > 48 ? '#DC2626' : b.avgCycleHours > 24 ? '#D97706' : '#059669'
+    }));
+
+    const systemChartItems = (r.systemBreakdown || []).slice(0, 8).map((sys: any, i: number) => ({
+      label: sys.system,
+      value: sys.totalTasks,
+      color: ['#3B82F6','#8B5CF6','#059669','#D97706','#DC2626','#0D9488','#6366F1','#EC4899'][i % 8]
+    }));
+
+    // Flow avg completion time chart data
+    const flowCompletionItems = (r.flowPerformance || []).slice(0, 8).map((f: any, i: number) => ({
+      label: f.system,
+      value: Math.abs(f.avgCompletionTime) || 0,
+      color: ['#0D9488','#3B82F6','#8B5CF6','#D97706','#059669','#DC2626','#6366F1','#EC4899'][i % 8]
+    }));
+
+    const doerChartItems = (r.doerPerformance || []).slice(0, 8).map((d: any, i: number) => ({
+      label: (d.doerEmail || '').split('@')[0],
+      value: d.onTimeRate || 0,
+      color: (d.onTimeRate || 0) >= 80 ? '#059669' : (d.onTimeRate || 0) >= 50 ? '#D97706' : '#DC2626'
+    }));
+
+    // --- Table rows ---
+    const systemRows = (r.systemBreakdown || []).map((sys: any) => `
+      <tr>
+        <td style="padding:9px 14px;font-weight:600;color:#1E293B;border-bottom:1px solid #F1F5F9;">${sys.system}</td>
+        <td style="padding:9px 14px;text-align:center;border-bottom:1px solid #F1F5F9;">${sys.totalTasks}</td>
+        <td style="padding:9px 14px;text-align:center;color:#059669;font-weight:600;border-bottom:1px solid #F1F5F9;">${sys.completed}</td>
+        <td style="padding:9px 14px;text-align:center;color:${sys.overdue > 0 ? '#DC2626' : '#64748B'};font-weight:600;border-bottom:1px solid #F1F5F9;">${sys.overdue}</td>
+        <td style="padding:9px 14px;text-align:center;font-weight:700;color:${sys.completionRate >= 80 ? '#059669' : sys.completionRate >= 50 ? '#D97706' : '#DC2626'};border-bottom:1px solid #F1F5F9;">${sys.completionRate}%</td>
+      </tr>`).join('');
+
+    const doerRows = (r.doerPerformance || []).slice(0, 12).map((d: any) => `
+      <tr>
+        <td style="padding:8px 14px;font-weight:500;border-bottom:1px solid #F1F5F9;">${d.doerEmail}</td>
+        <td style="padding:8px 14px;text-align:center;border-bottom:1px solid #F1F5F9;">${d.totalTasks}</td>
+        <td style="padding:8px 14px;text-align:center;color:#059669;font-weight:600;border-bottom:1px solid #F1F5F9;">${d.completedTasks}</td>
+        <td style="padding:8px 14px;text-align:center;font-weight:700;color:${(d.onTimeRate||0) >= 80 ? '#059669' : (d.onTimeRate||0) >= 50 ? '#D97706' : '#DC2626'};border-bottom:1px solid #F1F5F9;">${d.onTimeRate}%</td>
+        <td style="padding:8px 14px;text-align:center;border-bottom:1px solid #F1F5F9;">${d.avgCompletionDays?.toFixed(1) || '-'} days</td>
+      </tr>`).join('');
+
+    // Format AI analysis markdown to HTML
+    const formatAI = (text: string) => {
+      if (!text) return '';
+      return text
+        .replace(/### (.*)/g, '<h4 style="color:#1E3A5F;margin:16px 0 6px;font-size:14px;font-weight:700;">$1</h4>')
+        .replace(/## (.*)/g, '<h3 style="color:#1E3A5F;margin:18px 0 8px;font-size:15px;font-weight:700;border-bottom:1px solid #E2E8F0;padding-bottom:5px;">$1</h3>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/^- (.+)/gm, '<div style="margin:3px 0;padding:4px 0 4px 14px;border-left:2px solid #CBD5E1;font-size:13px;color:#475569;">$1</div>')
+        .replace(/^(\d+)\. (.+)/gm, '<div style="margin:3px 0;padding:4px 0;font-size:13px;color:#475569;"><span style="font-weight:700;color:#1E40AF;margin-right:6px;">$1.</span>$2</div>')
+        .replace(/\n\n/g, '<br/>')
+        .replace(/\n/g, '<br/>');
+    };
+
+    const copyrightYear = new Date().getFullYear();
+    const copyrightLine = `© ${copyrightYear} Process Sutra. All rights reserved. Patented.`;
+    const copyrightFull = `© ${copyrightYear} Process Sutra — "Voice of Business" Performance Report Engine. All rights reserved. This report format, methodology, scoring matrix, and analytical framework are proprietary and protected under applicable intellectual property laws. Patented. Unauthorized reproduction, distribution, or reverse-engineering of this report or its underlying algorithms is strictly prohibited.`;
+
+    return `<div style="font-family:Georgia,'Times New Roman',serif;color:#1E293B;background:#fff;padding:40px 48px;max-width:1050px;line-height:1.65;">
+  <!-- Cover / Header -->
+  <div style="border-bottom:3px solid #1E3A5F;padding-bottom:28px;margin-bottom:32px;">
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;">
+      <div>
+        <div style="font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:3px;font-family:Arial,sans-serif;margin-bottom:6px;">Confidential &bull; Proprietary &bull; Patented</div>
+        <h1 style="font-size:34px;font-weight:700;color:#0F172A;letter-spacing:-0.5px;margin:0;">Voice of Business&trade;</h1>
+        <div style="font-size:14px;color:#475569;margin-top:6px;">${r.organization.name}${r.organization.industry ? ' &mdash; ' + r.organization.industry : ''}${r.organization.businessType ? ' (' + r.organization.businessType + ')' : ''}</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:11px;color:#94A3B8;font-family:Arial,sans-serif;">Report Date</div>
+        <div style="font-size:14px;color:#334155;font-weight:600;">${genDate}</div>
+        <div style="font-size:11px;color:#94A3B8;margin-top:4px;font-family:Arial,sans-serif;">Analysis Period: ${s.dataSpanDays} days</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Executive Summary -->
+  <div style="margin-bottom:32px;">
+    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #1E3A5F;padding-left:12px;">1. Executive Summary</h2>
+    <div style="display:flex;gap:16px;align-items:center;padding:18px 22px;background:linear-gradient(135deg,#F8FAFC,#EEF2FF);border:1px solid #E2E8F0;border-radius:8px;margin-bottom:16px;">
+      <span style="font-size:36px;">${s.businessEmoji}</span>
+      <div>
+        <div style="font-size:20px;font-weight:700;color:${s.completionRate >= 80 ? '#059669' : s.completionRate >= 50 ? '#B45309' : '#DC2626'};">${s.businessStatus}</div>
+        <div style="font-size:13px;color:#475569;margin-top:2px;">${s.actionPlan}</div>
+      </div>
+    </div>
+    <p style="font-size:13.5px;color:#334155;">
+      Over the past <strong>${s.dataSpanDays} days</strong>, the organization processed <strong>${s.totalTasks} tasks</strong> across <strong>${r.totalSystems} workflow systems</strong> with <strong>${r.totalFlowRules} flow rules</strong>.
+      Of these, <strong>${s.completedTasks} tasks were completed</strong> (${s.completionRate}% completion rate), with <strong>${s.onTimeRate}% delivered on time</strong>.
+      ${s.overdueTasks > 0 ? `There are currently <strong style="color:#DC2626;">${s.overdueTasks} overdue tasks</strong> requiring immediate attention.` : 'All active tasks are within their deadlines.'}
+      The estimated <strong>loss from delays is &#8377;${r.lossCost.totalLossCost.toLocaleString('en-IN')}</strong>, accounting for ${r.lossCost.totalWaitHours} hours of cumulative delay at &#8377;${r.lossCost.costPerHour}/hour.
+    </p>
+  </div>
+
+  <!-- Key Performance Indicators — donut charts -->
+  <div style="margin-bottom:32px;">
+    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #1E3A5F;padding-left:12px;">2. Key Performance Indicators</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-bottom:18px;">
+      ${donutChart(s.completionRate, 'Completion', s.completionRate >= 80 ? '#059669' : s.completionRate >= 50 ? '#D97706' : '#DC2626')}
+      ${donutChart(s.onTimeRate, 'On-Time', s.onTimeRate >= 80 ? '#059669' : s.onTimeRate >= 50 ? '#D97706' : '#DC2626')}
+      ${donutChart(s.productivity, 'Productivity', s.productivity >= 80 ? '#059669' : s.productivity >= 50 ? '#D97706' : '#DC2626')}
+      ${donutChart(s.performance, 'Performance', s.performance >= 80 ? '#059669' : s.performance >= 50 ? '#D97706' : '#DC2626')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;font-family:Arial,sans-serif;">
+      <div style="text-align:center;padding:14px 8px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;">
+        <div style="font-size:24px;font-weight:800;color:#1D4ED8;">${s.totalTasks}</div>
+        <div style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;">Total Tasks</div>
+      </div>
+      <div style="text-align:center;padding:14px 8px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;">
+        <div style="font-size:24px;font-weight:800;color:#059669;">${s.completedTasks}</div>
+        <div style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;">Completed</div>
+      </div>
+      <div style="text-align:center;padding:14px 8px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;">
+        <div style="font-size:24px;font-weight:800;color:#1D4ED8;">${s.throughputPerDay}</div>
+        <div style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;">Tasks / Day</div>
+      </div>
+      <div style="text-align:center;padding:14px 8px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;">
+        <div style="font-size:24px;font-weight:800;color:#0D9488;">${s.avgCycleTimeDays}d</div>
+        <div style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;">Avg Cycle Time</div>
+      </div>
+      <div style="text-align:center;padding:14px 8px;background:#F0FDFA;border:1px solid #CCFBF1;border-radius:6px;">
+        <div style="font-size:24px;font-weight:800;color:#0F766E;">${s.avgFlowCompletionDays || 0}d</div>
+        <div style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;">Avg Flow Time</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Actual vs Ideal Comparison -->
+  <div style="margin-bottom:32px;">
+    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #6366F1;padding-left:12px;">3. Actual vs Ideal Performance (100% Benchmark)</h2>
+    <p style="font-size:13px;color:#475569;margin-bottom:14px;">Comparison of current operational performance against the ideal benchmark of 100% productivity and 100% efficiency. The gap column shows exactly how far you are from perfection.</p>
+    ${(() => {
+      const ic = r.idealComparison || { actual: {}, ideal: {}, gap: {} };
+      const a = ic.actual || {};
+      const g = ic.gap || {};
+      const rows = [
+        { metric: 'Completion Rate', actual: a.completionRate + '%', ideal: '100%', gap: g.completionRate + '%', gapColor: g.completionRate > 20 ? '#DC2626' : g.completionRate > 10 ? '#D97706' : '#059669' },
+        { metric: 'On-Time Rate', actual: a.onTimeRate + '%', ideal: '100%', gap: g.onTimeRate + '%', gapColor: g.onTimeRate > 20 ? '#DC2626' : g.onTimeRate > 10 ? '#D97706' : '#059669' },
+        { metric: 'Productivity', actual: a.productivity + '%', ideal: '100%', gap: g.productivity + '%', gapColor: g.productivity > 20 ? '#DC2626' : g.productivity > 10 ? '#D97706' : '#059669' },
+        { metric: 'Performance', actual: a.performance + '%', ideal: '100%', gap: g.performance + '%', gapColor: g.performance > 20 ? '#DC2626' : g.performance > 10 ? '#D97706' : '#059669' },
+        { metric: 'Throughput / Day', actual: a.throughputPerDay, ideal: ic.ideal?.throughputPerDay || 0, gap: '+' + (g.throughputPerDayGap || 0) + ' needed', gapColor: '#D97706' },
+        { metric: 'Completed Tasks', actual: a.completedTasks, ideal: ic.ideal?.completedTasks || 0, gap: '+' + (g.additionalTasksNeeded || 0) + ' needed', gapColor: g.additionalTasksNeeded > 0 ? '#DC2626' : '#059669' },
+        { metric: 'Overdue Tasks', actual: a.overdueTasks, ideal: '0', gap: g.overdueToResolve + ' to resolve', gapColor: g.overdueToResolve > 0 ? '#DC2626' : '#059669' },
+        { metric: 'Loss Cost', actual: '\u20B9' + (a.lossCost || 0).toLocaleString('en-IN'), ideal: '\u20B90', gap: '\u20B9' + (g.lossCostRecoverable || 0).toLocaleString('en-IN') + ' recoverable', gapColor: g.lossCostRecoverable > 0 ? '#DC2626' : '#059669' },
+      ];
+      return '<table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:12px;">' +
+        '<thead><tr style="background:linear-gradient(135deg,#EEF2FF,#E0E7FF);">' +
+        '<th style="padding:10px 14px;text-align:left;color:#3730A3;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Metric</th>' +
+        '<th style="padding:10px 14px;text-align:center;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Actual</th>' +
+        '<th style="padding:10px 14px;text-align:center;color:#059669;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Ideal (100%)</th>' +
+        '<th style="padding:10px 14px;text-align:center;color:#DC2626;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Gap to Close</th>' +
+        '</tr></thead><tbody>' +
+        rows.map(row =>
+          '<tr>' +
+          '<td style="padding:10px 14px;font-weight:600;color:#1E293B;border-bottom:1px solid #F1F5F9;">' + row.metric + '</td>' +
+          '<td style="padding:10px 14px;text-align:center;font-weight:700;color:#1E40AF;border-bottom:1px solid #F1F5F9;">' + row.actual + '</td>' +
+          '<td style="padding:10px 14px;text-align:center;font-weight:700;color:#059669;border-bottom:1px solid #F1F5F9;">' + row.ideal + '</td>' +
+          '<td style="padding:10px 14px;text-align:center;font-weight:700;color:' + row.gapColor + ';border-bottom:1px solid #F1F5F9;">' + row.gap + '</td>' +
+          '</tr>'
+        ).join('') +
+        '</tbody></table>';
+    })()}
+    <div style="margin-top:14px;padding:12px 16px;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;">
+      <div style="font-size:11px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;font-family:Arial,sans-serif;">Potential Recovery at 100% Efficiency</div>
+      <div style="font-size:13px;color:#78350F;">If all overdue and pending tasks were completed on time, the organization could recover <strong>&#8377;${(r.idealComparison?.gap?.lossCostRecoverable || 0).toLocaleString('en-IN')}</strong> in loss costs, improve throughput by <strong>${r.idealComparison?.gap?.throughputPerDayGap || 0} tasks/day</strong>, and eliminate <strong>${r.idealComparison?.gap?.overdueToResolve || 0} overdue tasks</strong>.</div>
+    </div>
+  </div>
+
+  <!-- Task Distribution Pie Chart -->
+  <div style="margin-bottom:32px;">
+    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #1E3A5F;padding-left:12px;">4. Task Distribution</h2>
+    ${pieChart([
+      {label: 'Completed', value: s.completedTasks, color: '#059669'},
+      {label: 'Pending', value: s.pendingTasks, color: '#D97706'},
+      {label: 'Overdue', value: s.overdueTasks, color: '#DC2626'},
+      {label: 'Cancelled', value: s.cancelledTasks || 0, color: '#94A3B8'},
+    ])}
+  </div>
+
+  <!-- Loss Cost Analysis -->
+  <div style="margin-bottom:32px;">
+    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #DC2626;padding-left:12px;">5. Loss Cost Analysis</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:14px;">
+      <div style="flex:1;min-width:200px;padding:20px;background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;">
+        <div style="font-size:11px;color:#991B1B;text-transform:uppercase;letter-spacing:1px;font-family:Arial,sans-serif;">Estimated Loss from Delays</div>
+        <div style="font-size:32px;font-weight:800;color:#DC2626;margin-top:4px;">&#8377;${r.lossCost.totalLossCost.toLocaleString('en-IN')}</div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:12px;">
+        <div style="padding:16px 20px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:#0F172A;">${r.lossCost.totalWaitHours}h</div>
+          <div style="font-size:10px;color:#64748B;margin-top:2px;font-family:Arial,sans-serif;">DELAY HOURS</div>
+        </div>
+        <div style="padding:16px 20px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:#0F172A;">&#8377;${r.lossCost.costPerHour}</div>
+          <div style="font-size:10px;color:#64748B;margin-top:2px;font-family:Arial,sans-serif;">COST / HOUR</div>
+        </div>
+        <div style="padding:16px 20px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:#0F172A;">${s.throughputPerHour}</div>
+          <div style="font-size:10px;color:#64748B;margin-top:2px;font-family:Arial,sans-serif;">THROUGHPUT/HR</div>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:13px;color:#475569;">
+      This figure represents the cumulative cost of overdue and delayed tasks, calculated by summing the total delay hours across all late tasks and multiplying by the hourly cost rate.
+      Reducing bottleneck cycle times by even 20% could recover approximately <strong>&#8377;${Math.round(r.lossCost.totalLossCost * 0.2).toLocaleString('en-IN')}</strong> in productivity value.
+    </p>
+  </div>
+
+  <!-- Bottleneck Analysis -->
+  <div style="margin-bottom:32px;">
+    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #D97706;padding-left:12px;">6. Bottleneck Analysis</h2>
+    <p style="font-size:13px;color:#475569;margin-bottom:14px;">Tasks ranked by average cycle time in hours (slowest first). High cycle time indicates process bottlenecks requiring review.</p>
+    ${vBarChart(bottleneckItems, 180)}
+  </div>
+
+  <!-- Flow Average Completion Time -->
+  <div style="margin-bottom:32px;">
+    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #0D9488;padding-left:12px;">7. Flow Average Completion Time</h2>
+    <p style="font-size:13px;color:#475569;margin-bottom:6px;">Average completion time (in days) per workflow/system. Overall average: <strong>${s.avgFlowCompletionDays || 0} days</strong>.</p>
+    <div style="margin-bottom:14px;">${vBarChart(flowCompletionItems, 160)}</div>
+    <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:12px;">
+      <thead>
+        <tr style="background:#F0FDFA;">
+          <th style="padding:9px 14px;text-align:left;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Flow / System</th>
+          <th style="padding:9px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Avg Completion (days)</th>
+          <th style="padding:9px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">On-Time Rate</th>
+        </tr>
+      </thead>
+      <tbody>${(r.flowPerformance || []).map((f: any) => `
+        <tr>
+          <td style="padding:8px 14px;font-weight:600;color:#1E293B;border-bottom:1px solid #F1F5F9;">${f.system}</td>
+          <td style="padding:8px 14px;text-align:center;font-weight:700;color:#0F766E;border-bottom:1px solid #F1F5F9;">${Math.abs(f.avgCompletionTime || 0).toFixed(1)}</td>
+          <td style="padding:8px 14px;text-align:center;font-weight:700;color:${(f.onTimeRate || 0) >= 80 ? '#059669' : (f.onTimeRate || 0) >= 50 ? '#D97706' : '#DC2626'};border-bottom:1px solid #F1F5F9;">${f.onTimeRate || 0}%</td>
+        </tr>`).join('') || '<tr><td colspan="3" style="text-align:center;padding:20px;color:#94A3B8;">No flow data</td></tr>'}</tbody>
+    </table>
+  </div>
+
+  <!-- System / Workflow Performance -->
+  <div style="margin-bottom:32px;">
+    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #3B82F6;padding-left:12px;">8. Workflow System Performance</h2>
+    <div style="margin-bottom:16px;">${vBarChart(systemChartItems, 160)}</div>
+    <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:12px;">
+      <thead>
+        <tr style="background:#F1F5F9;">
+          <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">System</th>
+          <th style="padding:10px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Total</th>
+          <th style="padding:10px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Done</th>
+          <th style="padding:10px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Overdue</th>
+          <th style="padding:10px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Rate</th>
+        </tr>
+      </thead>
+      <tbody>${systemRows || '<tr><td colspan="5" style="text-align:center;padding:20px;color:#94A3B8;">No system data</td></tr>'}</tbody>
+    </table>
+  </div>
+
+  <!-- Team Performance -->
+  <div style="margin-bottom:32px;">
+    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #8B5CF6;padding-left:12px;">9. Team Performance</h2>
+    <p style="font-size:13px;color:#475569;margin-bottom:14px;">On-time delivery rate by team member. Green indicates strong performance (≥80%), amber needs monitoring, red requires action.</p>
+    <div style="margin-bottom:16px;">${vBarChart(doerChartItems, 140)}</div>
+    <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:12px;">
+      <thead>
+        <tr style="background:#F1F5F9;">
+          <th style="padding:9px 14px;text-align:left;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Team Member</th>
+          <th style="padding:9px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Tasks</th>
+          <th style="padding:9px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Done</th>
+          <th style="padding:9px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">On-Time</th>
+          <th style="padding:9px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Avg Time</th>
+        </tr>
+      </thead>
+      <tbody>${doerRows || '<tr><td colspan="5" style="text-align:center;padding:20px;color:#94A3B8;">No team data</td></tr>'}</tbody>
+    </table>
+  </div>
+
+  <!-- Top Performers & Needs Attention -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:32px;">
+    <div style="border:1px solid #D1FAE5;border-radius:8px;padding:18px;background:#F0FDF4;">
+      <h3 style="font-size:14px;color:#065F46;margin:0 0 10px;font-family:Arial,sans-serif;">Top Performers</h3>
+      ${(r.topPerformers || []).length > 0 ? (r.topPerformers || []).map((d: any) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #D1FAE5;">
+          <span style="font-size:12px;color:#065F46;font-family:Arial,sans-serif;">${d.doerEmail}</span>
+          <span style="font-size:12px;font-weight:700;color:#059669;">${d.onTimeRate}%</span>
+        </div>`).join('') : '<div style="font-size:12px;color:#94A3B8;text-align:center;padding:10px;">No data</div>'}
+    </div>
+    <div style="border:1px solid #FECACA;border-radius:8px;padding:18px;background:#FEF2F2;">
+      <h3 style="font-size:14px;color:#991B1B;margin:0 0 10px;font-family:Arial,sans-serif;">Needs Attention</h3>
+      ${(r.needsAttention || []).length > 0 ? (r.needsAttention || []).map((d: any) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #FECACA;">
+          <span style="font-size:12px;color:#991B1B;font-family:Arial,sans-serif;">${d.doerEmail}</span>
+          <span style="font-size:12px;font-weight:700;color:#DC2626;">${d.onTimeRate}%</span>
+        </div>`).join('') : '<div style="font-size:12px;color:#94A3B8;text-align:center;padding:10px;">No data</div>'}
+    </div>
+  </div>
+
+  ${r.aiAnalysis ? `
+  <!-- AI Strategic Analysis -->
+  <div style="margin-bottom:32px;border:1px solid #C7D2FE;border-radius:8px;overflow:hidden;">
+    <div style="background:linear-gradient(135deg,#EEF2FF,#E0E7FF);padding:14px 20px;border-bottom:1px solid #C7D2FE;">
+      <h2 style="font-size:16px;color:#3730A3;margin:0;font-family:Arial,sans-serif;">10. AI-Powered Strategic Analysis</h2>
+      <div style="font-size:11px;color:#6366F1;margin-top:2px;font-family:Arial,sans-serif;">Generated by artificial intelligence based on your workflow data</div>
+    </div>
+    <div style="padding:18px 22px;font-size:13px;color:#334155;line-height:1.7;">${formatAI(r.aiAnalysis)}</div>
+  </div>` : ''}
+
+  <!-- Copyright & Patent Notice -->
+  <div style="margin-top:28px;padding:14px 18px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;">
+    <div style="font-size:10px;color:#64748B;font-family:Arial,sans-serif;line-height:1.6;">${copyrightFull}</div>
+  </div>
+
+  <!-- Footer -->
+  <div style="border-top:2px solid #1E3A5F;padding-top:16px;margin-top:16px;display:flex;justify-content:space-between;align-items:flex-end;">
+    <div>
+      <div style="font-size:11px;color:#94A3B8;font-family:Arial,sans-serif;text-transform:uppercase;letter-spacing:1px;">Generated by Process Sutra &mdash; Voice of Business&trade;</div>
+      <div style="font-size:11px;color:#94A3B8;margin-top:2px;">${r.totalSystems} workflow systems &bull; ${r.totalFlowRules} flow rules &bull; TAT: ${r.tatConfig.officeHours} (${r.tatConfig.timezone})${r.tatConfig.skipWeekends ? ' &bull; Weekends excluded' : ''}</div>
+    </div>
+    <div style="font-size:10px;color:#94A3B8;font-style:italic;text-align:right;">${copyrightLine}</div>
+  </div>
+</div>`;
+  };
+
   // Export weekly scoring data
   const exportWeeklyScoring = () => {
     if (!weeklyScoring) return;
@@ -271,6 +742,107 @@ export default function Analytics() {
     { name: 'Pending', value: Math.floor((metrics?.totalTasks || 0) * 0.4), color: '#F59E0B' },
     { name: 'Overdue', value: metrics?.overdueTasks || 0, color: '#EF4444' },
   ];
+
+  // Business Health Status Matrix — determines status based on completion rate & on-time rate
+  const getBusinessHealthStatus = (completionRate: number, onTimeRate: number, isAdmin: boolean) => {
+    if (isAdmin) {
+      // Organization-level (Admin) matrix
+      if (completionRate >= 80 && onTimeRate >= 80) return {
+        emoji: '🚀', status: 'Growth Ready',
+        meaning: 'Team is completing work AND delivering on time — operating at peak efficiency.',
+        action: 'Pursue aggressive growth, acquire new business, increase marketing spend, invest in automation.',
+        color: 'from-emerald-500 to-green-500', bg: 'from-emerald-50 to-green-50', border: 'border-emerald-200', text: 'text-emerald-800'
+      };
+      if (completionRate >= 80 && onTimeRate < 70) return {
+        emoji: '⚠️', status: 'Overloaded System',
+        meaning: 'Work is getting done but with delays — the team is carrying too much load.',
+        action: 'Hire additional staff, rebalance workload across team, review and adjust TAT targets.',
+        color: 'from-amber-500 to-orange-500', bg: 'from-amber-50 to-orange-50', border: 'border-amber-200', text: 'text-amber-800'
+      };
+      if (completionRate >= 50 && completionRate < 80 && onTimeRate >= 80) return {
+        emoji: '📉', status: 'Underutilized Capacity',
+        meaning: 'Team can deliver on time but not enough tasks are being completed — capacity is being wasted.',
+        action: 'Bring in more work, boost sales pipeline, audit task flow for bottlenecks.',
+        color: 'from-blue-500 to-indigo-500', bg: 'from-blue-50 to-indigo-50', border: 'border-blue-200', text: 'text-blue-800'
+      };
+      if (completionRate >= 50 && completionRate < 80 && onTimeRate >= 50 && onTimeRate < 80) return {
+        emoji: '😐', status: 'Stable but Slow',
+        meaning: 'System is running but not at optimal speed — moderate performance across the board.',
+        action: 'Improve SOPs, increase monitoring frequency, provide micro-training to team.',
+        color: 'from-gray-500 to-slate-500', bg: 'from-gray-50 to-slate-50', border: 'border-gray-200', text: 'text-gray-800'
+      };
+      if (completionRate < 50 && onTimeRate >= 80) return {
+        emoji: '🧭', status: 'Misaligned Execution',
+        meaning: 'People are reporting on time but actual output is low — effort is misaligned with results.',
+        action: 'Redefine KPIs, switch to output-based tracking, realign team priorities.',
+        color: 'from-violet-500 to-purple-500', bg: 'from-violet-50 to-purple-50', border: 'border-violet-200', text: 'text-violet-800'
+      };
+      if (completionRate < 50 && onTimeRate < 50) return {
+        emoji: '🔥', status: 'Critical Condition',
+        meaning: 'Work is not being completed AND deadlines are being missed — urgent intervention needed.',
+        action: 'Immediate system audit, assign clear accountability, enforce strict follow-ups, consider restructuring.',
+        color: 'from-red-500 to-rose-500', bg: 'from-red-50 to-rose-50', border: 'border-red-200', text: 'text-red-800'
+      };
+      // Default fallback for edge cases (e.g., completion 80+, on-time 70-79)
+      return {
+        emoji: '😐', status: 'Stable but Slow',
+        meaning: 'System is running but not at optimal speed — moderate performance across the board.',
+        action: 'Improve SOPs, increase monitoring frequency, provide micro-training to team.',
+        color: 'from-gray-500 to-slate-500', bg: 'from-gray-50 to-slate-50', border: 'border-gray-200', text: 'text-gray-800'
+      };
+    } else {
+      // User-level (Individual) matrix
+      if (completionRate >= 80 && onTimeRate >= 80) return {
+        emoji: '🌟', status: 'Star Performer',
+        meaning: 'You are completing tasks AND delivering on time — outstanding performance!',
+        action: 'You\'re on track for rewards, incentives, and promotion. Keep up the great work!',
+        color: 'from-emerald-500 to-green-500', bg: 'from-emerald-50 to-green-50', border: 'border-emerald-200', text: 'text-emerald-800'
+      };
+      if (completionRate >= 80 && onTimeRate < 70) return {
+        emoji: '⏳', status: 'Hard Worker but Delayed',
+        meaning: 'You get work done but often past deadlines — time management needs attention.',
+        action: 'Focus on time management, prioritize tasks, discuss workload with your manager.',
+        color: 'from-amber-500 to-orange-500', bg: 'from-amber-50 to-orange-50', border: 'border-amber-200', text: 'text-amber-800'
+      };
+      if (completionRate >= 50 && completionRate < 80 && onTimeRate >= 80) return {
+        emoji: '⚡', status: 'Disciplined but Low Output',
+        meaning: 'You deliver on time but your output volume is below potential.',
+        action: 'Upgrade your skills, clarify KPIs, aim for higher targets.',
+        color: 'from-blue-500 to-indigo-500', bg: 'from-blue-50 to-indigo-50', border: 'border-blue-200', text: 'text-blue-800'
+      };
+      if (completionRate >= 50 && completionRate < 80 && onTimeRate >= 50 && onTimeRate < 80) return {
+        emoji: '🙂', status: 'Average Performer',
+        meaning: 'Neither excelling nor falling behind — consistent but has room for improvement.',
+        action: 'Weekly self-monitoring, micro-training sessions, set incremental improvement goals.',
+        color: 'from-gray-500 to-slate-500', bg: 'from-gray-50 to-slate-50', border: 'border-gray-200', text: 'text-gray-800'
+      };
+      if (completionRate < 50 && onTimeRate >= 80) return {
+        emoji: '📋', status: 'Busy but Not Productive',
+        meaning: 'You appear active but actual results are low — effort vs. output gap.',
+        action: 'Set output-based KPIs, focus on high-impact tasks, reduce time on low-value work.',
+        color: 'from-violet-500 to-purple-500', bg: 'from-violet-50 to-purple-50', border: 'border-violet-200', text: 'text-violet-800'
+      };
+      if (completionRate < 50 && onTimeRate < 50) return {
+        emoji: '🔴', status: 'Critical Performer',
+        meaning: 'Tasks are incomplete AND late — performance needs urgent improvement.',
+        action: 'Performance Improvement Plan (PIP), strict weekly reviews, manager support needed.',
+        color: 'from-red-500 to-rose-500', bg: 'from-red-50 to-rose-50', border: 'border-red-200', text: 'text-red-800'
+      };
+      // Default fallback
+      return {
+        emoji: '🙂', status: 'Average Performer',
+        meaning: 'Neither excelling nor falling behind — consistent but has room for improvement.',
+        action: 'Weekly self-monitoring, micro-training sessions, set incremental improvement goals.',
+        color: 'from-gray-500 to-slate-500', bg: 'from-gray-50 to-slate-50', border: 'border-gray-200', text: 'text-gray-800'
+      };
+    }
+  };
+
+  // Compute current business health
+  const completionRate = Math.round(((metrics?.completedTasks || 0) / (metrics?.totalTasks || 1)) * 100);
+  const onTimeRate = metrics?.onTimeRate || 0;
+  const isAdmin = (user as any)?.role === 'admin' || dbUser?.role === 'admin';
+  const currentHealthStatus = getBusinessHealthStatus(completionRate, onTimeRate, isAdmin);
 
   // Helper function to get performance color
   const getPerformanceColor = (rate: number) => {
@@ -420,14 +992,111 @@ export default function Analytics() {
             </div>
             <div className="transform transition-all duration-300 hover:scale-105">
               <MetricCard
-                title="Avg Resolution Time"
-                value={`${metrics?.avgResolutionTime || 0} days`}
-                icon={<Zap className="text-violet-600" />}
-                trend={{ value: 12, isPositive: false }}
-                description="from last month"
+                title="Avg Flow Completion"
+                value={`${flowPerformance && flowPerformance.length > 0 ? (flowPerformance.reduce((sum, f) => sum + Math.abs(f.avgCompletionTime), 0) / flowPerformance.length).toFixed(1) : '0'} days`}
+                icon={<Zap className="text-teal-600" />}
+                trend={{ value: 0, isPositive: true }}
+                description="across all flows"
               />
             </div>
           </div>
+
+          {/* Business Health Status Card */}
+          {metrics && (metrics.totalTasks > 0) && (
+            <Card className={`shadow-lg border-2 ${currentHealthStatus.border} bg-gradient-to-r ${currentHealthStatus.bg} backdrop-blur-sm overflow-hidden`}>
+              <div className="relative">
+                {/* Decorative gradient bar */}
+                <div className={`absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r ${currentHealthStatus.color}`} />
+                <CardHeader className="pt-6 pb-4">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className={`text-4xl flex items-center justify-center w-16 h-16 rounded-2xl bg-white/80 shadow-sm border ${currentHealthStatus.border}`}>
+                        {currentHealthStatus.emoji}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <CardTitle className={`text-xl ${currentHealthStatus.text}`}>
+                            {currentHealthStatus.status}
+                          </CardTitle>
+                          <Badge variant="outline" className={`${currentHealthStatus.border} ${currentHealthStatus.text} text-xs font-medium`}>
+                            {isAdmin ? 'Organization Health' : 'Your Performance'}
+                          </Badge>
+                        </div>
+                        <CardDescription className={`${currentHealthStatus.text} opacity-80 text-sm max-w-2xl`}>
+                          {currentHealthStatus.meaning}
+                        </CardDescription>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 md:gap-4 text-sm">
+                      <div className="text-center px-4 py-2 bg-white/60 rounded-xl border border-white/80">
+                        <div className="text-xs text-gray-500 font-medium">Completion</div>
+                        <div className={`text-lg font-bold ${completionRate >= 80 ? 'text-emerald-600' : completionRate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
+                          {completionRate}%
+                        </div>
+                      </div>
+                      <div className="text-center px-4 py-2 bg-white/60 rounded-xl border border-white/80">
+                        <div className="text-xs text-gray-500 font-medium">On-Time</div>
+                        <div className={`text-lg font-bold ${onTimeRate >= 80 ? 'text-emerald-600' : onTimeRate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
+                          {onTimeRate}%
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 pb-5">
+                  <div className="flex items-start gap-3 p-4 bg-white/60 rounded-xl border border-white/80">
+                    <div className={`p-2 rounded-lg bg-gradient-to-br ${currentHealthStatus.color} flex-shrink-0`}>
+                      <Target className="h-4 w-4 text-white" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                        {isAdmin ? 'Recommended Action Plan' : 'What You Should Do'}
+                      </div>
+                      <p className={`text-sm font-medium ${currentHealthStatus.text}`}>
+                        {currentHealthStatus.action}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </div>
+            </Card>
+          )}
+
+          {/* Voice of Business Report — Admin Only, Direct PDF Download */}
+          {isAdmin && metrics && (
+            <Card className="shadow-md border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50">
+              <CardContent className="py-4 px-5">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-gradient-to-br from-slate-700 to-slate-900 shadow-sm">
+                      <FileText className="h-5 w-5 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-800">Voice of Business</h3>
+                      <p className="text-xs text-gray-500">Download comprehensive PDF report with charts, bottlenecks & AI analysis</p>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={generatePerformanceReport}
+                    disabled={reportGenerating}
+                    className="bg-gradient-to-r from-slate-700 to-slate-900 hover:from-slate-800 hover:to-slate-950 text-white shadow-md gap-2"
+                  >
+                    {reportGenerating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Generating PDF...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-4 w-4" />
+                        Download Report
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Tabs for different views */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">

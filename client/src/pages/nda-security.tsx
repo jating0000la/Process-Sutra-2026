@@ -22,7 +22,11 @@ import {
   Activity,
   Globe,
   FileSignature,
-  Scroll
+  Scroll,
+  Brain,
+  HardDrive,
+  Trash2,
+  CloudOff
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Separator } from "@/components/ui/separator";
@@ -163,7 +167,67 @@ e. Not use data for marketing or external purposes
 
 ================================================================================
 
-4. EXCLUSIONS
+4. AI & LLM DATA ACCESS POLICY
+
+ProcessSutra integrates optional AI-powered features (e.g., "Voice of Business" 
+reporting, AI assistant). The following rules apply:
+
+a. Organization-Owned API Keys
+   All AI API keys (Google Gemini, OpenAI) are provided and owned by the Client's 
+   organization. ProcessSutra does NOT provide, share, or manage any AI API keys.
+
+b. Data NEVER Shared with AI/LLM
+   The following data is NEVER sent to any AI or LLM provider:
+   • Flow rules and workflow definitions
+   • Individual task records and task details
+   • Form templates and form submission data
+   • Employee/doer personal information (emails, names, phone numbers)
+   • Uploaded files and documents
+   • Customer or third-party personal data
+   • Organization credentials, API keys, or secrets
+   • Database records, IDs, or raw operational data
+
+c. What AI Receives (Reporting Only)
+   When the Client explicitly enables AI analysis in the Voice of Business report, 
+   ONLY pre-computed, aggregated statistical summaries are shared:
+   • Total task counts and completion percentages
+   • Average cycle times and throughput rates
+   • System-level aggregate performance (no individual records)
+   • Anonymous team size counts (no emails or names)
+   These are reporting parameters derived from data the Client fully owns.
+
+d. Why Reporting Parameters Can Be Shared
+   Since all form data, task data, and workflow data are the sole property of the 
+   Client organization, the aggregated performance metrics derived from this data 
+   also belong to the Client. The Client's own AI API key is used, meaning the data 
+   flows from the Client's system through the Client's own AI account.
+
+e. No AI Training
+   No Client data is used to train, fine-tune, or improve any AI model. Both Google 
+   and OpenAI confirm that API data is not used for model training.
+
+================================================================================
+
+5. FILE STORAGE & GOOGLE DRIVE POLICY
+
+a. All files uploaded through ProcessSutra are stored directly in the Client's own 
+   Google Drive account, inside a designated "ProcessSutra" folder.
+
+b. ProcessSutra does NOT store, copy, cache, or retain any uploaded files on its 
+   own servers.
+
+c. The Service Provider has no access to files stored in the Client's Google Drive 
+   unless explicitly granted by the Client.
+
+d. File ownership, access control, and retention are fully governed by the Client's 
+   Google Workspace policies.
+
+e. If the Client revokes Google Drive access, ProcessSutra immediately loses the 
+   ability to read or write any files.
+
+================================================================================
+
+6. EXCLUSIONS
 
 Confidential Information does not include data that:
 
@@ -173,25 +237,54 @@ Confidential Information does not include data that:
 
 ================================================================================
 
-5. DATA OWNERSHIP
+7. DATA OWNERSHIP
 
 All data provided through ProcessSutra will always remain the sole property of the Client.
 The Service Provider holds no ownership rights over this data.
 
+This includes but is not limited to:
+• Workflow rules and flow definitions
+• Task records and completion history
+• Form templates and all form submission responses
+• Uploaded files (stored in Client's Google Drive)
+• Organization settings and configurations
+• Employee and team member data
+
+Because the Client owns all data, the Client has full authority to decide whether to 
+enable AI-powered features using their own API keys.
+
 ================================================================================
 
-6. DATA DELETION
+8. DATA DELETION & REMOVAL
 
-Upon request, the Service Provider will:
+ProcessSutra provides comprehensive self-service data deletion capabilities:
 
-• Permanently delete workflow data
-• Delete forms and submitted data
-• Remove user and employee information
-• Provide a written confirmation of deletion
+a. User-Initiated Deletion
+   • Administrators can delete individual tasks, forms, and workflows from the platform
+   • Users can remove their own data through the application interface
+
+b. Organization-Wide Data Removal
+   • Administrators can request complete deletion of all organization data
+   • This includes: all tasks, flow rules, form templates, form responses, 
+     employee records, organization settings, and AI API key configurations
+
+c. Upon request, the Service Provider will:
+   • Permanently delete all workflow and task data
+   • Delete all forms and submitted form responses
+   • Remove all user and employee information
+   • Clear all organization configuration and settings
+   • Remove all AI API keys stored for the organization
+   • Provide a written confirmation of complete deletion
+
+d. Files stored in the Client's Google Drive remain under the Client's control 
+   and are not affected by ProcessSutra data deletion.
+
+e. Data deletion is irreversible. The Service Provider is not responsible for 
+   any data loss resulting from Client-initiated deletions.
 
 ================================================================================
 
-7. DURATION
+9. DURATION
 
 This Agreement:
 
@@ -201,7 +294,7 @@ This Agreement:
 
 ================================================================================
 
-8. REMEDIES
+10. REMEDIES
 
 Unauthorized disclosure of Client data may result in:
 
@@ -211,13 +304,13 @@ Unauthorized disclosure of Client data may result in:
 
 ================================================================================
 
-9. GOVERNING LAW
+11. GOVERNING LAW
 
 This Agreement is governed by the laws of India.
 
 ================================================================================
 
-10. ACCEPTANCE
+12. ACCEPTANCE
 
 By using ProcessSutra, the Client agrees to the terms of this NDA automatically.
 
@@ -347,9 +440,10 @@ For questions: security@muxrotechnologies.com
 
         {/* Main Content Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="nda">NDA Agreement</TabsTrigger>
+            <TabsTrigger value="ai-data">AI & Data</TabsTrigger>
             <TabsTrigger value="security">Security Details</TabsTrigger>
             <TabsTrigger value="compliance">Compliance</TabsTrigger>
           </TabsList>
@@ -397,6 +491,14 @@ For questions: security@muxrotechnologies.com
                       <div className="flex items-center gap-2 text-sm">
                         <CheckCircle className="w-4 h-4 text-green-600" />
                         <span>3-year validity period</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                        <span>AI data never shared without consent</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                        <span>Files stored on your Google Drive only</span>
                       </div>
                       <Button onClick={handleDownloadNDA} className="w-full">
                         <Download className="w-4 h-4 mr-2" />
@@ -549,27 +651,49 @@ For questions: security@muxrotechnologies.com
                     </ul>
                   </div>
 
-                  <div>
-                    <h4 className="font-semibold mb-2">5. DATA OWNERSHIP</h4>
-                    <p className="text-sm">
-                      All data provided through ProcessSutra will always remain the <strong>sole property of the Client</strong>.
-                      The Service Provider holds no ownership rights over this data.
-                    </p>
+                  <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded p-4">
+                    <h4 className="font-semibold mb-2 flex items-center gap-2"><Brain className="w-4 h-4 text-blue-600" /> 4. AI & LLM DATA ACCESS POLICY</h4>
+                    <ul className="list-disc list-inside text-sm space-y-1 ml-4">
+                      <li><strong>Organization-owned API keys:</strong> All AI keys (Gemini, OpenAI) are provided by the Client. ProcessSutra does NOT provide or manage AI keys</li>
+                      <li><strong>Flow rules, task data, and form data are NEVER shared with any AI/LLM</strong></li>
+                      <li><strong>Only aggregated reporting parameters</strong> (total counts, percentages, averages) may be sent when Client explicitly enables AI analysis</li>
+                      <li><strong>Form data belongs entirely to the organization</strong> — this is why aggregated metrics can be derived and shared with Client's own AI</li>
+                      <li><strong>No AI training:</strong> No Client data is used to train or improve any AI model</li>
+                    </ul>
                   </div>
 
-                  <div>
-                    <h4 className="font-semibold mb-2">6. DATA DELETION</h4>
-                    <p className="text-sm mb-2">Upon request, the Service Provider will:</p>
+                  <div className="bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded p-4">
+                    <h4 className="font-semibold mb-2 flex items-center gap-2"><HardDrive className="w-4 h-4 text-purple-600" /> 5. FILE STORAGE & GOOGLE DRIVE</h4>
                     <ul className="list-disc list-inside text-sm space-y-1 ml-4">
-                      <li>Permanently delete workflow data</li>
-                      <li>Delete forms and submitted data</li>
-                      <li>Remove user and employee information</li>
-                      <li>Provide a written confirmation of deletion</li>
+                      <li>All uploaded files are stored in the <strong>Client's own Google Drive</strong> (ProcessSutra folder)</li>
+                      <li><strong>ProcessSutra does NOT store, copy, or retain any files</strong> on its servers</li>
+                      <li>File ownership and access control are governed by Client's Google Workspace policies</li>
+                      <li>Revoking Google Drive access immediately stops ProcessSutra from reading/writing files</li>
                     </ul>
                   </div>
 
                   <div>
-                    <h4 className="font-semibold mb-2">7. DURATION</h4>
+                    <h4 className="font-semibold mb-2">7. DATA OWNERSHIP</h4>
+                    <p className="text-sm">
+                      All data provided through ProcessSutra will always remain the <strong>sole property of the Client</strong>.
+                      The Service Provider holds no ownership rights over this data. This includes flow rules, task records,
+                      form templates, form responses, uploaded files, and all organization configurations.
+                    </p>
+                  </div>
+
+                  <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded p-4">
+                    <h4 className="font-semibold mb-2 flex items-center gap-2"><Trash2 className="w-4 h-4 text-red-600" /> 8. DATA DELETION & REMOVAL</h4>
+                    <ul className="list-disc list-inside text-sm space-y-1 ml-4">
+                      <li><strong>Self-service deletion:</strong> Admins can delete individual tasks, forms, and workflows directly</li>
+                      <li><strong>Organization-wide removal:</strong> Complete deletion of all organization data on request</li>
+                      <li>Includes: all tasks, flow rules, form templates, form responses, employee records, settings, and AI API keys</li>
+                      <li>Written confirmation of complete deletion provided</li>
+                      <li>Google Drive files remain under Client's control independently</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold mb-2">9. DURATION</h4>
                     <p className="text-sm">
                       This Agreement begins from the date the Client uses ProcessSutra, remains in effect for as long 
                       as the Client uses the service, and continues for <strong>3 years</strong> after account deletion, 
@@ -578,14 +702,14 @@ For questions: security@muxrotechnologies.com
                   </div>
 
                   <div>
-                    <h4 className="font-semibold mb-2">9. GOVERNING LAW</h4>
+                    <h4 className="font-semibold mb-2">11. GOVERNING LAW</h4>
                     <p className="text-sm">
                       This Agreement is governed by the <strong>laws of India</strong>.
                     </p>
                   </div>
 
                   <div>
-                    <h4 className="font-semibold mb-2">10. ACCEPTANCE</h4>
+                    <h4 className="font-semibold mb-2">12. ACCEPTANCE</h4>
                     <p className="text-sm">
                       By using ProcessSutra, the Client agrees to the terms of this NDA automatically.
                     </p>
@@ -603,6 +727,192 @@ For questions: security@muxrotechnologies.com
                   <Download className="w-4 h-4 mr-2" />
                   Download Complete NDA
                 </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* AI & Data Tab */}
+          <TabsContent value="ai-data" className="space-y-6">
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* AI Data Policy */}
+              <Card className="border-2 border-blue-100 dark:border-blue-900">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <Brain className="w-5 h-5 text-blue-600" />
+                    AI & LLM Data Policy
+                  </CardTitle>
+                  <CardDescription>How your data interacts with AI features</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-3">
+                    <p className="text-sm font-semibold text-blue-800 dark:text-blue-300">Your Organization Uses Your Own AI API Keys</p>
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">ProcessSutra does NOT provide, manage, or have access to any AI API keys. All AI calls use your organization's own Gemini or OpenAI API key.</p>
+                  </div>
+
+                  <h4 className="font-semibold text-sm text-red-700 dark:text-red-400 flex items-center gap-2">
+                    <CloudOff className="w-4 h-4" />
+                    Data NEVER Shared with AI/LLM
+                  </h4>
+                  <div className="space-y-2">
+                    {[
+                      'Flow rules and workflow definitions',
+                      'Individual task records and task details',
+                      'Form templates and form submission data',
+                      'Employee/doer personal information (emails, names, phones)',
+                      'Uploaded files and documents',
+                      'Customer or third-party personal data',
+                      'Organization credentials, API keys, or secrets',
+                      'Database records, IDs, or raw operational data',
+                    ].map((item, i) => (
+                      <div key={i} className="flex items-center gap-2 text-sm">
+                        <Lock className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                        <span>{item}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <Separator />
+
+                  <h4 className="font-semibold text-sm text-green-700 dark:text-green-400 flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4" />
+                    What AI Receives (Only When Enabled)
+                  </h4>
+                  <p className="text-xs text-muted-foreground">Only pre-computed, aggregated statistical summaries — when you explicitly enable AI analysis:</p>
+                  <div className="space-y-2">
+                    {[
+                      'Total task counts and completion percentages',
+                      'Average cycle times and throughput rates',
+                      'System-level aggregate performance (no individual records)',
+                      'Anonymous team size counts (no emails or names)',
+                    ].map((item, i) => (
+                      <div key={i} className="flex items-center gap-2 text-sm">
+                        <CheckCircle className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+                        <span>{item}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3">
+                    <p className="text-xs text-amber-700 dark:text-amber-400">
+                      <strong>Why reporting parameters can be shared:</strong> Since all form data, task data, and workflow data are the sole property of your organization, the aggregated performance metrics derived from this data also belong to you. Your own AI API key is used, meaning data flows from your system through your own AI account.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* File Storage Policy */}
+              <Card className="border-2 border-purple-100 dark:border-purple-900">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <HardDrive className="w-5 h-5 text-purple-600" />
+                    File Storage & Google Drive
+                  </CardTitle>
+                  <CardDescription>Where your files are actually stored</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="rounded-lg bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 p-3">
+                    <p className="text-sm font-semibold text-purple-800 dark:text-purple-300">Files Live in YOUR Google Drive</p>
+                    <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">ProcessSutra does NOT store, copy, cache, or retain any uploaded files on its servers.</p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                      <div className="text-sm">
+                        <strong>Client's Google Drive</strong>
+                        <p className="text-muted-foreground">All files stored in a designated "ProcessSutra" folder in your Google Drive</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                      <div className="text-sm">
+                        <strong>Zero Server Storage</strong>
+                        <p className="text-muted-foreground">ProcessSutra has no copy of your files on its infrastructure</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                      <div className="text-sm">
+                        <strong>Your Access Controls</strong>
+                        <p className="text-muted-foreground">File access governed by your Google Workspace policies</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                      <div className="text-sm">
+                        <strong>Instant Revocation</strong>
+                        <p className="text-muted-foreground">Revoking Google Drive access immediately stops all file operations</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  <h4 className="font-semibold text-sm flex items-center gap-2">
+                    <Trash2 className="w-4 h-4 text-red-500" />
+                    Data Deletion & Removal
+                  </h4>
+                  <p className="text-xs text-muted-foreground mb-2">ProcessSutra provides comprehensive self-service data deletion:</p>
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                      <div className="text-sm">
+                        <strong>Self-Service Deletion</strong>
+                        <p className="text-muted-foreground">Admins can delete individual tasks, forms, workflows, and flow rules directly</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                      <div className="text-sm">
+                        <strong>Complete Organization Wipe</strong>
+                        <p className="text-muted-foreground">Request deletion of ALL organization data: tasks, flow rules, forms, responses, employee records, settings, and AI API keys</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                      <div className="text-sm">
+                        <strong>Google Drive Independence</strong>
+                        <p className="text-muted-foreground">Files in your Google Drive are not affected by ProcessSutra data deletion — you manage them independently</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                      <div className="text-sm">
+                        <strong>Written Confirmation</strong>
+                        <p className="text-muted-foreground">Confirmation of complete deletion provided upon request</p>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Data Ownership Summary */}
+            <Card className="border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/40">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-green-800 dark:text-green-400">
+                  <ShieldCheck className="w-5 h-5" />
+                  Complete Data Ownership Guarantee
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div className="text-center p-4 bg-white/60 dark:bg-white/5 rounded-lg border border-green-200 dark:border-green-800">
+                    <Database className="w-8 h-8 text-green-600 mx-auto mb-2" />
+                    <p className="font-bold text-green-800 dark:text-green-300">Your Data</p>
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-1">All workflow, task, and form data is 100% owned by your organization</p>
+                  </div>
+                  <div className="text-center p-4 bg-white/60 dark:bg-white/5 rounded-lg border border-green-200 dark:border-green-800">
+                    <HardDrive className="w-8 h-8 text-green-600 mx-auto mb-2" />
+                    <p className="font-bold text-green-800 dark:text-green-300">Your Files</p>
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-1">All files stored in your Google Drive, never on ProcessSutra servers</p>
+                  </div>
+                  <div className="text-center p-4 bg-white/60 dark:bg-white/5 rounded-lg border border-green-200 dark:border-green-800">
+                    <Key className="w-8 h-8 text-green-600 mx-auto mb-2" />
+                    <p className="font-bold text-green-800 dark:text-green-300">Your AI Keys</p>
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-1">Your own Gemini/OpenAI API keys — ProcessSutra never provides AI keys</p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

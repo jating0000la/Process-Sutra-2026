@@ -26,6 +26,7 @@ import quickFormRouter from './quickFormRoutes.js';
 import reportRouter from './reportRoutes.js';
 import billingRouter, { handlePayUSuccess, handlePayUFailure, handlePayUWebhook } from './billingRoutes.js';
 import aiAssistantRouter from './aiAssistantRoutes.js';
+import { registerAnalyticsRoutes } from './analyticsRoutes.js';
 import * as crypto from 'crypto';
 import { sanitizeFlowRule, sanitizeFlowRules } from './inputSanitizer.js';
 import archiver from 'archiver';
@@ -2860,6 +2861,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch doer weekly performance" });
     }
   });
+
+  // ─── Voice of Business — Performance Report (moved to analyticsRoutes.ts) ──
+  registerAnalyticsRoutes(app, { analyticsLimiter, isAuthenticated, requireAdmin, addUserToRequest });
 
   // TAT Configuration API
   app.get("/api/tat-config", isAuthenticated, async (req: any, res) => {
