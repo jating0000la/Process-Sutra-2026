@@ -617,9 +617,10 @@ const LandingLogin: React.FC = () => {
               </p>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-8">
-              <VideoCard icon={<FaBrain />} iconBg="bg-red-500" title="Problem Explained" subtitle="Understanding the business challenge" embedId="QRvI6a6FE9Y" borderHover="hover:border-red-400/50" />
-              <VideoCard icon={<FaCogs />} iconBg="bg-green-500" title="Setup Guide" subtitle="Get started in minutes" embedId="-_CI-3FRwSo" borderHover="hover:border-green-400/50" />
+            <div className="grid md:grid-cols-3 gap-6">
+              <VideoCard icon={<FaBrain />} iconBg="bg-red-500" title="Problem Explained" subtitle="Understanding the business challenge" url="https://youtu.be/QRvI6a6FE9Y" thumb="https://img.youtube.com/vi/QRvI6a6FE9Y/hqdefault.jpg" borderHover="hover:border-red-400/50" />
+              <VideoCard icon={<FaCogs />} iconBg="bg-green-500" title="Setup Guide" subtitle="Get started in minutes" url="https://youtu.be/iiqJIOZQt-8" thumb="https://img.youtube.com/vi/iiqJIOZQt-8/hqdefault.jpg" borderHover="hover:border-green-400/50" />
+              <VideoCard icon={<FaPlay />} iconBg="bg-blue-500" title="How to Create a Flow" subtitle="Step-by-step workflow creation" url="https://youtu.be/peGACHJogbg" thumb="https://img.youtube.com/vi/peGACHJogbg/hqdefault.jpg" borderHover="hover:border-blue-400/50" />
             </div>
 
             <div className="mt-16 grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1096,11 +1097,11 @@ function SolutionCard({ emoji, problem, solution, description, gradient, inView,
 }
 
 /* Video Card */
-function VideoCard({ icon, iconBg, title, subtitle, embedId, borderHover }: {
-  icon: React.ReactNode; iconBg: string; title: string; subtitle: string; embedId: string; borderHover: string;
+function VideoCard({ icon, iconBg, title, subtitle, url, thumb, borderHover }: {
+  icon: React.ReactNode; iconBg: string; title: string; subtitle: string; url: string; thumb: string; borderHover: string;
 }) {
   return (
-    <div className={`glass rounded-2xl p-6 md:p-8 border border-white/10 ${borderHover} transition-all duration-300 hover:scale-[1.01]`}>
+    <a href={url} target="_blank" rel="noopener noreferrer" className={`group glass rounded-2xl p-6 border border-white/10 ${borderHover} transition-all duration-300 hover:scale-[1.02] block`}>
       <div className="flex items-center gap-3 mb-4">
         <div className={`w-10 h-10 ${iconBg} rounded-lg flex items-center justify-center text-white text-lg`}>{icon}</div>
         <div>
@@ -1108,10 +1109,18 @@ function VideoCard({ icon, iconBg, title, subtitle, embedId, borderHover }: {
           <p className="text-xs text-gray-400">{subtitle}</p>
         </div>
       </div>
-      <div className="relative pb-[56.25%] h-0 rounded-lg overflow-hidden shadow-xl">
-        <iframe className="absolute top-0 left-0 w-full h-full" src={`https://www.youtube-nocookie.com/embed/${embedId}?origin=https://www.processsutra.com&rel=0`} title={title} frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />
+      <div className="relative rounded-lg overflow-hidden shadow-xl">
+        <img src={thumb} alt={title} className="w-full object-cover rounded-lg" loading="lazy" />
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-black/20 transition-all duration-300 rounded-lg">
+          <div className="w-14 h-14 bg-red-600 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+            <FaPlay className="text-white text-xl ml-1" />
+          </div>
+        </div>
       </div>
-    </div>
+      <div className="mt-4 flex items-center justify-center gap-2 text-sm text-indigo-300 group-hover:text-white transition-colors">
+        <FaPlay className="text-xs" /> Watch on YouTube
+      </div>
+    </a>
   );
 }
 
