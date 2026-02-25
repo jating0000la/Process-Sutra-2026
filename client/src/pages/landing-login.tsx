@@ -1109,7 +1109,7 @@ function VideoCard({ icon, iconBg, title, subtitle, embedId, borderHover }: {
         </div>
       </div>
       <div className="relative pb-[56.25%] h-0 rounded-lg overflow-hidden shadow-xl">
-        <iframe className="absolute top-0 left-0 w-full h-full" src={`https://www.youtube.com/embed/${embedId}`} title={title} frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
+        <iframe className="absolute top-0 left-0 w-full h-full" src={`https://www.youtube-nocookie.com/embed/${embedId}?origin=https://www.processsutra.com&rel=0`} title={title} frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />
       </div>
     </div>
   );
