@@ -162,10 +162,4 @@ export const pageSEO = {
     keywords: 'report builder, custom reports, dashboards, data visualization, analytics, charts, business intelligence',
     canonical: '/report-builder',
   },
-  payments: {
-    title: 'Payments & Billing',
-    description: 'View billing challans, make payments, and track transaction history for your organization on ProcessSutra.',
-    keywords: 'payments, billing, challans, invoices, payment history, PayU, transactions',
-    canonical: '/payments',
-  },
 };

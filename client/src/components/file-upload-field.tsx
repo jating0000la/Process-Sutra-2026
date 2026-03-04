@@ -151,8 +151,7 @@ export function FileUploadField({
             setFileData(result);
             
             if (onChange) {
-              // Only pass the webViewLink to minimize data storage
-              onChange(webViewLink);
+              onChange(result);
             }
 
             toast({
@@ -160,7 +159,7 @@ export function FileUploadField({
               description: `File "${file.name}" uploaded successfully to Google Drive!`,
             });
             
-            resolve(webViewLink);
+            resolve(result);
           } catch (err) {
             reject(new Error('Failed to parse server response'));
           }

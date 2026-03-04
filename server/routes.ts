@@ -4,7 +4,7 @@ import { addClient, removeClient, sendToEmail } from './notifications.js';
 import { createServer, type Server } from "http";
 import { storage } from "./storage.js";
 import { setupAuth, isAuthenticated } from "./firebaseAuth.js";
-import { db } from "./db.js";
+import { db, pool } from "./db.js";
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import NodeCache from 'node-cache';
@@ -13,6 +13,9 @@ import {
   insertFlowRuleSchema,
   insertTaskSchema,
   insertOrganizationSchema,
+  insertUserLoginLogSchema,
+  insertUserDeviceSchema,
+  insertPasswordChangeHistorySchema,
   users,
   tasks,
 } from "@shared/schema";
@@ -24,7 +27,6 @@ import uploadsRouter from './uploads.js';
 import oauthRouter from './oauthRoutes.js';
 import quickFormRouter from './quickFormRoutes.js';
 import reportRouter from './reportRoutes.js';
-import billingRouter, { handlePayUSuccess, handlePayUFailure, handlePayUWebhook } from './billingRoutes.js';
 import aiAssistantRouter from './aiAssistantRoutes.js';
 import { registerAnalyticsRoutes } from './analyticsRoutes.js';
 import * as crypto from 'crypto';
@@ -176,8 +178,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       res.status(500).json({ 
         ok: false, 
-        database: 'disconnected',
-        error: error instanceof Error ? error.message : 'Unknown error'
+        database: 'error'
       });
     }
   });
@@ -269,15 +270,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Report Builder API — admin-only analytics over form data
   app.use('/api/reports', isAuthenticated, requireAdmin, addUserToRequest, reportRouter);
-
-  // PayU callback routes — registered as standalone handlers WITHOUT auth middleware
-  // PayU POSTs form data back to these URLs after payment (no session/cookie available)
-  app.post('/api/billing/payu-success', handlePayUSuccess);
-  app.post('/api/billing/payu-failure', handlePayUFailure);
-  app.post('/api/billing/payu-webhook', handlePayUWebhook);
-
-  // Billing & Payments API — authenticated routes (list, generate, pay, transactions)
-  app.use('/api/billing', isAuthenticated, requireAdmin, addUserToRequest, billingRouter);
 
   // AI Assistant API — authenticated admin-only routes
   app.use('/api/ai-assistant', isAuthenticated, requireAdmin, addUserToRequest, aiAssistantRouter);
@@ -2929,267 +2921,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Usage Statistics API
-  app.get("/api/usage/summary", analyticsLimiter, isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
-    try {
-      const user = req.currentUser;
-      const organizationId = user.organizationId;
-      
-      // Validate date range parameter
-      const allowedRanges = ['week', 'month', 'quarter', 'year'];
-      const dateRange = allowedRanges.includes(req.query.dateRange as string) 
-        ? req.query.dateRange 
-        : 'month';
-      
-      // Allow bypassing cache with ?nocache=1 for debugging
-      const bypassCache = req.query.nocache === '1';
-      
-      // Import cache utilities
-      const { getCachedOrCompute, getUsageSummaryCacheKey, usageCache } = await import('./usageCache.js');
-      const cacheKey = getUsageSummaryCacheKey(organizationId, dateRange);
-      
-      // Clear cache if requested
-      if (bypassCache) {
-        usageCache.del(cacheKey);
-      }
-      
-      // Try to get cached result or compute
-      const result = await getCachedOrCompute(cacheKey, async () => {
-        // Import optimized queries
-        const {
-          getFlowStats,
-          getFormStats,
-          getFormsByType,
-          getUserStats,
-          getStorageStats
-        } = await import('./usageQueries.js');
-        
-        // Calculate date ranges
-        const now = new Date();
-        const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
-        
-        // Fetch data using optimized queries - runs in parallel
-        const [flowStats, formStats, formsByType, userStats, storageStats, org] = await Promise.all([
-          getFlowStats(organizationId, thisMonthStart, lastMonthStart, lastMonthEnd),
-          getFormStats(organizationId, thisMonthStart, lastMonthStart, lastMonthEnd),
-          getFormsByType(organizationId),
-          getUserStats(organizationId),
-          getStorageStats(organizationId),
-          storage.getOrganization(organizationId)
-        ]);
-        
-        // Calculate metrics from aggregated data
-        const totalFlows = Number(flowStats.total_flows) || 0;
-        const monthFlows = Number(flowStats.month_flows) || 0;
-        const lastMonthFlows = Number(flowStats.last_month_flows) || 0;
-        const activeFlows = Number(flowStats.active_flows) || 0;
-        const completedFlows = Number(flowStats.completed_flows) || 0;
-        const cancelledFlows = Number(flowStats.cancelled_flows) || 0;
-        const completedTasks = Number(flowStats.completed_tasks) || 0;
-        const avgCompletionTime = Number(flowStats.avg_days) || 0;
-        const onTimeTasks = Number(flowStats.on_time_tasks) || 0;
-        
-        const successRate = totalFlows > 0 ? ((completedFlows / totalFlows) * 100) : 0;
-        const flowTrend = lastMonthFlows > 0 
-          ? ((monthFlows - lastMonthFlows) / lastMonthFlows * 100)
-          : 0;
-        const tatCompliance = completedTasks > 0 ? (onTimeTasks / completedTasks * 100) : 0;
-        
-        // Form metrics
-        const totalForms = Number(formStats.total_forms) || 0;
-        const monthForms = Number(formStats.month_forms) || 0;
-        const lastMonthForms = Number(formStats.last_month_forms) || 0;
-        const formTrend = lastMonthForms > 0 ? ((monthForms - lastMonthForms) / lastMonthForms * 100) : 0;
-        
-        // User metrics
-        const totalUsers = Number(userStats.total_users) || 0;
-        const activeUsers = Number(userStats.active_users) || 0;
-        const activeToday = Number(userStats.active_today) || 0;
-        const monthTasks = Number(flowStats.month_tasks) || 0;
-        const avgTasksPerUser = totalUsers > 0 ? monthTasks / totalUsers : 0;
-        
-        // Storage metrics
-        const totalFileUploads = storageStats.totalFiles;
-        const totalBytes = storageStats.totalBytes;
-        const filesByType = storageStats.filesByType;
-        
-        // Cost calculation using organization pricing settings
-        // Use organization's pricing tier rates if usage-based billing is enabled
-        const flowRate = org?.usageBasedBilling && org?.pricePerFlow 
-          ? org.pricePerFlow / 100 // Convert paise to rupees
-          : 5; // Default: ₹5 per flow
-        const userRate = org?.usageBasedBilling && org?.pricePerUser 
-          ? org.pricePerUser / 100 // Convert paise to rupees
-          : 100; // Default: ₹100 per active user
-        const formRate = 2; // ₹2 per form submission (not configurable yet)
-        
-        // Calculate overage charges for usage-based billing
-        let overageFlowCost = 0;
-        let overageUserCost = 0;
-        let overageStorageCost = 0;
-        
-        if (org?.usageBasedBilling) {
-          const flowsOverage = Math.max(0, totalFlows - (org.maxFlows || 0));
-          const usersOverage = Math.max(0, activeUsers - (org.maxUsers || 0));
-          const storageOverageGB = Math.max(0, (totalBytes / (1024 * 1024 * 1024)) - ((org.maxStorage || 5000) / 1024));
-          
-          overageFlowCost = flowsOverage * flowRate;
-          overageUserCost = usersOverage * userRate;
-          overageStorageCost = org.pricePerGb 
-            ? storageOverageGB * (org.pricePerGb / 100) 
-            : 0;
-        }
-        
-        // Base monthly fee
-        const baseFee = org?.monthlyPrice ? org.monthlyPrice / 100 : 0; // Convert paise to rupees
-        
-        // Total costs
-        const flowCost = (monthFlows * flowRate) + overageFlowCost;
-        const userCost = (activeUsers * userRate) + overageUserCost;
-        const formCost = monthForms * formRate;
-        const storageCost = overageStorageCost;
-        const currentMonthCost = baseFee + flowCost + userCost + formCost + storageCost;
-        
-        const lastMonthCost = (lastMonthFlows * flowRate) + (activeUsers * userRate) + (lastMonthForms * formRate);
-        const costComparison = lastMonthCost > 0 ? ((currentMonthCost - lastMonthCost) / lastMonthCost * 100) : 0;
-        
-        const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-        const currentDay = now.getDate();
-        const projectedCost = currentDay > 0 ? (currentMonthCost / currentDay) * daysInMonth : currentMonthCost;
-        
-        return {
-          flows: {
-            total: totalFlows,
-            thisMonth: monthFlows,
-            active: activeFlows,
-            completed: completedFlows,
-            cancelled: cancelledFlows,
-            successRate: Math.round(successRate * 10) / 10,
-            avgCompletionTime: Math.round(avgCompletionTime * 10) / 10,
-            trend: Math.round(flowTrend * 10) / 10
-          },
-          forms: {
-            total: totalForms,
-            thisMonth: monthForms,
-            byFormType: formsByType,
-            avgSubmissionTime: 0, // Placeholder - needs implementation
-            trend: Math.round(formTrend * 10) / 10
-          },
-          storage: {
-            totalFiles: totalFileUploads,
-            totalBytes,
-            totalGB: totalBytes / (1024 * 1024 * 1024),
-            byFileType: filesByType,
-            avgFileSize: totalFileUploads > 0 ? totalBytes / totalFileUploads : 0,
-            trend: 15 // Placeholder - needs time-based tracking
-          },
-          users: {
-            total: totalUsers,
-            active: activeUsers,
-            activeToday,
-            avgTasksPerUser: Math.round(avgTasksPerUser * 10) / 10
-          },
-          cost: {
-            currentMonth: currentMonthCost,
-            flowCost,
-            userCost,
-            formCost,
-            projected: Math.round(projectedCost),
-            comparison: Math.round(costComparison * 10) / 10
-          },
-          performance: {
-            tatCompliance: Math.round(tatCompliance * 10) / 10,
-            onTimeRate: Math.round(tatCompliance * 10) / 10,
-            avgResponseTime: Math.round(avgCompletionTime * 10) / 10
-          },
-          quotas: {
-            maxUsers: org?.maxUsers || 0,
-            currentUsers: totalUsers,
-            maxFlows: org?.maxFlows || 0,
-            currentFlows: totalFlows,
-            storageLimit: (org?.maxStorage || 5000) / 1024, // Convert MB to GB
-            storageUsed: totalBytes / (1024 * 1024 * 1024)
-          }
-        };
-      });
-      
-      res.json(result);
-    } catch (error) {
-      console.error("Error fetching usage summary:", error);
-      res.status(500).json({ message: "Failed to fetch usage summary" });
-    }
-  });
-
-  app.get("/api/usage/trends", analyticsLimiter, isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
-    try {
-      const user = req.currentUser;
-      const organizationId = user.organizationId;
-      
-      // Allow bypassing cache with ?nocache=1 for debugging
-      const bypassCache = req.query.nocache === '1';
-      
-      // Import cache utilities
-      const { getCachedOrCompute, getUsageTrendsCacheKey, usageCache } = await import('./usageCache.js');
-      const cacheKey = getUsageTrendsCacheKey(organizationId);
-      
-      // Clear cache if requested
-      if (bypassCache) {
-        usageCache.del(cacheKey);
-      }
-      
-      // Try to get cached result or compute
-      const result = await getCachedOrCompute(cacheKey, async () => {
-        // Import optimized queries
-        const {
-          getDailyTrends,
-          getFlowsBySystem,
-          getTopForms
-        } = await import('./usageQueries.js');
-        
-        // Fetch all data in parallel
-        const [trendsData, flowsBySystem, topForms] = await Promise.all([
-          getDailyTrends(organizationId),
-          getFlowsBySystem(organizationId),
-          getTopForms(organizationId, 10)
-        ]);
-        
-        // Build daily data array with proper date formatting
-        const dailyData: Array<{ date: string; flows: number; forms: number; storage: number }> = [];
-        const { format } = await import('date-fns');
-        
-        for (let i = 29; i >= 0; i--) {
-          const date = new Date();
-          date.setDate(date.getDate() - i);
-          date.setHours(0, 0, 0, 0);
-          
-          const dateStr = date.toISOString().split('T')[0];
-          const flows = trendsData.tasksByDate.get(dateStr) || 0;
-          const forms = trendsData.formsByDate.get(dateStr) || 0;
-          
-          dailyData.push({
-            date: format(date, 'MMM dd'),
-            flows,
-            forms,
-            storage: 0 // Placeholder - needs time-based tracking
-          });
-        }
-        
-        return {
-          daily: dailyData,
-          flowsBySystem,
-          topForms
-        };
-      });
-      
-      res.json(result);
-    } catch (error) {
-      console.error("Error fetching usage trends:", error);
-      res.status(500).json({ message: "Failed to fetch usage trends" });
-    }
-  });
-
   // Organization-specific user routes
   app.get("/api/users", isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
@@ -3214,9 +2945,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      // Ensure new user gets the same organization ID as the admin creating them
+      // SECURITY: Whitelist only allowed fields — prevents injection of isSuperAdmin, googleAccessToken, etc.
+      const { username, email, firstName, lastName, phoneNumber, department, designation,
+              employeeId, dateOfBirth, address, emergencyContact, emergencyContactPhone,
+              role, status, profileImageUrl } = req.body;
       const userData = {
-        ...req.body,
+        username, email, firstName, lastName, phoneNumber, department, designation,
+        employeeId, dateOfBirth, address, emergencyContact, emergencyContactPhone,
+        role, status, profileImageUrl,
         organizationId: currentUser.organizationId
       };
       const user = await storage.createUser(userData);
@@ -3241,10 +2977,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Access denied. Cannot update users from other organizations." });
       }
       
-      // Prevent changing sensitive fields via this endpoint
-      const { organizationId, id, createdAt, ...allowedUpdates } = req.body;
-      
-      const user = await storage.updateUserDetails(req.params.id, allowedUpdates);
+      // SECURITY: Allowlist only updatable fields — prevents injection of isSuperAdmin, googleAccessToken, etc.
+      const { firstName, lastName, phoneNumber, department, designation,
+              employeeId, dateOfBirth, address, emergencyContact, emergencyContactPhone,
+              role, status, profileImageUrl, email } = req.body;
+      const allowedUpdates = {
+        firstName, lastName, phoneNumber, department, designation,
+        employeeId, dateOfBirth, address, emergencyContact, emergencyContactPhone,
+        role, status, profileImageUrl, email
+      };
+      // Strip undefined values so we only update fields that were actually sent
+      const cleanUpdates = Object.fromEntries(
+        Object.entries(allowedUpdates).filter(([_, v]) => v !== undefined)
+      );
+      const user = await storage.updateUserDetails(req.params.id, cleanUpdates);
       res.json(user);
     } catch (error) {
       console.error("Error updating user:", error);
@@ -3447,11 +3193,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/login-logs", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.id);
-      const log = await storage.createLoginLog({
+      const log = await storage.createLoginLog(insertUserLoginLogSchema.parse({
         ...req.body,
         userId: req.user.id,
         organizationId: currentUser?.organizationId || ""
-      });
+      }));
       res.json(log);
     } catch (error) {
       console.error("Error creating login log:", error);
@@ -3481,11 +3227,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/devices", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.id);
-      const device = await storage.createOrUpdateDevice({
+      const device = await storage.createOrUpdateDevice(insertUserDeviceSchema.parse({
         ...req.body,
         userId: req.user.id,
         organizationId: currentUser?.organizationId || ""
-      });
+      }));
       res.json(device);
     } catch (error) {
       console.error("Error creating/updating device:", error);
@@ -3529,10 +3275,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/password-history", isAuthenticated, async (req: any, res) => {
     try {
-      const history = await storage.createPasswordChangeHistory({
+      const currentUser = await storage.getUser(req.user.id);
+      const history = await storage.createPasswordChangeHistory(insertPasswordChangeHistorySchema.parse({
         ...req.body,
-        userId: req.user.id
-      });
+        userId: req.user.id,
+        organizationId: currentUser?.organizationId || ""
+      }));
       res.json(history);
     } catch (error) {
       console.error("Error creating password history:", error);
@@ -3545,43 +3293,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Only accessible by super admins (above organizations)
   // ============================================================
 
-  // Get all organizations (super admin only)
+  // Get all organizations (super admin only) — optimized with aggregate queries
   app.get("/api/super-admin/organizations", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
     try {
-      const organizations = await storage.getAllOrganizations();
-      
-      // Enrich with user counts and activity
-      const enrichedOrgs = await Promise.all(
-        organizations.map(async (org) => {
-          const users = await storage.getUsersByOrganization(org.id);
-          const activeUsers = users.filter((u: any) => u.status === 'active').length;
-          const totalUsers = users.length;
-          const tasks = await storage.getTasksByOrganization(org.id);
-          const completedTasks = tasks.filter((t: any) => t.status === 'completed').length;
-          
-          // Calculate current flows (unique flow IDs)
-          const uniqueFlowIds = new Set(tasks.map((t: any) => t.flowId));
-          const currentFlows = uniqueFlowIds.size;
-          
-          // Calculate current storage from form responses (MongoDB)
-          const respCol = await getQuickFormResponsesCollection();
-          const responseCount = await respCol.countDocuments({ organizationId: org.id });
-          // Rough estimate: 0.5 MB per response
-          const currentStorage = Math.round(responseCount * 0.5);
-          
-          return {
-            ...org,
-            totalUsers,
-            activeUsers,
-            totalTasks: tasks.length,
-            completedTasks,
-            taskCompletionRate: tasks.length > 0 ? ((completedTasks / tasks.length) * 100).toFixed(1) : 0,
-            currentFlows,
-            currentStorage
-          };
-        })
-      );
-      
+      // Fetch orgs, user stats, and task stats in parallel — 3 queries instead of 9001
+      const [orgs, userStats, taskStats] = await Promise.all([
+        storage.getAllOrganizations(),
+        pool.query(`
+          SELECT organization_id,
+                 COUNT(*)::int AS total_users,
+                 COUNT(*) FILTER (WHERE status = 'active')::int AS active_users
+          FROM users
+          GROUP BY organization_id
+        `),
+        pool.query(`
+          SELECT organization_id,
+                 COUNT(*)::int AS total_tasks,
+                 COUNT(*) FILTER (WHERE status = 'completed')::int AS completed_tasks,
+                 COUNT(DISTINCT flow_id)::int AS current_flows
+          FROM tasks
+          GROUP BY organization_id
+        `),
+      ]);
+
+      // Build lookup maps
+      const userMap = new Map<string, { total_users: number; active_users: number }>();
+      for (const row of userStats.rows as any[]) {
+        userMap.set(row.organization_id, row);
+      }
+      const taskMap = new Map<string, { total_tasks: number; completed_tasks: number; current_flows: number }>();
+      for (const row of taskStats.rows as any[]) {
+        taskMap.set(row.organization_id, row);
+      }
+
+      // MongoDB aggregate — single pipeline instead of 3000 countDocuments
+      let mongoMap = new Map<string, number>();
+      try {
+        const respCol = await getQuickFormResponsesCollection();
+        const mongoCounts = await respCol.aggregate([
+          { $group: { _id: "$organizationId", count: { $sum: 1 } } }
+        ]).toArray();
+        for (const doc of mongoCounts) {
+          mongoMap.set(doc._id, doc.count);
+        }
+      } catch (_) { /* MongoDB may be unavailable */ }
+
+      const enrichedOrgs = orgs.map(org => {
+        const us = userMap.get(org.id) || { total_users: 0, active_users: 0 };
+        const ts = taskMap.get(org.id) || { total_tasks: 0, completed_tasks: 0, current_flows: 0 };
+        const responseCount = mongoMap.get(org.id) || 0;
+        return {
+          ...org,
+          totalUsers: us.total_users,
+          activeUsers: us.active_users,
+          totalTasks: ts.total_tasks,
+          completedTasks: ts.completed_tasks,
+          taskCompletionRate: ts.total_tasks > 0 ? ((ts.completed_tasks / ts.total_tasks) * 100).toFixed(1) : 0,
+          currentFlows: ts.current_flows,
+          currentStorage: Math.round(responseCount * 0.5),
+        };
+      });
+
       res.json(enrichedOrgs);
     } catch (error) {
       console.error("Error fetching organizations:", error);
@@ -3589,75 +3361,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get system-wide statistics (super admin only)
+  // Get system-wide statistics (super admin only) — optimized with aggregate queries
   app.get("/api/super-admin/system-statistics", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
     try {
-      const organizations = await storage.getAllOrganizations();
-      
-      // Aggregate statistics across all organizations
-      let totalUsers = 0;
-      let activeUsers = 0;
-      let inactiveUsers = 0;
-      let suspendedUsers = 0;
-      let totalTasks = 0;
-      let completedTasks = 0;
-      let totalFileUploads = 0;
-      let totalRevenue = 0;
-      let monthlyRecurring = 0;
-      
-      const orgStats = await Promise.all(
-        organizations.map(async (org) => {
-          const users = await storage.getUsersByOrganization(org.id);
-          const tasks = await storage.getTasksByOrganization(org.id);
-          
-          totalUsers += users.length;
-          activeUsers += users.filter((u: any) => u.status === 'active').length;
-          inactiveUsers += users.filter((u: any) => u.status === 'inactive').length;
-          suspendedUsers += users.filter((u: any) => u.status === 'suspended').length;
-          totalTasks += tasks.length;
-          completedTasks += tasks.filter((t: any) => t.status === 'completed').length;
-          
-          // Calculate billing
-          const baseFee = org.monthlyPrice || 0;
-          monthlyRecurring += baseFee;
-          totalRevenue += baseFee;
-          
-          return {
-            organizationId: org.id,
-            organizationName: org.name,
-            users: users.length,
-            activeTasks: tasks.filter((t: any) => t.status === 'pending').length,
-          };
-        })
-      );
-      
+      // 3 aggregate queries instead of 6001 N+1 queries
+      const [orgs, userAgg, taskAgg, orgUserStats] = await Promise.all([
+        storage.getAllOrganizations(),
+        pool.query(`
+          SELECT COUNT(*)::int AS total,
+                 COUNT(*) FILTER (WHERE status = 'active')::int AS active,
+                 COUNT(*) FILTER (WHERE status = 'inactive')::int AS inactive,
+                 COUNT(*) FILTER (WHERE status = 'suspended')::int AS suspended
+          FROM users
+        `),
+        pool.query(`
+          SELECT COUNT(*)::int AS total,
+                 COUNT(*) FILTER (WHERE status = 'completed')::int AS completed
+          FROM tasks
+        `),
+        pool.query(`
+          SELECT u.organization_id,
+                 COUNT(u.*)::int AS user_count,
+                 COUNT(*) FILTER (WHERE t.status = 'pending')::int AS active_tasks
+          FROM users u
+          LEFT JOIN tasks t ON t.organization_id = u.organization_id
+          GROUP BY u.organization_id
+        `),
+      ]);
+
+      const uRow = (userAgg.rows as any[])[0] || { total: 0, active: 0, inactive: 0, suspended: 0 };
+      const tRow = (taskAgg.rows as any[])[0] || { total: 0, completed: 0 };
+
+      // Build per-org lookup for quick enrichment
+      const orgStatMap = new Map<string, { user_count: number; active_tasks: number }>();
+      for (const row of orgUserStats.rows as any[]) {
+        orgStatMap.set(row.organization_id, row);
+      }
+
+      const byOrganization = orgs.map(org => {
+        const s = orgStatMap.get(org.id) || { user_count: 0, active_tasks: 0 };
+        return {
+          organizationId: org.id,
+          organizationName: org.name,
+          users: s.user_count,
+          activeTasks: s.active_tasks,
+        };
+      });
+
       res.json({
         system: {
-          totalOrganizations: organizations.length,
-          activeOrganizations: organizations.filter(o => o.isActive).length,
-          suspendedOrganizations: organizations.filter(o => o.isSuspended).length,
+          totalOrganizations: orgs.length,
+          activeOrganizations: orgs.filter(o => o.isActive).length,
+          suspendedOrganizations: orgs.filter(o => o.isSuspended).length,
         },
         users: {
-          total: totalUsers,
-          active: activeUsers,
-          inactive: inactiveUsers,
-          suspended: suspendedUsers,
-          activePercentage: totalUsers > 0 ? ((activeUsers / totalUsers) * 100).toFixed(1) : 0,
+          total: uRow.total,
+          active: uRow.active,
+          inactive: uRow.inactive,
+          suspended: uRow.suspended,
+          activePercentage: uRow.total > 0 ? ((uRow.active / uRow.total) * 100).toFixed(1) : 0,
         },
         tasks: {
-          total: totalTasks,
-          completed: completedTasks,
-          completionRate: totalTasks > 0 ? ((completedTasks / totalTasks) * 100).toFixed(1) : 0,
+          total: tRow.total,
+          completed: tRow.completed,
+          completionRate: tRow.total > 0 ? ((tRow.completed / tRow.total) * 100).toFixed(1) : 0,
         },
         data: {
-          totalFileUploads,
+          totalFileUploads: 0,
         },
-        billing: {
-          totalRevenue,
-          monthlyRecurring,
-          averageRevenuePerOrg: organizations.length > 0 ? totalRevenue / organizations.length : 0,
-        },
-        byOrganization: orgStats,
+        byOrganization,
       });
     } catch (error) {
       console.error("Error fetching system statistics:", error);
@@ -3702,40 +3474,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         res.json(enrichedUsers);
       } else {
-        // Get all users from all organizations
-        const organizations = await storage.getAllOrganizations();
-        const allUsers: any[] = [];
-        
-        for (const org of organizations) {
-          const users = await storage.getUsersByOrganization(org.id);
-          const loginLogs = await storage.getOrganizationLoginLogs(org.id);
-          
-          const userLoginMap = new Map();
-          loginLogs.forEach((log: any) => {
-            if (!userLoginMap.has(log.userId) || 
-                new Date(log.loginTime) > new Date(userLoginMap.get(log.userId).loginTime)) {
-              userLoginMap.set(log.userId, log);
-            }
-          });
-          
-          users.forEach((user: any) => {
-            const recentLogin = userLoginMap.get(user.id);
-            const lastActivity = user.lastLoginAt ? new Date(user.lastLoginAt) : null;
-            const isOnline = lastActivity && (Date.now() - lastActivity.getTime()) < 10 * 60 * 1000;
-            
-            allUsers.push({
-              ...user,
-              organizationName: org.name,
-              organizationDomain: org.domain,
-              isOnline,
-              location: recentLogin?.location || null,
-              deviceType: recentLogin?.deviceType || null,
-              browserName: recentLogin?.browserName || null,
-              ipAddress: recentLogin?.ipAddress || null,
-            });
-          });
+        // Get all users from all organizations — optimized: 2 queries instead of 6001
+        const [allUsersResult, latestLogins] = await Promise.all([
+          pool.query(`
+            SELECT u.*, o.name AS organization_name, o.domain AS organization_domain
+            FROM users u
+            LEFT JOIN organizations o ON o.id = u.organization_id
+            ORDER BY u.created_at DESC
+          `),
+          pool.query(`
+            SELECT DISTINCT ON (user_id) user_id, location, device_type, browser_name, ip_address, login_time
+            FROM user_login_logs
+            ORDER BY user_id, login_time DESC
+          `),
+        ]);
+
+        const loginMap = new Map<string, any>();
+        for (const log of latestLogins.rows as any[]) {
+          loginMap.set(log.user_id, log);
         }
-        
+
+        const allUsers = (allUsersResult.rows as any[]).map(user => {
+          const recentLogin = loginMap.get(user.id);
+          const lastActivity = user.last_login_at ? new Date(user.last_login_at) : null;
+          const isOnline = lastActivity && (Date.now() - lastActivity.getTime()) < 10 * 60 * 1000;
+          return {
+            ...user,
+            organizationName: user.organization_name,
+            organizationDomain: user.organization_domain,
+            isOnline,
+            location: recentLogin?.location || null,
+            deviceType: recentLogin?.device_type || null,
+            browserName: recentLogin?.browser_name || null,
+            ipAddress: recentLogin?.ip_address || null,
+          };
+        });
+
         res.json(allUsers);
       }
     } catch (error) {
@@ -3880,47 +3654,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get activity across all organizations (super admin only)
+  // Get activity across all organizations (super admin only) — optimized: 2 queries with LIMIT instead of 6001
   app.get("/api/super-admin/global-activity", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
     try {
-      const limit = parseInt(req.query.limit as string) || 100;
-      const organizations = await storage.getAllOrganizations();
-      
-      const activities = [];
-      
-      for (const org of organizations) {
-        const loginLogs = await storage.getOrganizationLoginLogs(org.id);
-        const tasks = await storage.getTasks(org.id);
-        
-        activities.push(
-          ...loginLogs.slice(-50).map(log => ({
-            type: 'login',
-            timestamp: log.loginTime,
-            userId: log.userId,
-            organizationId: org.id,
-            organizationName: org.name,
-            details: {
-              location: log.location,
-              device: log.deviceType,
-              status: log.loginStatus
-            }
-          })),
-          ...tasks.slice(-50).map(task => ({
-            type: 'task',
-            timestamp: task.createdAt,
-            userId: task.doerEmail,
-            organizationId: org.id,
-            organizationName: org.name,
-            details: {
-              taskName: task.taskName,
-              status: task.status,
-              flowId: task.flowId
-            }
-          }))
-        );
+      const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+      const halfLimit = Math.ceil(limit * 1.5); // fetch a bit more from each source so merge is accurate
+
+      // 2 queries with ORDER BY + LIMIT instead of fetching ALL data from ALL orgs
+      const [recentLogins, recentTasks] = await Promise.all([
+        pool.query(
+          `SELECT l.login_time AS timestamp, l.user_id, l.location, l.device_type, l.login_status,
+                  o.id AS organization_id, o.name AS organization_name
+           FROM user_login_logs l
+           JOIN organizations o ON o.id = l.organization_id
+           ORDER BY l.login_time DESC
+           LIMIT $1`,
+          [halfLimit]
+        ),
+        pool.query(
+          `SELECT t.created_at AS timestamp, t.doer_email AS user_id, t.task_name, t.status, t.flow_id,
+                  o.id AS organization_id, o.name AS organization_name
+           FROM tasks t
+           JOIN organizations o ON o.id = t.organization_id
+           ORDER BY t.created_at DESC
+           LIMIT $1`,
+          [halfLimit]
+        ),
+      ]);
+
+      const activities: any[] = [];
+      for (const log of recentLogins.rows as any[]) {
+        activities.push({
+          type: 'login',
+          timestamp: log.timestamp,
+          userId: log.user_id,
+          organizationId: log.organization_id,
+          organizationName: log.organization_name,
+          details: { location: log.location, device: log.device_type, status: log.login_status },
+        });
       }
-      
-      // Sort by timestamp and limit
+      for (const task of recentTasks.rows as any[]) {
+        activities.push({
+          type: 'task',
+          timestamp: task.timestamp,
+          userId: task.user_id,
+          organizationId: task.organization_id,
+          organizationName: task.organization_name,
+          details: { taskName: task.task_name, status: task.status, flowId: task.flow_id },
+        });
+      }
+
       activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       res.json(activities.slice(0, limit));
     } catch (error) {
@@ -4303,16 +4086,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Graceful shutdown handling
-  const gracefulShutdown = () => {
+  const gracefulShutdown = async () => {
     console.log('Received shutdown signal, closing server gracefully...');
-    httpServer.close(() => {
+    httpServer.close(async () => {
+      try {
+        await pool.end();
+        console.log('Database pool closed');
+      } catch (e) {
+        console.error('Error closing database pool:', e);
+      }
       console.log('Server closed');
       process.exit(0);
     });
+    // Force exit after 10s if graceful close hangs
+    setTimeout(() => { console.error('Forced shutdown after timeout'); process.exit(1); }, 10000);
   };
   
   process.on('SIGTERM', gracefulShutdown);
   process.on('SIGINT', gracefulShutdown);
+
+  process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled promise rejection:', reason);
+  });
+  process.on('uncaughtException', (error) => {
+    console.error('Uncaught exception:', error);
+    process.exit(1);
+  });
   
   const httpServer = createServer(app);
   return httpServer;

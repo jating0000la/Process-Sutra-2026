@@ -268,7 +268,8 @@ async function upsertUser(userData: any) {
 }
 
 export async function setupAuth(app: Express) {
-  app.set("trust proxy", true);
+  // Trust only the first proxy hop (Caddy reverse proxy)
+  app.set("trust proxy", 1);
   
   // Apply session middleware
   const sessionMiddleware = getSession();
@@ -321,7 +322,7 @@ export async function setupAuth(app: Express) {
         return res.status(503).json({ message: 'Google authentication not configured' });
       }
       
-      const state = Math.random().toString(36).substring(7);
+      const state = require('crypto').randomBytes(32).toString('hex');
       const authUrl = getAuthorizationUrl(state);
       
       // Store state in session for CSRF protection

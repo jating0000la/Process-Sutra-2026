@@ -202,6 +202,32 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  // ── In-process cache for hot paths (3000 orgs × many users) ──
+  // Short TTLs to avoid stale data; invalidated on writes
+  private orgCache = new NodeCache({ stdTTL: 120, checkperiod: 30, useClones: false });
+  private orgDomainCache = new NodeCache({ stdTTL: 120, checkperiod: 30, useClones: false });
+  private userCache = new NodeCache({ stdTTL: 60, checkperiod: 15, useClones: false });
+  private orgUserCountCache = new NodeCache({ stdTTL: 60, checkperiod: 15, useClones: false });
+  private allOrgsCache: { data: Organization[] | null; ts: number } = { data: null, ts: 0 };
+  private static ALL_ORGS_TTL_MS = 60_000; // 1 minute
+
+  /** Invalidate org-related caches when an org is mutated */
+  private invalidateOrgCaches(orgId?: string) {
+    this.allOrgsCache = { data: null, ts: 0 };
+    if (orgId) {
+      this.orgCache.del(orgId);
+      this.orgUserCountCache.del(orgId);
+    }
+  }
+
+  /** Invalidate user-related caches for an org */
+  private invalidateUserCaches(organizationId?: string) {
+    if (organizationId) {
+      this.userCache.del(`org:${organizationId}`);
+      this.orgUserCountCache.del(organizationId);
+    }
+  }
+
   // Helper function to sanitize input for ILIKE queries to prevent SQL injection
   private sanitizeForLike(input: string): string {
     // Escape special LIKE wildcards and backslashes
@@ -217,35 +243,61 @@ export class DatabaseStorage implements IStorage {
 
   // Organization operations
   async getOrganization(id: string): Promise<Organization | undefined> {
+    const cached = this.orgCache.get<Organization>(id);
+    if (cached) return cached;
     const [organization] = await db.select().from(organizations).where(eq(organizations.id, id));
+    if (organization) this.orgCache.set(id, organization);
     return organization;
   }
 
   async getOrganizationByDomain(domain: string): Promise<Organization | undefined> {
+    const cachedId = this.orgDomainCache.get<string>(domain);
+    if (cachedId) {
+      const org = await this.getOrganization(cachedId);
+      if (org) return org;
+    }
     const [organization] = await db.select().from(organizations).where(eq(organizations.domain, domain));
+    if (organization) {
+      this.orgCache.set(organization.id, organization);
+      this.orgDomainCache.set(domain, organization.id);
+    }
     return organization;
   }
 
   async getOrganizationById(id: string): Promise<Organization | undefined> {
-    const [organization] = await db.select().from(organizations).where(eq(organizations.id, id));
-    return organization;
+    return this.getOrganization(id);
   }
 
   async createOrganization(organizationData: InsertOrganization): Promise<Organization> {
     const [organization] = await db.insert(organizations).values(organizationData as any).returning();
+    this.invalidateOrgCaches();
     return organization;
   }
 
   async getOrganizationUserCount(organizationId: string): Promise<number> {
+    const cached = this.orgUserCountCache.get<number>(organizationId);
+    if (cached !== undefined) return cached;
     const result = await db
       .select({ count: count() })
       .from(users)
       .where(eq(users.organizationId, organizationId));
-    return result[0]?.count || 0;
+    const cnt = result[0]?.count || 0;
+    this.orgUserCountCache.set(organizationId, cnt);
+    return cnt;
   }
 
   async getAllOrganizations(): Promise<Organization[]> {
-    return await db.select().from(organizations).orderBy(desc(organizations.createdAt));
+    const now = Date.now();
+    if (this.allOrgsCache.data && (now - this.allOrgsCache.ts) < DatabaseStorage.ALL_ORGS_TTL_MS) {
+      return this.allOrgsCache.data;
+    }
+    const orgs = await db.select().from(organizations).orderBy(desc(organizations.createdAt));
+    this.allOrgsCache = { data: orgs, ts: now };
+    // Warm individual org cache
+    for (const org of orgs) {
+      this.orgCache.set(org.id, org);
+    }
+    return orgs;
   }
 
   async updateOrganizationStatus(id: string, isActive: boolean): Promise<Organization> {
@@ -257,6 +309,7 @@ export class DatabaseStorage implements IStorage {
       })
       .where(eq(organizations.id, id))
       .returning();
+    this.invalidateOrgCaches(id);
     return organization;
   }
 
@@ -269,6 +322,7 @@ export class DatabaseStorage implements IStorage {
       } as any)
       .where(eq(organizations.id, id))
       .returning();
+    this.invalidateOrgCaches(id);
     return organization;
   }
 
@@ -291,20 +345,24 @@ export class DatabaseStorage implements IStorage {
         // Continue with PostgreSQL deletion even if MongoDB fails
       }
       
-      // Delete PostgreSQL data in order of dependencies
-      await db.delete(tasks).where(eq(tasks.organizationId, id));
-      await db.delete(flowRules).where(eq(flowRules.organizationId, id));
-      await db.delete(webhookDeliveryLog).where(eq(webhookDeliveryLog.organizationId, id));
-      await db.delete(webhookRetryQueue).where(eq(webhookRetryQueue.organizationId, id));
-      await db.delete(webhooks).where(eq(webhooks.organizationId, id));
-      await db.delete(auditLogs).where(eq(auditLogs.organizationId, id));
-      await db.delete(passwordChangeHistory).where(eq(passwordChangeHistory.organizationId, id));
-      await db.delete(userDevices).where(eq(userDevices.organizationId, id));
-      await db.delete(userLoginLogs).where(eq(userLoginLogs.organizationId, id));
-      await db.delete(tatConfig).where(eq(tatConfig.organizationId, id));
-      await db.delete(users).where(eq(users.organizationId, id));
-      await db.delete(organizations).where(eq(organizations.id, id));
+      // Delete PostgreSQL data in a transaction for atomicity
+      await db.transaction(async (tx) => {
+        await tx.delete(tasks).where(eq(tasks.organizationId, id));
+        await tx.delete(flowRules).where(eq(flowRules.organizationId, id));
+        await tx.delete(webhookDeliveryLog).where(eq(webhookDeliveryLog.organizationId, id));
+        await tx.delete(webhookRetryQueue).where(eq(webhookRetryQueue.organizationId, id));
+        await tx.delete(webhooks).where(eq(webhooks.organizationId, id));
+        await tx.delete(auditLogs).where(eq(auditLogs.organizationId, id));
+        await tx.delete(passwordChangeHistory).where(eq(passwordChangeHistory.organizationId, id));
+        await tx.delete(userDevices).where(eq(userDevices.organizationId, id));
+        await tx.delete(userLoginLogs).where(eq(userLoginLogs.organizationId, id));
+        await tx.delete(tatConfig).where(eq(tatConfig.organizationId, id));
+        await tx.delete(users).where(eq(users.organizationId, id));
+        await tx.delete(organizations).where(eq(organizations.id, id));
+      });
       
+      this.invalidateOrgCaches(id);
+      this.invalidateUserCaches(id);
       console.log(`[deleteOrganization] Successfully deleted organization ${id} and all related data`);
     } catch (error) {
       console.error(`[deleteOrganization] Error deleting organization ${id}:`, error);
@@ -337,6 +395,9 @@ export class DatabaseStorage implements IStorage {
 
   async createUser(userData: Omit<InsertUser, 'id'>): Promise<User> {
     const [user] = await db.insert(users).values(userData).returning();
+    if (user.organizationId) {
+      this.invalidateUserCaches(user.organizationId);
+    }
     return user;
   }
 
@@ -349,6 +410,9 @@ export class DatabaseStorage implements IStorage {
       })
       .where(eq(users.id, id))
       .returning();
+    if (user.organizationId) {
+      this.invalidateUserCaches(user.organizationId);
+    }
     return user;
   }
 
@@ -378,10 +442,12 @@ export class DatabaseStorage implements IStorage {
           })
           .where(eq(users.email, email))
           .returning();
+        this.invalidateUpsertUserCache(user);
         return user;
       } else {
         // Insert new user
         const [user] = await db.insert(users).values(userData).returning();
+        this.invalidateUpsertUserCache(user);
         return user;
       }
     } catch (error) {
@@ -397,6 +463,12 @@ export class DatabaseStorage implements IStorage {
         return existingUser;
       }
       throw error;
+    }
+  }
+
+  private invalidateUpsertUserCache(user: User) {
+    if (user.organizationId) {
+      this.invalidateUserCaches(user.organizationId);
     }
   }
 
@@ -654,47 +726,26 @@ export class DatabaseStorage implements IStorage {
     onTimeRate: number;
     avgResolutionTime: number;
   }> {
-    const totalResult = await db
-      .select({ count: count() })
-      .from(tasks)
-      .where(eq(tasks.organizationId, organizationId));
-    
-    const completedResult = await db
-      .select({ count: count() })
-      .from(tasks)
-      .where(and(eq(tasks.organizationId, organizationId), eq(tasks.status, "completed")));
-    
-    const overdueResult = await db
-      .select({ count: count() })
-      .from(tasks)
-      .where(and(eq(tasks.organizationId, organizationId), eq(tasks.status, "overdue")));
-    
-    const onTimeResult = await db
-      .select({ count: count() })
-      .from(tasks)
-      .where(
-        and(
-          eq(tasks.organizationId, organizationId),
-          eq(tasks.status, "completed"),
-          sql`${tasks.actualCompletionTime} <= ${tasks.plannedTime}`
-        )
-      );
-
-    const avgResolutionResult = await db
+    // Single aggregate query instead of 5 separate queries
+    const [result] = await db
       .select({
-        avgTime: sql<number>`AVG(EXTRACT(EPOCH FROM (${tasks.actualCompletionTime} - ${tasks.plannedTime})) / 86400)`
+        totalTasks: count(),
+        completedTasks: sql<number>`COUNT(*) FILTER (WHERE ${tasks.status} = 'completed')`,
+        overdueTasks: sql<number>`COUNT(*) FILTER (WHERE ${tasks.status} = 'overdue')`,
+        onTimeTasks: sql<number>`COUNT(*) FILTER (WHERE ${tasks.status} = 'completed' AND ${tasks.actualCompletionTime} <= ${tasks.plannedTime})`,
+        avgResolutionTime: sql<number>`AVG(EXTRACT(EPOCH FROM (${tasks.actualCompletionTime} - ${tasks.plannedTime})) / 86400) FILTER (WHERE ${tasks.status} = 'completed')`,
       })
       .from(tasks)
-      .where(and(eq(tasks.organizationId, organizationId), eq(tasks.status, "completed")));
+      .where(eq(tasks.organizationId, organizationId));
 
-    const totalTasks = totalResult[0].count;
-    const completedTasks = completedResult[0].count;
-    const overdueTasks = overdueResult[0].count;
-    const onTimeTasks = onTimeResult[0].count;
+    const totalTasks = result.totalTasks;
+    const completedTasks = Number(result.completedTasks) || 0;
+    const overdueTasks = Number(result.overdueTasks) || 0;
+    const onTimeTasks = Number(result.onTimeTasks) || 0;
     const onTimeRate = completedTasks > 0 ? Math.min(100, (onTimeTasks / completedTasks) * 100) : 0;
-    const avgResolutionTime = avgResolutionResult[0]?.avgTime || 0;
+    const avgResolutionTime = Number(result.avgResolutionTime) || 0;
 
-  return {
+    return {
       totalTasks,
       completedTasks,
       overdueTasks,
@@ -762,45 +813,24 @@ export class DatabaseStorage implements IStorage {
     onTimeRate: number;
     avgResolutionTime: number;
   }> {
-    const totalResult = await db
-      .select({ count: count() })
-      .from(tasks)
-      .where(eq(tasks.doerEmail, userEmail));
-    
-    const completedResult = await db
-      .select({ count: count() })
-      .from(tasks)
-      .where(and(eq(tasks.doerEmail, userEmail), eq(tasks.status, "completed")));
-    
-    const overdueResult = await db
-      .select({ count: count() })
-      .from(tasks)
-      .where(and(eq(tasks.doerEmail, userEmail), eq(tasks.status, "overdue")));
-    
-    const onTimeResult = await db
-      .select({ count: count() })
-      .from(tasks)
-      .where(
-        and(
-          eq(tasks.doerEmail, userEmail),
-          eq(tasks.status, "completed"),
-          sql`${tasks.actualCompletionTime} <= ${tasks.plannedTime}`
-        )
-      );
-
-    const avgResolutionResult = await db
+    // Single aggregate query instead of 5 separate queries
+    const [result] = await db
       .select({
-        avgTime: sql<number>`AVG(EXTRACT(EPOCH FROM (${tasks.actualCompletionTime} - ${tasks.plannedTime})) / 86400)`
+        totalTasks: count(),
+        completedTasks: sql<number>`COUNT(*) FILTER (WHERE ${tasks.status} = 'completed')`,
+        overdueTasks: sql<number>`COUNT(*) FILTER (WHERE ${tasks.status} = 'overdue')`,
+        onTimeTasks: sql<number>`COUNT(*) FILTER (WHERE ${tasks.status} = 'completed' AND ${tasks.actualCompletionTime} <= ${tasks.plannedTime})`,
+        avgResolutionTime: sql<number>`AVG(EXTRACT(EPOCH FROM (${tasks.actualCompletionTime} - ${tasks.plannedTime})) / 86400) FILTER (WHERE ${tasks.status} = 'completed')`,
       })
       .from(tasks)
-      .where(and(eq(tasks.doerEmail, userEmail), eq(tasks.status, "completed")));
+      .where(eq(tasks.doerEmail, userEmail));
 
-    const totalTasks = totalResult[0].count;
-    const completedTasks = completedResult[0].count;
-    const overdueTasks = overdueResult[0].count;
-    const onTimeTasks = onTimeResult[0].count;
+    const totalTasks = result.totalTasks;
+    const completedTasks = Number(result.completedTasks) || 0;
+    const overdueTasks = Number(result.overdueTasks) || 0;
+    const onTimeTasks = Number(result.onTimeTasks) || 0;
     const onTimeRate = completedTasks > 0 ? (onTimeTasks / completedTasks) * 100 : 0;
-    const avgResolutionTime = avgResolutionResult[0]?.avgTime || 0;
+    const avgResolutionTime = Number(result.avgResolutionTime) || 0;
 
     return {
       totalTasks,
@@ -1222,7 +1252,12 @@ export class DatabaseStorage implements IStorage {
 
   // Organization-specific user methods
   async getUsersByOrganization(organizationId: string): Promise<User[]> {
-    return await db.select().from(users).where(eq(users.organizationId, organizationId));
+    const cacheKey = `org:${organizationId}`;
+    const cached = this.userCache.get<User[]>(cacheKey);
+    if (cached) return cached;
+    const result = await db.select().from(users).where(eq(users.organizationId, organizationId));
+    this.userCache.set(cacheKey, result);
+    return result;
   }
 
   async updateUserDetails(id: string, details: Partial<User>): Promise<User> {
@@ -1231,6 +1266,9 @@ export class DatabaseStorage implements IStorage {
       .set({ ...details, updatedAt: new Date() })
       .where(eq(users.id, id))
       .returning();
+    if (user.organizationId) {
+      this.invalidateUserCaches(user.organizationId);
+    }
     return user;
   }
 
@@ -1248,11 +1286,19 @@ export class DatabaseStorage implements IStorage {
       .set({ status, updatedAt: new Date() })
       .where(eq(users.id, id))
       .returning();
+    if (user.organizationId) {
+      this.invalidateUserCaches(user.organizationId);
+    }
     return user;
   }
 
   async deleteUser(id: string): Promise<void> {
+    // Fetch user first to know which org cache to invalidate
+    const [user] = await db.select().from(users).where(eq(users.id, id));
     await db.delete(users).where(eq(users.id, id));
+    if (user?.organizationId) {
+      this.invalidateUserCaches(user.organizationId);
+    }
   }
 
   async getOrganizationAdminCount(organizationId: string): Promise<number> {

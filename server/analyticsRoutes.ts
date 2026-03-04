@@ -18,8 +18,6 @@
  *  task data, personal identifiers, file contents, form responses, or
  *  customer-specific business documents are ever transmitted. The LLM
  *  receives ONLY reporting instructions and numerical KPIs.
- * 
- *  See: docs/AI_DATA_SAFETY.md for full disclosure of data shared with AI.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -65,7 +63,6 @@ const COPYRIGHT_SHORT = `© ${new Date().getFullYear()} Process Sutra — Patent
 //    - API keys, tokens, or credentials
 //    - User passwords or session data
 //    - Personal email addresses (only count of top/bottom performers)
-//    - Financial transaction details (challans, payments)
 //    - Google Drive files or OAuth tokens
 //    - Any PII (Personally Identifiable Information)
 //

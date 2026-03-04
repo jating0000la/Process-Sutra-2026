@@ -1,68 +1,137 @@
-# Docker Compose for local development and testing
-# Use this to test your container setup before deploying to GCP
+# Docker Compose for ProcessSutra
+# IMPORTANT: Create a .env file with real secrets before deploying!
+#   POSTGRES_PASSWORD=<strong-random-password>
+#   MONGO_PASSWORD=<strong-random-password>
+#   REDIS_PASSWORD=<strong-random-password>
+#   SESSION_SECRET=<64-char-hex-string>
 
 version: '3.8'
 
 services:
-  # PostgreSQL Database
+  # PostgreSQL Database — tuned for 3000 orgs on 16GB VPS
   postgres:
     image: postgres:15-alpine
     container_name: processsutra-postgres
     environment:
       POSTGRES_DB: processsutra
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d
     networks:
       - processsutra-network
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    command:
+      - "postgres"
+      - "-c" 
+      - "shared_buffers=1GB"
+      - "-c"
+      - "effective_cache_size=3GB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "maintenance_work_mem=256MB"
+      - "-c"
+      - "max_connections=100"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "max_wal_size=2GB"
 
-  # MongoDB Database
+  # MongoDB Database — memory-limited for shared VPS
   mongodb:
     image: mongo:7
     container_name: processsutra-mongodb
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: admin123
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?Set MONGO_PASSWORD in .env}
       MONGO_INITDB_DATABASE: processsutra
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongodb_data:/data/db
       - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
     networks:
       - processsutra-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.5"]
 
-  # Redis for sessions (optional)
+  # Redis for sessions
   redis:
     image: redis:7-alpine
     container_name: processsutra-redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     networks:
       - processsutra-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}", "--maxmemory", "200mb", "--maxmemory-policy", "allkeys-lru"]
 
   # ProcessSutra Application
   app:
     build: .
     container_name: processsutra-app
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://postgres:admin@postgres:5432/processsutra
-      MONGODB_URI: mongodb://admin:admin123@mongodb:27017/processsutra?authSource=admin
-      REDIS_URL: redis://redis:6379
-      SESSION_SECRET: your_secure_session_secret_here
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/processsutra
+      MONGODB_URI: mongodb://admin:${MONGO_PASSWORD}@mongodb:27017/processsutra?authSource=admin
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
       PORT: 3000
     depends_on:
-      - postgres
-      - mongodb
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - processsutra-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+    restart: unless-stopped
     volumes:
       - ./uploads:/app/uploads
 

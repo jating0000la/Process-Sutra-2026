@@ -23,8 +23,6 @@ import {
   Database,
   Activity,
   Shield,
-  TrendingUp,
-  CreditCard,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { NotificationDropdown } from "@/components/notification-dropdown";
@@ -175,17 +173,6 @@ export default function Header({ title, description, actions }: HeaderProps) {
                       <DropdownMenuItem onSelect={() => setLocation("/nda-security")}>
                         <Shield className="mr-2 h-4 w-4" />
                         NDA & Security
-                      </DropdownMenuItem>
-                      
-                      <DropdownMenuSeparator />
-                      <DropdownMenuLabel>Billing & Usage</DropdownMenuLabel>
-                      <DropdownMenuItem onSelect={() => setLocation("/usage")}>
-                        <TrendingUp className="mr-2 h-4 w-4" />
-                        Usage
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => setLocation("/payments")}>
-                        <CreditCard className="mr-2 h-4 w-4" />
-                        Payments
                       </DropdownMenuItem>
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>

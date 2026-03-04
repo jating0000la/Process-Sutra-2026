@@ -57,9 +57,6 @@ import {
   Edit,
   Trash2,
   UserCheck,
-  DollarSign,
-  TrendingUp,
-  TrendingDown,
   BarChart3,
   Settings,
   UserCog,
@@ -69,9 +66,7 @@ import {
   Crown,
   Ban,
   PlayCircle,
-  Receipt,
   ScrollText,
-  CreditCard,
   ShieldCheck,
   ShieldOff,
   ArrowUpDown,
@@ -91,8 +86,6 @@ interface Organization {
   isSuspended: boolean;
   suspensionReason: string;
   planType: string;
-  pricingTier: string;
-  monthlyPrice: number;
   maxUsers: number;
   maxFlows: number;
   maxStorage: number;
@@ -108,10 +101,6 @@ interface Organization {
   taskCompletionRate?: string;
   currentFlows?: number;
   currentStorage?: number;
-  usageBasedBilling?: boolean;
-  pricePerFlow?: number;
-  pricePerUser?: number;
-  pricePerGb?: number;
 }
 
 interface SystemStatistics {
@@ -135,11 +124,6 @@ interface SystemStatistics {
   data: {
     totalFileUploads: number;
   };
-  billing: {
-    totalRevenue: number;
-    monthlyRecurring: number;
-    averageRevenuePerOrg: number;
-  };
 }
 
 interface EnrichedUser {
@@ -156,51 +140,6 @@ interface EnrichedUser {
   organizationId: string;
   organizationName: string;
   organizationDomain: string;
-}
-
-interface ChallanRecord {
-  id: string;
-  challanNumber: string;
-  organizationId: string;
-  organizationName: string;
-  billingPeriodStart: string;
-  billingPeriodEnd: string;
-  flowCount: number;
-  flowCost: number;
-  userCount: number;
-  userCost: number;
-  formCount: number;
-  formCost: number;
-  storageMb: number;
-  storageCost: number;
-  baseCost: number;
-  subtotal: number;
-  taxPercent: number;
-  taxAmount: number;
-  totalAmount: number;
-  status: string;
-  dueDate: string;
-  paidAt: string;
-  generatedBy: string;
-  notes: string;
-  createdAt: string;
-}
-
-interface TransactionRecord {
-  id: string;
-  organizationId: string;
-  organizationName: string;
-  challanId: string;
-  payuTxnId: string;
-  payuPaymentId: string;
-  payuStatus: string;
-  payuMode: string;
-  amount: number;
-  currency: string;
-  status: string;
-  failureReason: string;
-  initiatedBy: string;
-  createdAt: string;
 }
 
 interface AuditLogRecord {
@@ -234,22 +173,11 @@ interface OrgDetailData {
     totalFormTemplates: number;
     totalFormResponses: number;
     recentLogins30d: number;
-    totalChallans: number;
-    totalChallanAmount: number;
-    paidAmount: number;
-    outstandingAmount: number;
-    totalTransactions: number;
   };
   users: any[];
-  recentChallans: any[];
-  recentTransactions: any[];
 }
 
 /* ─── Helpers ─── */
-
-function formatPaise(paise: number): string {
-  return `₹${((paise ?? 0) / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "—";
@@ -258,24 +186,6 @@ function formatDate(dateStr: string | null): string {
     month: "short",
     day: "numeric",
   });
-}
-
-function statusBadge(status: string | null | undefined) {
-  const s = status || "generated";
-  const map: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
-    generated: { variant: "outline", label: "Generated" },
-    sent: { variant: "secondary", label: "Sent" },
-    paid: { variant: "default", label: "Paid" },
-    overdue: { variant: "destructive", label: "Overdue" },
-    cancelled: { variant: "secondary", label: "Cancelled" },
-    initiated: { variant: "outline", label: "Initiated" },
-    pending: { variant: "secondary", label: "Pending" },
-    success: { variant: "default", label: "Success" },
-    failed: { variant: "destructive", label: "Failed" },
-    refunded: { variant: "secondary", label: "Refunded" },
-  };
-  const cfg = map[s] ?? { variant: "outline" as const, label: s };
-  return <Badge variant={cfg.variant}>{cfg.label}</Badge>;
 }
 
 export default function OrganizationControl() {
@@ -294,7 +204,6 @@ export default function OrganizationControl() {
   const [deleteOrgDialog, setDeleteOrgDialog] = useState(false);
   const [suspendOrgDialog, setSuspendOrgDialog] = useState(false);
   const [transferOwnerDialog, setTransferOwnerDialog] = useState(false);
-  const [pricingDialog, setPricingDialog] = useState(false);
   
   const [selectedOrgForAction, setSelectedOrgForAction] = useState<Organization | null>(null);
   
@@ -311,13 +220,9 @@ export default function OrganizationControl() {
   
   const [suspensionReason, setSuspensionReason] = useState("");
   const [newOwnerEmail, setNewOwnerEmail] = useState("");
-  const [challanStatusFilter, setChallanStatusFilter] = useState<string>("all");
-  const [txnStatusFilter, setTxnStatusFilter] = useState<string>("all");
   const [auditActionFilter, setAuditActionFilter] = useState<string>("all");
   const [auditTargetFilter, setAuditTargetFilter] = useState<string>("all");
-  const [paymentOrgFilter, setPaymentOrgFilter] = useState<string>("all");
   const [auditOrgFilter, setAuditOrgFilter] = useState<string>("all");
-  const [selectedChallanDetail, setSelectedChallanDetail] = useState<ChallanRecord | null>(null);
   const [orgDetailId, setOrgDetailId] = useState<string | null>(null);
 
   // Export state
@@ -380,32 +285,6 @@ export default function OrganizationControl() {
       return response.json();
     },
     refetchInterval: autoRefresh ? 30000 : false,
-  });
-
-  // Fetch all challans cross-org
-  const { data: allChallans, isLoading: challansLoading, isError: challansError } = useQuery<ChallanRecord[]>({
-    queryKey: ["/api/super-admin/all-challans"],
-    queryFn: async () => {
-      const response = await fetch("/api/super-admin/all-challans?limit=500", { credentials: "include" });
-      if (!response.ok) throw new Error("Failed to fetch challans");
-      return response.json();
-    },
-    refetchInterval: autoRefresh ? 60000 : false,
-    staleTime: 0,
-    retry: 1,
-  });
-
-  // Fetch all transactions cross-org
-  const { data: allTransactions, isLoading: txnsLoading, isError: txnsError } = useQuery<TransactionRecord[]>({
-    queryKey: ["/api/super-admin/all-transactions"],
-    queryFn: async () => {
-      const response = await fetch("/api/super-admin/all-transactions?limit=500", { credentials: "include" });
-      if (!response.ok) throw new Error("Failed to fetch transactions");
-      return response.json();
-    },
-    refetchInterval: autoRefresh ? 60000 : false,
-    staleTime: 0,
-    retry: 1,
   });
 
   // Fetch audit logs
@@ -472,7 +351,6 @@ export default function OrganizationControl() {
     onSuccess: () => {
       toast({ title: "Success", description: "Organization updated successfully" });
       setEditOrgDialog(false);
-      setPricingDialog(false);
       queryClient.invalidateQueries({ queryKey: ["/api/super-admin/organizations"] });
     },
     onError: (error: Error) => {
@@ -610,27 +488,6 @@ export default function OrganizationControl() {
     },
   });
 
-  // Update challan status mutation
-  const updateChallanStatusMutation = useMutation({
-    mutationFn: async (data: { challanId: string; status: string; notes?: string }) => {
-      const response = await fetch(`/api/super-admin/challans/${data.challanId}/status`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ status: data.status, notes: data.notes }),
-      });
-      if (!response.ok) throw new Error("Failed to update challan status");
-      return response.json();
-    },
-    onSuccess: () => {
-      toast({ title: "Success", description: "Challan status updated" });
-      queryClient.invalidateQueries({ queryKey: ["/api/super-admin/all-challans"] });
-    },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    },
-  });
-
   // Filter users
   const filteredUsers = users?.filter(user => {
     const matchesSearch = 
@@ -644,20 +501,6 @@ export default function OrganizationControl() {
     return matchesSearch && matchesStatus;
   }) || [];
 
-  // Filter challans
-  const filteredChallans = allChallans?.filter(ch => {
-    const matchesStatus = challanStatusFilter === "all" || (ch.status || "generated") === challanStatusFilter;
-    const matchesOrg = paymentOrgFilter === "all" || ch.organizationId === paymentOrgFilter;
-    return matchesStatus && matchesOrg;
-  }) || [];
-
-  // Filter transactions
-  const filteredTransactions = allTransactions?.filter(txn => {
-    const matchesStatus = txnStatusFilter === "all" || (txn.status || "initiated") === txnStatusFilter;
-    const matchesOrg = paymentOrgFilter === "all" || txn.organizationId === paymentOrgFilter;
-    return matchesStatus && matchesOrg;
-  }) || [];
-
   // Filter audit logs
   const filteredAuditLogs = auditLogs?.filter(log => {
     const matchesAction = auditActionFilter === "all" || log.action === auditActionFilter;
@@ -667,8 +510,8 @@ export default function OrganizationControl() {
   }) || [];
 
   // Get unique audit actions for filter
-  const uniqueAuditActions = [...new Set(auditLogs?.map(l => l.action) || [])];
-  const uniqueAuditTargets = [...new Set(auditLogs?.map(l => l.targetType).filter(Boolean) || [])];
+  const uniqueAuditActions = Array.from(new Set(auditLogs?.map(l => l.action) || []));
+  const uniqueAuditTargets = Array.from(new Set(auditLogs?.map(l => l.targetType).filter(Boolean) || []));
 
   // Manual refresh
   const handleRefresh = () => {
@@ -687,7 +530,7 @@ export default function OrganizationControl() {
         org.domain,
         org.isActive ? "Active" : "Inactive",
         org.isSuspended ? "Yes" : "No",
-        org.pricingTier,
+        org.planType,
         org.healthScore,
         `${org.activeUsers}/${org.totalUsers}`,
         `${org.currentFlows}/${org.maxFlows}`,
@@ -802,30 +645,6 @@ export default function OrganizationControl() {
               </p>
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-              <DollarSign className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">₹{((systemStats?.billing?.totalRevenue || 0) / 100).toFixed(2)}</div>
-              <p className="text-xs text-muted-foreground">
-                ₹{((systemStats?.billing?.monthlyRecurring || 0) / 100).toFixed(2)}/mo recurring
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Avg Revenue/Org</CardTitle>
-              <TrendingUp className="h-4 w-4 text-blue-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">₹{((systemStats?.billing?.averageRevenuePerOrg || 0) / 100).toFixed(2)}</div>
-              <p className="text-xs text-muted-foreground">Per organization</p>
-            </CardContent>
-          </Card>
         </div>
 
         {/* Tabs */}
@@ -834,11 +653,6 @@ export default function OrganizationControl() {
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="organizations">Organizations</TabsTrigger>
             <TabsTrigger value="users">All Users</TabsTrigger>
-            <TabsTrigger value="billing">Billing & Usage</TabsTrigger>
-            <TabsTrigger value="payments" className="flex items-center gap-1">
-              <Receipt className="h-4 w-4" />
-              Payments
-            </TabsTrigger>
             <TabsTrigger value="audit" className="flex items-center gap-1">
               <ScrollText className="h-4 w-4" />
               Audit Logs
@@ -972,9 +786,6 @@ export default function OrganizationControl() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <Badge variant="outline">{org.pricingTier}</Badge>
-                            </TableCell>
-                            <TableCell>
                               {getHealthBadge(org.healthScore, org.healthStatus)}
                             </TableCell>
                             <TableCell>
@@ -1008,16 +819,6 @@ export default function OrganizationControl() {
                                   }}
                                 >
                                   <Edit className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    setSelectedOrgForAction(org);
-                                    setPricingDialog(true);
-                                  }}
-                                >
-                                  <DollarSign className="h-4 w-4" />
                                 </Button>
                                 <Button
                                   size="sm"
@@ -1254,342 +1055,6 @@ export default function OrganizationControl() {
             </Card>
           </TabsContent>
 
-          {/* Billing & Usage Tab */}
-          <TabsContent value="billing" className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-3">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Total MRR</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">₹{((systemStats?.billing?.monthlyRecurring || 0) / 100).toFixed(2)}</div>
-                  <p className="text-xs text-muted-foreground">Monthly Recurring Revenue</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Total Revenue</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">₹{((systemStats?.billing?.totalRevenue || 0) / 100).toFixed(2)}</div>
-                  <p className="text-xs text-muted-foreground">All-time revenue</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">ARPU</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">₹{((systemStats?.billing?.averageRevenuePerOrg || 0) / 100).toFixed(2)}</div>
-                  <p className="text-xs text-muted-foreground">Avg Revenue Per Organization</p>
-                </CardContent>
-              </Card>
-            </div>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Organization Usage & Billing</CardTitle>
-                <CardDescription>Resource consumption and billing details</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Organization</TableHead>
-                      <TableHead>Plan</TableHead>
-                      <TableHead>Monthly Fee</TableHead>
-                      <TableHead>Flows Usage</TableHead>
-                      <TableHead>Users</TableHead>
-                      <TableHead>Storage</TableHead>
-                      <TableHead>Total Bill</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {organizations?.map((org) => {
-                      const baseFee = org.monthlyPrice / 100;
-                      const flowsOverage = Math.max(0, (org.currentFlows || 0) - org.maxFlows);
-                      const usersOverage = Math.max(0, (org.totalUsers || 0) - org.maxUsers);
-                      const storageOverageGB = Math.max(0, ((org.currentStorage || 0) - org.maxStorage) / 1024);
-                      
-                      const flowsCost = org.usageBasedBilling ? (flowsOverage * (org.pricePerFlow || 0) / 100) : 0;
-                      const usersCost = org.usageBasedBilling ? (usersOverage * (org.pricePerUser || 0) / 100) : 0;
-                      const storageCost = org.usageBasedBilling ? (storageOverageGB * (org.pricePerGb || 0) / 100) : 0;
-                      const totalBill = baseFee + flowsCost + usersCost + storageCost;
-                      
-                      return (
-                        <TableRow key={org.id}>
-                          <TableCell>
-                            <div className="font-medium">{org.name}</div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{org.pricingTier}</Badge>
-                          </TableCell>
-                          <TableCell>₹{baseFee.toFixed(2)}</TableCell>
-                          <TableCell>
-                            <div className="text-sm">
-                              {org.currentFlows}/{org.maxFlows}
-                              {flowsOverage > 0 && (
-                                <span className="text-red-600"> (+{flowsOverage})</span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm">
-                              {org.totalUsers}/{org.maxUsers}
-                              {usersOverage > 0 && (
-                                <span className="text-red-600"> (+{usersOverage})</span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm">
-                              {org.currentStorage}MB/{org.maxStorage}MB
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-bold">₹{totalBill.toFixed(2)}</div>
-                            {org.usageBasedBilling && (totalBill > baseFee) && (
-                              <div className="text-xs text-muted-foreground">
-                                Base: ₹{baseFee} + Overages: ₹{(totalBill - baseFee).toFixed(2)}
-                              </div>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Payments Tab – Challans & Transactions */}
-          <TabsContent value="payments" className="space-y-4">
-            {/* Error banner */}
-            {challansError && (
-              <Card className="border-destructive bg-destructive/10">
-                <CardContent className="flex items-center gap-2 py-3">
-                  <AlertCircle className="h-4 w-4 text-destructive" />
-                  <span className="text-sm text-destructive">Failed to load challans. Check server connection.</span>
-                  <Button size="sm" variant="outline" className="ml-auto" onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/super-admin/all-challans"] })}>
-                    Retry
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-            {txnsError && (
-              <Card className="border-destructive bg-destructive/10">
-                <CardContent className="flex items-center gap-2 py-3">
-                  <AlertCircle className="h-4 w-4 text-destructive" />
-                  <span className="text-sm text-destructive">Failed to load transactions. Check server connection.</span>
-                  <Button size="sm" variant="outline" className="ml-auto" onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/super-admin/all-transactions"] })}>
-                    Retry
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Org filter + KPI row */}
-            <div className="flex flex-wrap gap-4 items-end">
-              <div>
-                <Label className="text-xs text-muted-foreground">Organization</Label>
-                <Select value={paymentOrgFilter} onValueChange={setPaymentOrgFilter}>
-                  <SelectTrigger className="w-[200px]"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Organizations</SelectItem>
-                    {organizations?.map(org => (
-                      <SelectItem key={org.id} value={org.id}>{org.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Challan summary cards */}
-            <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-              <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Total Challans</CardTitle></CardHeader>
-                <CardContent><div className="text-2xl font-bold">{filteredChallans.length}</div></CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Paid</CardTitle></CardHeader>
-                <CardContent><div className="text-2xl font-bold text-green-600">{filteredChallans.filter(c => (c.status || "generated") === "paid").length}</div></CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Overdue</CardTitle></CardHeader>
-                <CardContent><div className="text-2xl font-bold text-red-600">{filteredChallans.filter(c => (c.status || "generated") === "overdue").length}</div></CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Total Amount</CardTitle></CardHeader>
-                <CardContent><div className="text-2xl font-bold">{formatPaise(filteredChallans.reduce((sum, c) => sum + (c.totalAmount || 0), 0))}</div></CardContent>
-              </Card>
-            </div>
-
-            {/* Challans Table */}
-            <Card>
-              <CardHeader>
-                <div className="flex flex-wrap justify-between items-center gap-2">
-                  <div>
-                    <CardTitle className="flex items-center gap-2"><Receipt className="h-5 w-5" />All Challans</CardTitle>
-                    <CardDescription>Cross-organization billing challans</CardDescription>
-                  </div>
-                  <Select value={challanStatusFilter} onValueChange={setChallanStatusFilter}>
-                    <SelectTrigger className="w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Status</SelectItem>
-                      <SelectItem value="generated">Generated</SelectItem>
-                      <SelectItem value="sent">Sent</SelectItem>
-                      <SelectItem value="paid">Paid</SelectItem>
-                      <SelectItem value="overdue">Overdue</SelectItem>
-                      <SelectItem value="cancelled">Cancelled</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="border rounded-lg overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Challan #</TableHead>
-                        <TableHead>Organization</TableHead>
-                        <TableHead>Period</TableHead>
-                        <TableHead className="text-right">Subtotal</TableHead>
-                        <TableHead className="text-right">Tax</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Due Date</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {challansLoading ? (
-                        <TableRow><TableCell colSpan={9} className="text-center py-8">Loading challans...</TableCell></TableRow>
-                      ) : filteredChallans.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
-                            <Receipt className="h-10 w-10 mx-auto mb-3 opacity-40" />
-                            {challansError ? "Error loading challans" : "No challans found"}
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        filteredChallans.map((ch) => (
-                          <TableRow key={ch.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedChallanDetail(ch)}>
-                            <TableCell className="font-mono text-sm whitespace-nowrap">{ch.challanNumber}</TableCell>
-                            <TableCell>
-                              <div className="font-medium whitespace-nowrap">{ch.organizationName || "—"}</div>
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap">
-                              {formatDate(ch.billingPeriodStart)} – {formatDate(ch.billingPeriodEnd)}
-                            </TableCell>
-                            <TableCell className="text-right whitespace-nowrap">{formatPaise(ch.subtotal || 0)}</TableCell>
-                            <TableCell className="text-right whitespace-nowrap">{formatPaise(ch.taxAmount || 0)}</TableCell>
-                            <TableCell className="text-right font-bold whitespace-nowrap">{formatPaise(ch.totalAmount || 0)}</TableCell>
-                            <TableCell>{statusBadge(ch.status)}</TableCell>
-                            <TableCell className="whitespace-nowrap">{formatDate(ch.dueDate)}</TableCell>
-                            <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                              <Select
-                                value={ch.status || "generated"}
-                                onValueChange={(value) =>
-                                  updateChallanStatusMutation.mutate({ challanId: ch.id, status: value })
-                                }
-                              >
-                                <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="generated">Generated</SelectItem>
-                                  <SelectItem value="sent">Sent</SelectItem>
-                                  <SelectItem value="paid">Paid</SelectItem>
-                                  <SelectItem value="overdue">Overdue</SelectItem>
-                                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-                {filteredChallans.length > 0 && (
-                  <div className="text-sm text-muted-foreground mt-2 text-right">
-                    {filteredChallans.length} challan{filteredChallans.length !== 1 ? "s" : ""} · Total: {formatPaise(filteredChallans.reduce((s, c) => s + (c.totalAmount || 0), 0))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Transactions Table */}
-            <Card>
-              <CardHeader>
-                <div className="flex flex-wrap justify-between items-center gap-2">
-                  <div>
-                    <CardTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5" />Payment Transactions</CardTitle>
-                    <CardDescription>Cross-organization payment history</CardDescription>
-                  </div>
-                  <Select value={txnStatusFilter} onValueChange={setTxnStatusFilter}>
-                    <SelectTrigger className="w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Status</SelectItem>
-                      <SelectItem value="initiated">Initiated</SelectItem>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="success">Success</SelectItem>
-                      <SelectItem value="failed">Failed</SelectItem>
-                      <SelectItem value="refunded">Refunded</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="border rounded-lg overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Transaction ID</TableHead>
-                        <TableHead>Organization</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                        <TableHead>Mode</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Initiated By</TableHead>
-                        <TableHead>Date</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {txnsLoading ? (
-                        <TableRow><TableCell colSpan={7} className="text-center py-8">Loading transactions...</TableCell></TableRow>
-                      ) : filteredTransactions.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
-                            <CreditCard className="h-10 w-10 mx-auto mb-3 opacity-40" />
-                            {txnsError ? "Error loading transactions" : "No transactions found"}
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        filteredTransactions.map((txn) => (
-                          <TableRow key={txn.id}>
-                            <TableCell className="font-mono text-sm whitespace-nowrap">{txn.payuTxnId || txn.id.slice(0, 8)}</TableCell>
-                            <TableCell>
-                              <div className="font-medium whitespace-nowrap">{txn.organizationName || "—"}</div>
-                            </TableCell>
-                            <TableCell className="text-right font-bold whitespace-nowrap">{formatPaise(txn.amount || 0)}</TableCell>
-                            <TableCell><Badge variant="outline">{txn.payuMode || "—"}</Badge></TableCell>
-                            <TableCell>{statusBadge(txn.status)}</TableCell>
-                            <TableCell className="text-sm whitespace-nowrap">{txn.initiatedBy || "—"}</TableCell>
-                            <TableCell className="text-sm whitespace-nowrap">{new Date(txn.createdAt).toLocaleString()}</TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-                {filteredTransactions.length > 0 && (
-                  <div className="text-sm text-muted-foreground mt-2 text-right">
-                    {filteredTransactions.length} transaction{filteredTransactions.length !== 1 ? "s" : ""} · Successful: {formatPaise(filteredTransactions.filter(t => t.status === "success").reduce((s, t) => s + (t.amount || 0), 0))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
           {/* Audit Logs Tab */}
           <TabsContent value="audit" className="space-y-4">
             {auditError && (
@@ -1739,8 +1204,6 @@ export default function OrganizationControl() {
                         <SelectItem value="users">Users</SelectItem>
                         <SelectItem value="tasks">Tasks</SelectItem>
                         <SelectItem value="flow-rules">Flow Rules</SelectItem>
-                        <SelectItem value="challans">Challans (Invoices)</SelectItem>
-                        <SelectItem value="transactions">Payment Transactions</SelectItem>
                         <SelectItem value="audit-logs">Audit Logs</SelectItem>
                         <SelectItem value="login-logs">Login Logs</SelectItem>
                       </SelectContent>
@@ -1793,11 +1256,9 @@ export default function OrganizationControl() {
                   <h4 className="text-sm font-semibold mb-3">Quick Exports (All Time, All Orgs)</h4>
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     {[
-                      { type: "organizations", icon: Building2, label: "Organizations", desc: "All org details, plans, pricing" },
+                      { type: "organizations", icon: Building2, label: "Organizations", desc: "All org details and plans" },
                       { type: "users", icon: Users, label: "Users", desc: "User profiles, roles, status" },
                       { type: "tasks", icon: ClipboardList, label: "Tasks", desc: "All tasks with status & TAT" },
-                      { type: "challans", icon: Receipt, label: "Challans", desc: "Invoices with cost breakdown" },
-                      { type: "transactions", icon: CreditCard, label: "Transactions", desc: "Payment history & status" },
                       { type: "audit-logs", icon: ScrollText, label: "Audit Logs", desc: "System activity trail" },
                       { type: "login-logs", icon: Shield, label: "Login Logs", desc: "User login activity" },
                       { type: "flow-rules", icon: Zap, label: "Flow Rules", desc: "Workflow definitions" },
@@ -1892,17 +1353,6 @@ export default function OrganizationControl() {
                   </div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Health Score</span><span className="font-medium">{orgDetail.organization.healthScore ?? "—"} ({orgDetail.organization.healthStatus || "—"})</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Plan Type</span><span className="font-medium">{orgDetail.organization.planType}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Pricing Tier</span><span className="font-medium">{orgDetail.organization.pricingTier}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Monthly Price</span><span className="font-medium">{formatPaise(orgDetail.organization.monthlyPrice || 0)}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Billing Cycle</span><span className="font-medium">{orgDetail.organization.billingCycle || "monthly"}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Usage-Based Billing</span><span className="font-medium">{orgDetail.organization.usageBasedBilling ? "Yes" : "No"}</span></div>
-                  {orgDetail.organization.usageBasedBilling && (
-                    <>
-                      <div className="flex justify-between"><span className="text-muted-foreground">₹/Flow</span><span className="font-medium">{formatPaise(orgDetail.organization.pricePerFlow || 0)}</span></div>
-                      <div className="flex justify-between"><span className="text-muted-foreground">₹/User</span><span className="font-medium">{formatPaise(orgDetail.organization.pricePerUser || 0)}</span></div>
-                      <div className="flex justify-between"><span className="text-muted-foreground">₹/GB</span><span className="font-medium">{formatPaise(orgDetail.organization.pricePerGb || 0)}</span></div>
-                    </>
-                  )}
                 </div>
               </div>
 
@@ -1952,29 +1402,6 @@ export default function OrganizationControl() {
                 )}
               </div>
 
-              {/* Billing Summary */}
-              <div className="border-t pt-4">
-                <h4 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><DollarSign className="h-4 w-4" />Billing Summary</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="border rounded-lg p-3 text-center">
-                    <div className="text-lg font-bold">{orgDetail.stats.totalChallans}</div>
-                    <div className="text-xs text-muted-foreground">Challans</div>
-                  </div>
-                  <div className="border rounded-lg p-3 text-center">
-                    <div className="text-lg font-bold">{formatPaise(orgDetail.stats.totalChallanAmount)}</div>
-                    <div className="text-xs text-muted-foreground">Total Billed</div>
-                  </div>
-                  <div className="border rounded-lg p-3 text-center">
-                    <div className="text-lg font-bold text-green-600">{formatPaise(orgDetail.stats.paidAmount)}</div>
-                    <div className="text-xs text-muted-foreground">Paid</div>
-                  </div>
-                  <div className="border rounded-lg p-3 text-center">
-                    <div className="text-lg font-bold text-red-600">{formatPaise(orgDetail.stats.outstandingAmount)}</div>
-                    <div className="text-xs text-muted-foreground">Outstanding</div>
-                  </div>
-                </div>
-              </div>
-
               {/* Users List */}
               {orgDetail.users.length > 0 && (
                 <div className="border-t pt-4">
@@ -2008,151 +1435,8 @@ export default function OrganizationControl() {
                 </div>
               )}
 
-              {/* Recent Challans */}
-              {orgDetail.recentChallans.length > 0 && (
-                <div className="border-t pt-4">
-                  <h4 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><Receipt className="h-4 w-4" />Recent Challans</h4>
-                  <div className="border rounded-lg overflow-x-auto max-h-[200px] overflow-y-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Challan #</TableHead>
-                          <TableHead>Period</TableHead>
-                          <TableHead className="text-right">Total</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Due</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {orgDetail.recentChallans.map((ch: any) => (
-                          <TableRow key={ch.id}>
-                            <TableCell className="font-mono text-sm whitespace-nowrap">{ch.challanNumber}</TableCell>
-                            <TableCell className="text-sm whitespace-nowrap">{formatDate(ch.billingPeriodStart)} – {formatDate(ch.billingPeriodEnd)}</TableCell>
-                            <TableCell className="text-right font-bold whitespace-nowrap">{formatPaise(ch.totalAmount || 0)}</TableCell>
-                            <TableCell>{statusBadge(ch.status)}</TableCell>
-                            <TableCell className="text-sm whitespace-nowrap">{formatDate(ch.dueDate)}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
-
-              {/* Recent Transactions */}
-              {orgDetail.recentTransactions.length > 0 && (
-                <div className="border-t pt-4">
-                  <h4 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><CreditCard className="h-4 w-4" />Recent Transactions</h4>
-                  <div className="border rounded-lg overflow-x-auto max-h-[200px] overflow-y-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Transaction ID</TableHead>
-                          <TableHead className="text-right">Amount</TableHead>
-                          <TableHead>Mode</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Date</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {orgDetail.recentTransactions.map((tx: any) => (
-                          <TableRow key={tx.id}>
-                            <TableCell className="font-mono text-sm whitespace-nowrap">{tx.payuTxnId || tx.id.slice(0, 8)}</TableCell>
-                            <TableCell className="text-right font-bold whitespace-nowrap">{formatPaise(tx.amount || 0)}</TableCell>
-                            <TableCell><Badge variant="outline">{tx.payuMode || "—"}</Badge></TableCell>
-                            <TableCell>{statusBadge(tx.status)}</TableCell>
-                            <TableCell className="text-sm whitespace-nowrap">{new Date(tx.createdAt).toLocaleString()}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
             </div>
           ) : null}
-        </DialogContent>
-      </Dialog>
-
-      {/* Challan Detail Dialog */}
-      <Dialog open={!!selectedChallanDetail} onOpenChange={(open) => !open && setSelectedChallanDetail(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Receipt className="h-5 w-5" />
-              Challan Details
-            </DialogTitle>
-            <DialogDescription>
-              {selectedChallanDetail?.challanNumber} · {selectedChallanDetail?.organizationName || "Unknown Org"}
-            </DialogDescription>
-          </DialogHeader>
-          {selectedChallanDetail && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Status</span>
-                {statusBadge(selectedChallanDetail.status)}
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Billing Period</span>
-                <span className="text-sm font-medium">
-                  {formatDate(selectedChallanDetail.billingPeriodStart)} – {formatDate(selectedChallanDetail.billingPeriodEnd)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Due Date</span>
-                <span className="text-sm font-medium">{formatDate(selectedChallanDetail.dueDate)}</span>
-              </div>
-
-              <div className="border-t pt-3 space-y-2">
-                <h4 className="text-sm font-semibold">Cost Breakdown</h4>
-                {selectedChallanDetail.flowExecutionCost != null && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Flow Execution</span>
-                    <span>{formatPaise(selectedChallanDetail.flowExecutionCost)}</span>
-                  </div>
-                )}
-                {selectedChallanDetail.userSeatCost != null && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">User Seats</span>
-                    <span>{formatPaise(selectedChallanDetail.userSeatCost)}</span>
-                  </div>
-                )}
-                {selectedChallanDetail.formSubmissionCost != null && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Form Submissions</span>
-                    <span>{formatPaise(selectedChallanDetail.formSubmissionCost)}</span>
-                  </div>
-                )}
-                {selectedChallanDetail.storageCost != null && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Storage</span>
-                    <span>{formatPaise(selectedChallanDetail.storageCost)}</span>
-                  </div>
-                )}
-                {selectedChallanDetail.basePlatformCost != null && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Base Platform</span>
-                    <span>{formatPaise(selectedChallanDetail.basePlatformCost)}</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t pt-3 space-y-1">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal</span>
-                  <span className="font-medium">{formatPaise(selectedChallanDetail.subtotal || 0)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Tax ({selectedChallanDetail.taxRate ?? 18}%)</span>
-                  <span className="font-medium">{formatPaise(selectedChallanDetail.taxAmount || 0)}</span>
-                </div>
-                <div className="flex justify-between text-base font-bold pt-1 border-t">
-                  <span>Total</span>
-                  <span>{formatPaise(selectedChallanDetail.totalAmount || 0)}</span>
-                </div>
-              </div>
-            </div>
-          )}
         </DialogContent>
       </Dialog>
 
@@ -2325,102 +1609,6 @@ export default function OrganizationControl() {
               }
             }}>
               Save Changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Pricing Dialog */}
-      <Dialog open={pricingDialog} onOpenChange={setPricingDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Set Pricing Tier</DialogTitle>
-            <DialogDescription>Configure pricing and billing for {selectedOrgForAction?.name}</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div>
-              <Label>Pricing Tier</Label>
-              <Select
-                value={selectedOrgForAction?.pricingTier || "starter"}
-                onValueChange={(value) => setSelectedOrgForAction({ ...selectedOrgForAction!, pricingTier: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="starter">Starter</SelectItem>
-                  <SelectItem value="professional">Professional</SelectItem>
-                  <SelectItem value="enterprise">Enterprise</SelectItem>
-                  <SelectItem value="custom">Custom</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Monthly Price (₹)</Label>
-              <Input
-                type="number"
-                value={(selectedOrgForAction?.monthlyPrice || 0) / 100}
-                onChange={(e) => setSelectedOrgForAction({ ...selectedOrgForAction!, monthlyPrice: parseFloat(e.target.value) * 100 })}
-              />
-            </div>
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="usage-based"
-                checked={selectedOrgForAction?.usageBasedBilling || false}
-                onCheckedChange={(checked) => setSelectedOrgForAction({ ...selectedOrgForAction!, usageBasedBilling: checked as boolean })}
-              />
-              <Label htmlFor="usage-based">Enable Usage-Based Billing</Label>
-            </div>
-            {selectedOrgForAction?.usageBasedBilling && (
-              <div className="grid grid-cols-3 gap-4 pl-6">
-                <div>
-                  <Label className="text-xs">₹/Flow</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={(selectedOrgForAction?.pricePerFlow || 0) / 100}
-                    onChange={(e) => setSelectedOrgForAction({ ...selectedOrgForAction!, pricePerFlow: parseFloat(e.target.value) * 100 })}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">₹/User</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={(selectedOrgForAction?.pricePerUser || 0) / 100}
-                    onChange={(e) => setSelectedOrgForAction({ ...selectedOrgForAction!, pricePerUser: parseFloat(e.target.value) * 100 })}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">₹/GB</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={(selectedOrgForAction?.pricePerGb || 0) / 100}
-                    onChange={(e) => setSelectedOrgForAction({ ...selectedOrgForAction!, pricePerGb: parseFloat(e.target.value) * 100 })}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPricingDialog(false)}>Cancel</Button>
-            <Button onClick={() => {
-              if (selectedOrgForAction) {
-                updateOrgMutation.mutate({
-                  id: selectedOrgForAction.id,
-                  updates: {
-                    pricingTier: selectedOrgForAction.pricingTier,
-                    monthlyPrice: selectedOrgForAction.monthlyPrice,
-                    usageBasedBilling: selectedOrgForAction.usageBasedBilling,
-                    pricePerFlow: selectedOrgForAction.pricePerFlow,
-                    pricePerUser: selectedOrgForAction.pricePerUser,
-                    pricePerGb: selectedOrgForAction.pricePerGb
-                  }
-                });
-              }
-            }}>
-              Save Pricing
             </Button>
           </DialogFooter>
         </DialogContent>

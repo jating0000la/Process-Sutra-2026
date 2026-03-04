@@ -5,7 +5,6 @@ import fileType from 'file-type';
 import sanitizeFilename from 'sanitize-filename';
 import { isAuthenticated } from './firebaseAuth';
 import { storage } from './storage';
-import { getStorageStats } from './usageQueries';
 import { uploadFileToDrive, downloadFileFromDrive } from './services/googleDriveService';
 import { getOAuth2Client } from './services/googleOAuth';
 import { ensureValidToken } from './utils/tokenRefresh';
@@ -118,19 +117,6 @@ uploadsRouter.post('/', uploadLimiter, isAuthenticated, upload.single('file'), a
     }
     file.originalname = sanitized;
 
-    // Check storage quota before upload
-    const storageStats = await getStorageStats(orgId);
-    const currentStorageGB = storageStats.totalBytes / (1024 * 1024 * 1024);
-    const newFileSizeGB = file.size / (1024 * 1024 * 1024);
-    
-    if (currentStorageGB + newFileSizeGB > STORAGE_LIMIT_GB) {
-      return res.status(413).json({ 
-        message: `Storage limit exceeded. Your organization has used ${currentStorageGB.toFixed(2)} GB of ${STORAGE_LIMIT_GB} GB. This file would exceed the limit.`,
-        currentUsage: currentStorageGB,
-        limit: STORAGE_LIMIT_GB
-      });
-    }
-
     // Create OAuth2 client with user's tokens (already refreshed by ensureValidToken)
     const oauth2Client = getOAuth2Client();
     oauth2Client.setCredentials({
@@ -223,13 +209,14 @@ uploadsRouter.get('/:id', isAuthenticated, async (req, res) => {
     }
 
     res.setHeader('Content-Type', metadata.mimeType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `inline; filename="${metadata.name}"`);
+    const safeName = (metadata.name || 'download').replace(/["\r\n]/g, '_');
+    res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
     if (metadata.size) res.setHeader('Content-Length', String(metadata.size));
 
     res.send(buffer);
   } catch (e: any) {
     console.error('Download error:', e);
-    res.status(500).json({ message: e.message || 'download failed' });
+    res.status(500).json({ message: 'download failed' });
   }
 });
 

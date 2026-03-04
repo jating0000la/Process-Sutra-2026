@@ -45,15 +45,8 @@ export const organizations = pgTable(
     customerType: varchar("customer_type").$type<"B2B" | "B2C" | "B2G">(), // B2B, B2C, B2G
     businessType: varchar("business_type").$type<"Trading" | "Manufacturing" | "Wholesaler" | "Retailer" | "Service Provider">(), // Trading, Manufacturing, Wholesaler, Retailer, Service Provider
     // Super Admin control fields
-    pricingTier: varchar("pricing_tier").default("starter"), // starter, growth, enterprise
-    monthlyPrice: integer("monthly_price").default(0),
-    billingCycle: varchar("billing_cycle").default("monthly"), // monthly, yearly
     maxFlows: integer("max_flows").default(100),
     maxStorage: integer("max_storage").default(5000), // in MB
-    usageBasedBilling: boolean("usage_based_billing").default(false),
-    pricePerFlow: integer("price_per_flow").default(0),
-    pricePerUser: integer("price_per_user").default(0),
-    pricePerGb: integer("price_per_gb").default(0),
     healthScore: integer("health_score").default(100),
     healthStatus: varchar("health_status").default("healthy"), // healthy, warning, critical
     geminiApiKey: text("gemini_api_key"), // Google AI Studio Gemini API key
@@ -74,7 +67,6 @@ export const organizations = pgTable(
     index("idx_organizations_customer_type").on(table.customerType),
     index("idx_organizations_business_type").on(table.businessType),
     index("idx_organizations_health_score").on(table.healthScore),
-    index("idx_organizations_pricing_tier").on(table.pricingTier),
     index("idx_organizations_suspended").on(table.isSuspended).where(sql`${table.isSuspended} = true`),
     index("idx_organizations_owner").on(table.ownerId),
   ]
@@ -715,122 +707,3 @@ export const insertApiKeySchema = createInsertSchema(apiKeys).omit({
 
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
-
-// ─── Billing Challans (Invoices) ─────────────────────────────────────
-
-export const challans = pgTable(
-  "challans",
-  {
-    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-    challanNumber: varchar("challan_number").notNull().unique(), // e.g. "CH-2026-02-ORG123"
-    organizationId: varchar("organization_id").notNull().references(() => organizations.id),
-    // Billing period (always full calendar month)
-    billingPeriodStart: timestamp("billing_period_start").notNull(),
-    billingPeriodEnd: timestamp("billing_period_end").notNull(),
-    // Usage breakdown
-    flowCount: integer("flow_count").default(0),
-    flowCost: integer("flow_cost").default(0),       // in paise
-    userCount: integer("user_count").default(0),
-    userCost: integer("user_cost").default(0),        // in paise
-    formCount: integer("form_count").default(0),
-    formCost: integer("form_cost").default(0),        // in paise
-    storageMb: integer("storage_mb").default(0),
-    storageCost: integer("storage_cost").default(0),  // in paise
-    baseCost: integer("base_cost").default(0),        // monthly base price in paise
-    // Previous outstanding (carry-forward from unpaid challans)
-    previousOutstanding: integer("previous_outstanding").default(0), // in paise
-    cancelledChallanIds: text("cancelled_challan_ids"), // JSON array of cancelled challan IDs
-    // Totals
-    subtotal: integer("subtotal").default(0),         // in paise (current month only)
-    taxPercent: integer("tax_percent").default(18),    // GST 18%
-    taxAmount: integer("tax_amount").default(0),       // in paise (on current month subtotal)
-    totalAmount: integer("total_amount").default(0),   // in paise (subtotal + tax + previousOutstanding)
-    // Status
-    status: varchar("status").default("generated").$type<"generated" | "sent" | "paid" | "overdue" | "cancelled">(),
-    dueDate: timestamp("due_date"),
-    paidAt: timestamp("paid_at"),
-    paymentId: varchar("payment_id"),  // references payment_transactions.id
-    // Metadata
-    generatedBy: varchar("generated_by"), // "system" or user email
-    notes: text("notes"),
-    createdAt: timestamp("created_at").defaultNow(),
-    updatedAt: timestamp("updated_at").defaultNow(),
-  },
-  (table) => [
-    index("idx_challans_org").on(table.organizationId),
-    index("idx_challans_org_period").on(table.organizationId, table.billingPeriodStart),
-    index("idx_challans_status").on(table.status),
-    index("idx_challans_number").on(table.challanNumber),
-  ]
-);
-
-export const challansRelations = relations(challans, ({ one }) => ({
-  organization: one(organizations, {
-    fields: [challans.organizationId],
-    references: [organizations.id],
-  }),
-}));
-
-export const insertChallanSchema = createInsertSchema(challans).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export type Challan = typeof challans.$inferSelect;
-export type InsertChallan = z.infer<typeof insertChallanSchema>;
-
-// ─── Payment Transactions ────────────────────────────────────────────
-
-export const paymentTransactions = pgTable(
-  "payment_transactions",
-  {
-    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-    organizationId: varchar("organization_id").notNull().references(() => organizations.id),
-    challanId: varchar("challan_id").references(() => challans.id),
-    // PayU fields
-    payuTxnId: varchar("payu_txn_id"),          // our unique txn ID sent to PayU
-    payuPaymentId: varchar("payu_payment_id"),   // PayU's mihpayid
-    payuStatus: varchar("payu_status"),          // success, failure, pending
-    payuMode: varchar("payu_mode"),              // CC, DC, NB, UPI, WALLET etc.
-    payuHash: varchar("payu_hash"),              // hash for verification
-    // Financial
-    amount: integer("amount").notNull(),          // in paise
-    currency: varchar("currency").default("INR"),
-    // Status
-    status: varchar("status").default("initiated").$type<"initiated" | "pending" | "success" | "failed" | "refunded">(),
-    failureReason: text("failure_reason"),
-    // User info
-    initiatedBy: varchar("initiated_by"),         // email of person who paid
-    // Metadata from PayU response
-    payuResponse: jsonb("payu_response"),          // full PayU webhook/redirect payload
-    createdAt: timestamp("created_at").defaultNow(),
-    updatedAt: timestamp("updated_at").defaultNow(),
-  },
-  (table) => [
-    index("idx_payment_txn_org").on(table.organizationId),
-    index("idx_payment_txn_challan").on(table.challanId),
-    index("idx_payment_txn_payu").on(table.payuTxnId),
-    index("idx_payment_txn_status").on(table.status),
-  ]
-);
-
-export const paymentTransactionsRelations = relations(paymentTransactions, ({ one }) => ({
-  organization: one(organizations, {
-    fields: [paymentTransactions.organizationId],
-    references: [organizations.id],
-  }),
-  challan: one(challans, {
-    fields: [paymentTransactions.challanId],
-    references: [challans.id],
-  }),
-}));
-
-export const insertPaymentTransactionSchema = createInsertSchema(paymentTransactions).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export type PaymentTransaction = typeof paymentTransactions.$inferSelect;
-export type InsertPaymentTransaction = z.infer<typeof insertPaymentTransactionSchema>;

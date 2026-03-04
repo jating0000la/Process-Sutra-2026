@@ -21,11 +21,17 @@ if (!databaseUrl) {
 console.log('Connecting to database...');
 console.log('Database host:', databaseUrl.split('@')[1]?.split('/')[0] || 'unknown');
 
-// Create a PostgreSQL pool
+// Create a PostgreSQL pool — tuned for 4-core / 16GB VPS with 3000+ orgs
+// PM2 runs 4 cluster workers, so each worker gets max 12 connections = 48 total
+// PostgreSQL default max_connections = 100, leaving headroom for admin/monitoring
 export const pool = new Pool({ 
   connectionString: databaseUrl,
-  connectionTimeoutMillis: 5000,
-  idleTimeoutMillis: 30000,
+  max: 12,                       // connections per worker (4 workers × 12 = 48 total)
+  min: 2,                        // keep 2 warm connections per worker
+  connectionTimeoutMillis: 5000, // fail fast if pool exhausted
+  idleTimeoutMillis: 30000,      // release idle connections after 30s
+  allowExitOnIdle: false,        // keep pool alive in long-running server
+  statement_timeout: 30000,      // kill queries running > 30s
 });
 
 // Test the connection

@@ -12,6 +12,16 @@
 processsutra.com, www.processsutra.com {
     encode zstd gzip
 
+    # Security response headers
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        -Server
+    }
+
     reverse_proxy localhost:5000 {
         # Load balancing for high traffic
         # lb_policy round_robin
@@ -56,5 +66,5 @@ processsutra.com, www.processsutra.com {
 }
 
 http://194.238.16.140 {
-    redir https://processsutra.com{uri} permanent
+    respond "Not Found" 404
 }

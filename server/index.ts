@@ -157,6 +157,10 @@ app.use((req, res, next) => {
       server.listen(availablePort, host, () => {
         log(`serving on ${host}:${availablePort}`);
         log(`Health check available at: http://${host}:${availablePort}/api/health`);
+        // Signal PM2 that the app is ready to accept connections (required for wait_ready: true)
+        if (typeof process.send === 'function') {
+          process.send('ready');
+        }
       });
     } catch (error) {
       console.error('Failed to find available port:', error);

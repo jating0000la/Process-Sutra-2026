@@ -2,7 +2,7 @@ import { Express } from "express";
 import { storage } from "./storage";
 import { getQuickFormTemplatesByOrg, getQuickFormResponsesCollection } from "./mongo/quickFormClient";
 import { db } from "./db.js";
-import { challans, paymentTransactions, organizations, users, tasks, flowRules, auditLogs, userLoginLogs } from "@shared/schema";
+import { organizations, users, tasks, flowRules, auditLogs, userLoginLogs } from "@shared/schema";
 import { eq, desc, sql, and, gte, lte } from "drizzle-orm";
 
 /**
@@ -45,8 +45,6 @@ export function registerSuperAdminRoutes(
         isActive: true,
         healthScore: 100,
         healthStatus: "healthy",
-        pricingTier: orgData.pricingTier || "starter",
-        monthlyPrice: orgData.monthlyPrice || 0
       });
       
       // Create audit log
@@ -82,20 +80,6 @@ export function registerSuperAdminRoutes(
       }
       
       const organization = await storage.updateOrganization(organizationId, updates);
-      
-      // Clear usage cache when pricing/quota settings change
-      const pricingFields = ['pricingTier', 'monthlyPrice', 'usageBasedBilling', 'pricePerFlow', 'pricePerUser', 'pricePerGb', 'maxUsers', 'maxFlows', 'maxStorage'];
-      const hasPricingChanges = pricingFields.some(field => updates[field] !== undefined);
-      
-      if (hasPricingChanges) {
-        const { usageCache, getUsageSummaryCacheKey } = await import('./usageCache');
-        // Clear cache for all date ranges
-        ['week', 'month', 'quarter', 'year'].forEach(range => {
-          const cacheKey = getUsageSummaryCacheKey(organizationId, range);
-          usageCache.del(cacheKey);
-        });
-        console.log(`[CACHE] Cleared usage cache for organization ${organizationId} due to pricing changes`);
-      }
       
       // Create audit log
       await storage.createAuditLog({
@@ -346,139 +330,6 @@ export function registerSuperAdminRoutes(
     }
   });
   
-  // Get system-wide billing and usage statistics
-  app.get("/api/super-admin/billing-summary", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
-    try {
-      const organizations = await storage.getAllOrganizations();
-      
-      let totalRevenue = 0;
-      let monthlyRecurring = 0;
-      
-      const orgBilling = await Promise.all(
-        organizations.map(async (org) => {
-          const users = await storage.getUsersByOrganization(org.id);
-          const tasks = await storage.getTasksByOrganization(org.id);
-          const responsesCol = await getQuickFormResponsesCollection();
-          const responses = await responsesCol.find({ orgId: org.id }).toArray();
-          
-          // Calculate current usage
-          const currentUsers = users.length;
-          const currentFlows = new Set(tasks.map(t => t.flowId)).size;
-          const currentStorage = responses.length * 0.5; // Rough estimate in MB
-          
-          // Calculate overage charges
-          const baseFee = org.monthlyPrice || 0;
-          let overageCost = 0;
-          
-          if (org.usageBasedBilling) {
-            const flowsOverage = Math.max(0, currentFlows - (org.maxFlows || 0));
-            const usersOverage = Math.max(0, currentUsers - (org.maxUsers || 0));
-            const storageOverageGB = Math.max(0, (currentStorage - (org.maxStorage || 0)) / 1024);
-            
-            overageCost = 
-              (flowsOverage * (org.pricePerFlow || 0)) +
-              (usersOverage * (org.pricePerUser || 0)) +
-              (storageOverageGB * (org.pricePerGb || 0));
-          }
-          
-          const totalBill = baseFee + overageCost;
-          monthlyRecurring += baseFee;
-          totalRevenue += totalBill;
-          
-          return {
-            organizationId: org.id,
-            organizationName: org.name,
-            baseFee,
-            overageCost,
-            totalBill,
-            currentUsers,
-            currentFlows,
-            currentStorage: Math.round(currentStorage)
-          };
-        })
-      );
-      
-      res.json({
-        totalRevenue,
-        monthlyRecurring,
-        averageRevenuePerOrg: organizations.length > 0 ? totalRevenue / organizations.length : 0,
-        totalOrganizations: organizations.length,
-        organizations: orgBilling.sort((a, b) => b.totalBill - a.totalBill)
-      });
-    } catch (error) {
-      console.error("Error calculating billing summary:", error);
-      res.status(500).json({ message: "Failed to calculate billing summary" });
-    }
-  });
-
-  // ── Cross-org Challans ─────────────────────────────────────────────
-  app.get("/api/super-admin/all-challans", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
-    try {
-      const limit = parseInt(req.query.limit as string) || 200;
-      const status = req.query.status as string | undefined;
-      const orgId = req.query.organizationId as string | undefined;
-
-      let query = db
-        .select({
-          challan: challans,
-          orgName: organizations.name,
-        })
-        .from(challans)
-        .leftJoin(organizations, eq(challans.organizationId, organizations.id));
-
-      const conditions: any[] = [];
-      if (status) conditions.push(eq(challans.status, status as any));
-      if (orgId) conditions.push(eq(challans.organizationId, orgId));
-
-      if (conditions.length > 0) {
-        query = query.where(and(...conditions)) as any;
-      }
-
-      const rows = await (query as any)
-        .orderBy(desc(challans.createdAt))
-        .limit(limit);
-
-      res.json(rows.map((r: any) => ({ ...r.challan, organizationName: r.orgName })));
-    } catch (error) {
-      console.error("Error fetching all challans:", error);
-      res.status(500).json({ message: "Failed to fetch challans" });
-    }
-  });
-
-  // ── Cross-org Payment Transactions ─────────────────────────────────
-  app.get("/api/super-admin/all-transactions", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
-    try {
-      const limit = parseInt(req.query.limit as string) || 200;
-      const status = req.query.status as string | undefined;
-      const orgId = req.query.organizationId as string | undefined;
-
-      let query = db
-        .select({
-          txn: paymentTransactions,
-          orgName: organizations.name,
-        })
-        .from(paymentTransactions)
-        .leftJoin(organizations, eq(paymentTransactions.organizationId, organizations.id));
-
-      const conditions: any[] = [];
-      if (status) conditions.push(eq(paymentTransactions.status, status as any));
-      if (orgId) conditions.push(eq(paymentTransactions.organizationId, orgId));
-
-      if (conditions.length > 0) {
-        query = query.where(and(...conditions)) as any;
-      }
-
-      const rows = await (query as any)
-        .orderBy(desc(paymentTransactions.createdAt))
-        .limit(limit);
-
-      res.json(rows.map((r: any) => ({ ...r.txn, organizationName: r.orgName })));
-    } catch (error) {
-      console.error("Error fetching all transactions:", error);
-      res.status(500).json({ message: "Failed to fetch transactions" });
-    }
-  });
-
   // ── Audit Logs ─────────────────────────────────────────────────────
   app.get("/api/super-admin/audit-logs", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
     try {
@@ -538,49 +389,6 @@ export function registerSuperAdminRoutes(
     }
   });
 
-  // ── Update challan status (super admin can mark paid, cancel, etc.) ─
-  app.put("/api/super-admin/challans/:id/status", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
-    try {
-      const challanId = req.params.id;
-      const { status, notes } = req.body;
-
-      if (!['generated', 'sent', 'paid', 'overdue', 'cancelled'].includes(status)) {
-        return res.status(400).json({ message: "Invalid status" });
-      }
-
-      const updates: any = { status, updatedAt: new Date() };
-      if (notes) updates.notes = notes;
-      if (status === 'paid') updates.paidAt = new Date();
-
-      const [updated] = await db
-        .update(challans)
-        .set(updates)
-        .where(eq(challans.id, challanId))
-        .returning();
-
-      if (!updated) {
-        return res.status(404).json({ message: "Challan not found" });
-      }
-
-      await storage.createAuditLog({
-        actorId: req.user.id,
-        actorEmail: req.user.email,
-        action: "UPDATE_CHALLAN_STATUS",
-        targetType: "challan",
-        targetId: challanId,
-        newValue: JSON.stringify({ status, notes }),
-        ipAddress: req.ip || req.connection.remoteAddress,
-        userAgent: req.headers["user-agent"],
-        organizationId: updated.organizationId,
-      });
-
-      res.json(updated);
-    } catch (error) {
-      console.error("Error updating challan status:", error);
-      res.status(500).json({ message: "Failed to update challan status" });
-    }
-  });
-
   // ── Organization Full Details ───────────────────────────────────────
   app.get("/api/super-admin/organizations/:id/details", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
     try {
@@ -588,12 +396,10 @@ export function registerSuperAdminRoutes(
       const org = await storage.getOrganization(organizationId);
       if (!org) return res.status(404).json({ message: "Organization not found" });
 
-      const [orgUsers, orgTasks, orgFlows, orgChallansRows, orgTxnRows, loginLogs] = await Promise.all([
+      const [orgUsers, orgTasks, orgFlows, loginLogs] = await Promise.all([
         storage.getUsersByOrganization(organizationId),
         storage.getTasksByOrganization(organizationId),
         storage.getFlowRulesByOrganization(organizationId),
-        db.select().from(challans).where(eq(challans.organizationId, organizationId)).orderBy(desc(challans.createdAt)).limit(20),
-        db.select().from(paymentTransactions).where(eq(paymentTransactions.organizationId, organizationId)).orderBy(desc(paymentTransactions.createdAt)).limit(20),
         storage.getOrganizationLoginLogs(organizationId),
       ]);
 
@@ -609,14 +415,10 @@ export function registerSuperAdminRoutes(
         }
         return false;
       }).length;
-      const uniqueSystems = [...new Set(orgFlows.map(f => f.system))];
+      const uniqueSystems = Array.from(new Set(orgFlows.map(f => f.system)));
 
       const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       const recentLogins = loginLogs.filter((l: any) => new Date(l.loginTime) >= thirtyDaysAgo).length;
-
-      const totalChallanAmount = orgChallansRows.reduce((s, c) => s + (c.totalAmount || 0), 0);
-      const paidChallans = orgChallansRows.filter(c => c.status === "paid");
-      const paidAmount = paidChallans.reduce((s, c) => s + (c.totalAmount || 0), 0);
 
       res.json({
         organization: org,
@@ -632,19 +434,12 @@ export function registerSuperAdminRoutes(
           totalFormTemplates: formTemplates.length,
           totalFormResponses: formResponseCount,
           recentLogins30d: recentLogins,
-          totalChallans: orgChallansRows.length,
-          totalChallanAmount,
-          paidAmount,
-          outstandingAmount: totalChallanAmount - paidAmount,
-          totalTransactions: orgTxnRows.length,
         },
         users: orgUsers.map(u => ({
           id: u.id, email: u.email, firstName: u.firstName, lastName: u.lastName,
           role: u.role, status: u.status, department: u.department,
           lastLoginAt: u.lastLoginAt, createdAt: u.createdAt,
         })),
-        recentChallans: orgChallansRows,
-        recentTransactions: orgTxnRows,
       });
     } catch (error) {
       console.error("Error fetching org details:", error);
@@ -682,7 +477,7 @@ export function registerSuperAdminRoutes(
       switch (type) {
         case "organizations": {
           const allOrgs = await storage.getAllOrganizations();
-          const headers = ["ID","Name","Domain","Company Name","Industry","Customer Type","Business Type","GST Number","Plan Type","Pricing Tier","Monthly Price (₹)","Is Active","Is Suspended","Suspension Reason","Max Users","Max Flows","Max Storage (MB)","Health Score","Health Status","Owner Email","Usage Based Billing","Price/Flow (₹)","Price/User (₹)","Price/GB (₹)","Created At"];
+          const headers = ["ID","Name","Domain","Company Name","Industry","Customer Type","Business Type","GST Number","Plan Type","Is Active","Is Suspended","Suspension Reason","Max Users","Max Flows","Max Storage (MB)","Health Score","Health Status","Owner Email","Created At"];
           const rows = allOrgs
             .filter(o => {
               if (from && o.createdAt && new Date(o.createdAt) < from) return false;
@@ -691,11 +486,9 @@ export function registerSuperAdminRoutes(
             })
             .map(o => [
               o.id, o.name, o.domain, o.companyName || "", o.industry || "", o.customerType || "", o.businessType || "", o.gstNumber || "",
-              o.planType, o.pricingTier, ((o.monthlyPrice || 0) / 100).toFixed(2),
+              o.planType,
               o.isActive ? "Yes" : "No", o.isSuspended ? "Yes" : "No", o.suspensionReason || "",
               o.maxUsers, o.maxFlows, o.maxStorage, o.healthScore, o.healthStatus, o.ownerEmail || "",
-              o.usageBasedBilling ? "Yes" : "No", ((o.pricePerFlow || 0) / 100).toFixed(2),
-              ((o.pricePerUser || 0) / 100).toFixed(2), ((o.pricePerGb || 0) / 100).toFixed(2),
               o.createdAt ? new Date(o.createdAt).toISOString() : "",
             ]);
           csvContent = toCsv(headers, rows);
@@ -740,54 +533,6 @@ export function registerSuperAdminRoutes(
             r.task.createdAt ? new Date(r.task.createdAt).toISOString() : "",
           ]));
           filename = "tasks";
-          break;
-        }
-        case "challans": {
-          const conditions: any[] = [];
-          if (from) conditions.push(gte(challans.createdAt, from));
-          if (to) conditions.push(lte(challans.createdAt, to));
-          if (orgId) conditions.push(eq(challans.organizationId, orgId));
-          let query = db.select({ challan: challans, orgName: organizations.name }).from(challans).leftJoin(organizations, eq(challans.organizationId, organizations.id));
-          if (conditions.length) query = query.where(and(...conditions)) as any;
-          const rows = await (query as any).orderBy(desc(challans.createdAt));
-          const headers = ["Challan Number","Organization","Period Start","Period End","Flow Count","Flow Cost (₹)","User Count","User Cost (₹)","Form Count","Form Cost (₹)","Storage MB","Storage Cost (₹)","Base Cost (₹)","Subtotal (₹)","Tax %","Tax (₹)","Total (₹)","Status","Due Date","Paid At","Created At"];
-          csvContent = toCsv(headers, rows.map((r: any) => [
-            r.challan.challanNumber, r.orgName || "",
-            r.challan.billingPeriodStart ? new Date(r.challan.billingPeriodStart).toISOString() : "",
-            r.challan.billingPeriodEnd ? new Date(r.challan.billingPeriodEnd).toISOString() : "",
-            r.challan.flowCount, ((r.challan.flowCost || 0) / 100).toFixed(2),
-            r.challan.userCount, ((r.challan.userCost || 0) / 100).toFixed(2),
-            r.challan.formCount, ((r.challan.formCost || 0) / 100).toFixed(2),
-            r.challan.storageMb, ((r.challan.storageCost || 0) / 100).toFixed(2),
-            ((r.challan.baseCost || 0) / 100).toFixed(2),
-            ((r.challan.subtotal || 0) / 100).toFixed(2),
-            r.challan.taxPercent, ((r.challan.taxAmount || 0) / 100).toFixed(2),
-            ((r.challan.totalAmount || 0) / 100).toFixed(2),
-            r.challan.status || "generated",
-            r.challan.dueDate ? new Date(r.challan.dueDate).toISOString() : "",
-            r.challan.paidAt ? new Date(r.challan.paidAt).toISOString() : "",
-            r.challan.createdAt ? new Date(r.challan.createdAt).toISOString() : "",
-          ]));
-          filename = "challans";
-          break;
-        }
-        case "transactions": {
-          const conditions: any[] = [];
-          if (from) conditions.push(gte(paymentTransactions.createdAt, from));
-          if (to) conditions.push(lte(paymentTransactions.createdAt, to));
-          if (orgId) conditions.push(eq(paymentTransactions.organizationId, orgId));
-          let query = db.select({ txn: paymentTransactions, orgName: organizations.name }).from(paymentTransactions).leftJoin(organizations, eq(paymentTransactions.organizationId, organizations.id));
-          if (conditions.length) query = query.where(and(...conditions)) as any;
-          const rows = await (query as any).orderBy(desc(paymentTransactions.createdAt));
-          const headers = ["ID","Organization","Challan ID","PayU TxnID","PayU PaymentID","PayU Status","PayU Mode","Amount (₹)","Currency","Status","Failure Reason","Initiated By","Created At"];
-          csvContent = toCsv(headers, rows.map((r: any) => [
-            r.txn.id, r.orgName || "", r.txn.challanId || "",
-            r.txn.payuTxnId || "", r.txn.payuPaymentId || "", r.txn.payuStatus || "", r.txn.payuMode || "",
-            ((r.txn.amount || 0) / 100).toFixed(2), r.txn.currency || "INR",
-            r.txn.status || "initiated", r.txn.failureReason || "", r.txn.initiatedBy || "",
-            r.txn.createdAt ? new Date(r.txn.createdAt).toISOString() : "",
-          ]));
-          filename = "transactions";
           break;
         }
         case "audit-logs": {
@@ -846,7 +591,7 @@ export function registerSuperAdminRoutes(
           break;
         }
         default:
-          return res.status(400).json({ message: `Unknown export type: ${type}. Use: organizations, users, tasks, challans, transactions, audit-logs, login-logs, flow-rules` });
+          return res.status(400).json({ message: `Unknown export type: ${type}. Use: organizations, users, tasks, audit-logs, login-logs, flow-rules` });
       }
 
       const dateSuffix = from || to

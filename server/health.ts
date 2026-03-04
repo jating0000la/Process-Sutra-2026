@@ -1,14 +1,20 @@
 import { Request, Response } from 'express';
+import { pool, isDatabaseConnected } from './db.js';
 
 export const healthCheck = async (req: Request, res: Response) => {
-  const health = {
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    pid: process.pid,
-    instance: process.env.INSTANCE_ID || 'unknown'
-  };
+  let dbOk = false;
+  try {
+    if (isDatabaseConnected()) {
+      await pool.query('SELECT 1');
+      dbOk = true;
+    }
+  } catch (_) { /* DB unreachable */ }
 
-  res.status(200).json(health);
+  const status = dbOk ? 'healthy' : 'degraded';
+  const code = dbOk ? 200 : 503;
+
+  res.status(code).json({
+    status,
+    timestamp: new Date().toISOString(),
+  });
 };

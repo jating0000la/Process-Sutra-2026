@@ -27,8 +27,6 @@ import OrganizationControl from "@/pages/organization-control";
 
 import NDASecurityPage from "@/pages/nda-security";
 import VisualFlowBuilder from "@/pages/visual-flow-builder";
-import Usage from "@/pages/usage";
-import Payments from "@/pages/payments";
 import DataManagement from "@/pages/data-management";
 import QuickFormBuilder from "@/pages/quick-form-builder";
 import QuickFormFill from "@/pages/quick-form-fill";
@@ -38,6 +36,7 @@ import AIAssistant from "@/pages/ai-assistant";
 import { useEffect } from "react";
 import { useOrganizationCheck } from "@/hooks/useOrganizationCheck";
 import { useGoogleDriveCheck } from "@/hooks/useGoogleDriveCheck";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 // Component to handle /api/login redirect
 function ApiLoginRedirect() {
@@ -150,18 +149,6 @@ function Router() {
               <VisualFlowBuilder />
             </ProtectedRoute>
           </Route>
-          
-          <Route path="/usage">
-            <ProtectedRoute requireAdmin>
-              <Usage />
-            </ProtectedRoute>
-          </Route>
-          
-          <Route path="/payments">
-            <ProtectedRoute requireAdmin>
-              <Payments />
-            </ProtectedRoute>
-          </Route>
 
           {/* Quick Form routes */}
           <Route path="/quick-form-builder">
@@ -197,20 +184,22 @@ function Router() {
 
 function App() {
   return (
-    <HelmetProvider>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <NotificationProvider>
-            <LayoutProvider>
-              <TooltipProvider>
-                <Toaster />
-                <Router />
-              </TooltipProvider>
-            </LayoutProvider>
-          </NotificationProvider>
-        </AuthProvider>
-      </QueryClientProvider>
-    </HelmetProvider>
+    <ErrorBoundary>
+      <HelmetProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <NotificationProvider>
+              <LayoutProvider>
+                <TooltipProvider>
+                  <Toaster />
+                  <Router />
+                </TooltipProvider>
+              </LayoutProvider>
+            </NotificationProvider>
+          </AuthProvider>
+        </QueryClientProvider>
+      </HelmetProvider>
+    </ErrorBoundary>
   );
 }
 

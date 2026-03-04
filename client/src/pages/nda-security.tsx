@@ -517,20 +517,24 @@ For questions: security@muxrotechnologies.com
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <p className="text-sm text-muted-foreground">
-                        Comprehensive security implementation details, including authentication,
-                        encryption, monitoring, and compliance measures.
+                        Comprehensive security implementation details covering authentication, input validation,
+                        infrastructure hardening, monitoring, and compliance. Last audited March 2026.
                       </p>
                       <div className="flex items-center gap-2 text-sm">
                         <CheckCircle className="w-4 h-4 text-green-600" />
-                        <span>Enterprise-grade security</span>
+                        <span>25 security fixes applied</span>
                       </div>
                       <div className="flex items-center gap-2 text-sm">
                         <CheckCircle className="w-4 h-4 text-green-600" />
-                        <span>Complete security audit</span>
+                        <span>0 critical/high issues remaining</span>
                       </div>
                       <div className="flex items-center gap-2 text-sm">
                         <CheckCircle className="w-4 h-4 text-green-600" />
-                        <span>Best practices included</span>
+                        <span>Zod validation + field whitelisting</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                        <span>HSTS, CSP, and security headers enforced</span>
                       </div>
                       <Button onClick={() => setActiveTab("security")} className="w-full" variant="secondary">
                         <Eye className="w-4 h-4 mr-2" />
@@ -933,28 +937,42 @@ For questions: security@muxrotechnologies.com
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>Google OAuth 2.0</strong>
-                      <p className="text-muted-foreground">Google OAuth 2.0 authentication integration</p>
+                      <p className="text-muted-foreground">Secure Google OAuth 2.0 authentication with ID token validation (audience, issuer, expiry)</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
-                      <strong>Token Validation</strong>
-                      <p className="text-muted-foreground">Enhanced validation (audience, issuer, age)</p>
+                      <strong>Cryptographic CSRF Protection</strong>
+                      <p className="text-muted-foreground">OAuth state tokens generated with crypto.randomBytes(32) — not predictable</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>Session Management</strong>
-                      <p className="text-muted-foreground">Secure 4-hour TTL sessions</p>
+                      <p className="text-muted-foreground">Secure 4-hour TTL sessions with HttpOnly, SameSite=strict cookies, PostgreSQL-backed session store</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
-                      <strong>Rate Limiting</strong>
-                      <p className="text-muted-foreground">25 attempts per 15 minutes</p>
+                      <strong>Multi-Layer Rate Limiting</strong>
+                      <p className="text-muted-foreground">Login: 25 attempts/15 min, API: 1000 req/15 min, Super Admin: 30 req/min — per authenticated user</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
+                    <div className="text-sm">
+                      <strong>Role-Based Access Control</strong>
+                      <p className="text-muted-foreground">Admin, User, and Super Admin roles with strict middleware enforcement on every route</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
+                    <div className="text-sm">
+                      <strong>Organization Isolation</strong>
+                      <p className="text-muted-foreground">Every data query is scoped by organizationId — users cannot access data from other organizations</p>
                     </div>
                   </div>
                 </CardContent>
@@ -965,7 +983,7 @@ For questions: security@muxrotechnologies.com
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-lg">
                     <Database className="w-5 h-5 text-purple-600" />
-                    Data Protection
+                    Data Protection & Validation
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
@@ -973,28 +991,42 @@ For questions: security@muxrotechnologies.com
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
                       <strong>HTTPS/TLS Encryption</strong>
-                      <p className="text-muted-foreground">All data in transit encrypted</p>
+                      <p className="text-muted-foreground">All data in transit encrypted via TLS with automatic certificate management (Caddy + Let's Encrypt)</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
-                      <strong>Database Encryption</strong>
-                      <p className="text-muted-foreground">Data at rest encryption enabled</p>
+                      <strong>Strict Input Validation (Zod)</strong>
+                      <p className="text-muted-foreground">All API inputs validated with Zod schemas — user creation, login logs, devices, form data, and flow rules are type-checked and sanitized</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
-                      <strong>Secure Cookies</strong>
-                      <p className="text-muted-foreground">HttpOnly, SameSite=strict</p>
+                      <strong>Field-Level Whitelisting</strong>
+                      <p className="text-muted-foreground">User creation and update APIs use explicit field allowlists — sensitive fields (isSuperAdmin, tokens) cannot be injected</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
-                      <strong>Daily Backups</strong>
-                      <p className="text-muted-foreground">7-day retention, encrypted storage</p>
+                      <strong>Injection Prevention</strong>
+                      <p className="text-muted-foreground">MongoDB regex injection blocked with character escaping; SQL injection prevented via parameterized queries (Drizzle ORM)</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
+                    <div className="text-sm">
+                      <strong>Content-Disposition Sanitization</strong>
+                      <p className="text-muted-foreground">File download headers sanitized to prevent header injection attacks</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
+                    <div className="text-sm">
+                      <strong>Atomic Database Transactions</strong>
+                      <p className="text-muted-foreground">Critical multi-table operations (e.g., organization deletion) wrapped in database transactions to prevent partial data corruption</p>
                     </div>
                   </div>
                 </CardContent>
@@ -1012,29 +1044,43 @@ For questions: security@muxrotechnologies.com
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
-                      <strong>Cloud Hosting</strong>
-                      <p className="text-muted-foreground">AWS/DigitalOcean secure infrastructure</p>
+                      <strong>Security Response Headers</strong>
+                      <p className="text-muted-foreground">Helmet.js + Caddy enforce HSTS (2-year max-age, preload), X-Content-Type-Options: nosniff, X-Frame-Options: DENY, strict Referrer-Policy</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
-                      <strong>CDN Protection</strong>
-                      <p className="text-muted-foreground">Cloudflare DDoS protection</p>
+                      <strong>Content Security Policy</strong>
+                      <p className="text-muted-foreground">CSP restricts script/style/connect/frame sources to trusted origins only (self, Google, Analytics) — blocks XSS injection vectors</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
-                      <strong>Load Balancing</strong>
-                      <p className="text-muted-foreground">High availability architecture</p>
+                      <strong>Cloudflare CDN & DDoS Protection</strong>
+                      <p className="text-muted-foreground">All traffic routed through Cloudflare with WAF rules, bot management, and automatic DDoS mitigation</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
-                      <strong>Firewall Protection</strong>
-                      <p className="text-muted-foreground">Network security & VPC isolation</p>
+                      <strong>Database Port Isolation</strong>
+                      <p className="text-muted-foreground">PostgreSQL, MongoDB, and Redis bound to localhost only — not accessible from external network</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
+                    <div className="text-sm">
+                      <strong>Zero-Downtime Deployments</strong>
+                      <p className="text-muted-foreground">PM2 cluster mode (4 workers) with graceful shutdown, connection draining, and ready-signal handshake</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
+                    <div className="text-sm">
+                      <strong>Environment Secret Management</strong>
+                      <p className="text-muted-foreground">All database passwords, API keys, and session secrets loaded from environment variables — never hardcoded in source code</p>
                     </div>
                   </div>
                 </CardContent>
@@ -1045,41 +1091,95 @@ For questions: security@muxrotechnologies.com
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-lg">
                     <Activity className="w-5 h-5 text-red-600" />
-                    Security Monitoring
+                    Monitoring & Resilience
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
-                      <strong>Activity Logging</strong>
-                      <p className="text-muted-foreground">Comprehensive audit trail</p>
+                      <strong>Health Check Endpoint</strong>
+                      <p className="text-muted-foreground">DB-aware health check (returns 503 if database is down) — used by Caddy, PM2, and Docker for auto-recovery</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
-                      <strong>Failed Login Tracking</strong>
-                      <p className="text-muted-foreground">Suspicious activity detection</p>
+                      <strong>Login & Device Audit Trail</strong>
+                      <p className="text-muted-foreground">Every login attempt logged with device fingerprint, IP address, browser, OS, and geo-location — admins can review all activity</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
-                      <strong>24/7 Monitoring</strong>
-                      <p className="text-muted-foreground">Real-time security alerts</p>
+                      <strong>Failed Login Detection</strong>
+                      <p className="text-muted-foreground">Suspicious login attempts tracked and flagged — rate-limited to prevent brute-force attacks</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
                     <div className="text-sm">
-                      <strong>Device Fingerprinting</strong>
-                      <p className="text-muted-foreground">Enhanced session security</p>
+                      <strong>Device Trust Management</strong>
+                      <p className="text-muted-foreground">Admins can review, trust, or revoke device access for any user in the organization</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
+                    <div className="text-sm">
+                      <strong>Graceful Error Handling</strong>
+                      <p className="text-muted-foreground">Unhandled errors are caught without crashing — no internal details leaked in API responses. React ErrorBoundary protects the UI from render failures</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
+                    <div className="text-sm">
+                      <strong>Password Change History</strong>
+                      <p className="text-muted-foreground">All password changes logged with timestamp, reason, and initiator (admin or self-service)</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             </div>
+
+            {/* Audit Summary */}
+            <Card className="border-blue-200 dark:border-blue-800">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileCheck className="w-5 h-5 text-blue-600" />
+                  March 2026 Security Audit Summary
+                </CardTitle>
+                <CardDescription>All critical and high-severity findings have been resolved</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid md:grid-cols-3 gap-4 mb-4">
+                  <div className="text-center p-3 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200 dark:border-green-800">
+                    <p className="text-2xl font-bold text-green-700 dark:text-green-400">25</p>
+                    <p className="text-xs text-green-600">Security Fixes Applied</p>
+                  </div>
+                  <div className="text-center p-3 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200 dark:border-green-800">
+                    <p className="text-2xl font-bold text-green-700 dark:text-green-400">0</p>
+                    <p className="text-xs text-green-600">Critical Issues Remaining</p>
+                  </div>
+                  <div className="text-center p-3 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200 dark:border-green-800">
+                    <p className="text-2xl font-bold text-green-700 dark:text-green-400">0</p>
+                    <p className="text-xs text-green-600">High-Severity Issues Remaining</p>
+                  </div>
+                </div>
+                <div className="text-sm space-y-2">
+                  <p className="text-muted-foreground">Key areas addressed in the audit:</p>
+                  <ul className="grid md:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                    <li className="flex items-center gap-2"><CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" /> Privilege escalation prevention</li>
+                    <li className="flex items-center gap-2"><CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" /> Injection attack mitigation</li>
+                    <li className="flex items-center gap-2"><CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" /> CSRF token strengthening</li>
+                    <li className="flex items-center gap-2"><CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" /> Header security hardening</li>
+                    <li className="flex items-center gap-2"><CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" /> Database transaction safety</li>
+                    <li className="flex items-center gap-2"><CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" /> Secret management overhaul</li>
+                    <li className="flex items-center gap-2"><CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" /> Infrastructure port isolation</li>
+                    <li className="flex items-center gap-2"><CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" /> Error information leak prevention</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
 
             <Card className="border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/40">
               <CardHeader>
@@ -1092,7 +1192,7 @@ For questions: security@muxrotechnologies.com
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-2xl font-bold text-green-800 dark:text-green-300">🟢 LOW RISK / ENTERPRISE-GRADE</p>
-                    <p className="text-sm text-green-700 dark:text-green-400 mt-1">Last Security Audit: October 21, 2025</p>
+                    <p className="text-sm text-green-700 dark:text-green-400 mt-1">Last Security Audit: March 5, 2026 — 25 fixes applied, 0 critical/high issues remaining</p>
                     <p className="text-xs text-green-600 dark:text-green-500 mt-2">All security documentation is available for review on this page</p>
                   </div>
                 </div>

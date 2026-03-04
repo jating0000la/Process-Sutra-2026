@@ -41,8 +41,8 @@ function buildMatchFromFilters(
       case "gte":         match[key] = { $gte: Number(f.value) }; break;
       case "lt":          match[key] = { $lt: Number(f.value) }; break;
       case "lte":         match[key] = { $lte: Number(f.value) }; break;
-      case "contains":    match[key] = { $regex: String(f.value), $options: "i" }; break;
-      case "notContains": match[key] = { $not: { $regex: String(f.value), $options: "i" } }; break;
+      case "contains":    match[key] = { $regex: String(f.value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: "i" }; break;
+      case "notContains": match[key] = { $not: { $regex: String(f.value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: "i" } }; break;
       case "in":          match[key] = { $in: Array.isArray(f.value) ? f.value : [f.value] }; break;
       case "exists":      match[key] = { $exists: f.value === true || f.value === "true" }; break;
       default: break;
@@ -163,6 +163,9 @@ router.post("/query", async (req: Request, res: Response) => {
 
     if (!formId) return res.status(400).json({ message: "formId is required" });
 
+    const safePageSize = Math.min(Math.max(1, Number(pageSize) || 100), 500);
+    const safePage = Math.max(1, Number(page) || 1);
+
     const col = await getQuickFormResponsesCollection();
 
     // ── Always start pipeline scoped to org + form ──
@@ -250,7 +253,7 @@ router.post("/query", async (req: Request, res: Response) => {
     }
 
     // Pagination
-    basePipeline.push({ $skip: (page - 1) * pageSize }, { $limit: pageSize });
+    basePipeline.push({ $skip: (safePage - 1) * safePageSize }, { $limit: safePageSize });
 
     const data = await col.aggregate(basePipeline).toArray();
 
@@ -268,7 +271,7 @@ router.post("/query", async (req: Request, res: Response) => {
       return row;
     });
 
-    res.json({ type: "table", data: rows, total, page, pageSize });
+    res.json({ type: "table", data: rows, total, page: safePage, pageSize: safePageSize });
   } catch (error) {
     console.error("[reports] Error executing query:", error);
     res.status(500).json({ message: "Failed to execute query" });
