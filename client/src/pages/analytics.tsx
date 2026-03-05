@@ -350,10 +350,10 @@ export default function Analytics() {
         <svg width="${size}" height="${size * 0.7}" viewBox="0 0 ${size} ${size * 0.65}">
           <path d="M ${size * 0.1} ${size * 0.55} A ${radius} ${radius} 0 0 1 ${size * 0.9} ${size * 0.55}" fill="none" stroke="#E2E8F0" stroke-width="10" stroke-linecap="round"/>
           <path d="M ${size * 0.1} ${size * 0.55} A ${radius} ${radius} 0 0 1 ${size * 0.9} ${size * 0.55}" fill="none" stroke="${color}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${dash} ${circ}" />
-          <text x="${size/2}" y="${size * 0.48}" text-anchor="middle" font-size="26" font-weight="800" fill="${color}">${value}</text>
-          <text x="${size/2}" y="${size * 0.62}" text-anchor="middle" font-size="8" fill="${C.slate}" font-weight="600" letter-spacing="1">${subLabel}</text>
+          <text x="${size/2}" y="${size * 0.48}" text-anchor="middle" font-size="32" font-weight="800" fill="${color}">${value}</text>
+          <text x="${size/2}" y="${size * 0.62}" text-anchor="middle" font-size="11" fill="${C.slate}" font-weight="600" letter-spacing="1">${subLabel}</text>
         </svg>
-        <div style="font-size:10px;font-weight:700;color:${C.darkSlate};margin-top:-4px;text-transform:uppercase;letter-spacing:0.5px;">${label}</div>
+        <div style="font-size:13px;font-weight:700;color:${C.darkSlate};margin-top:-4px;text-transform:uppercase;letter-spacing:0.5px;">${label}</div>
       </div>`;
     };
 
@@ -365,17 +365,17 @@ export default function Analytics() {
         <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
           <circle cx="${size/2}" cy="${size/2}" r="${radius}" fill="none" stroke="#E5E7EB" stroke-width="8"/>
           <circle cx="${size/2}" cy="${size/2}" r="${radius}" fill="none" stroke="${color}" stroke-width="8" stroke-dasharray="${dash} ${circ}" stroke-dashoffset="${circ * 0.25}" stroke-linecap="round" transform="rotate(-90 ${size/2} ${size/2})"/>
-          <text x="${size/2}" y="${size/2 - 2}" text-anchor="middle" font-size="20" font-weight="800" fill="${color}">${pct}%</text>
-          <text x="${size/2}" y="${size/2 + 12}" text-anchor="middle" font-size="8" fill="${C.slate}" font-weight="600" text-transform="uppercase" letter-spacing="0.5">${label}</text>
+          <text x="${size/2}" y="${size/2 - 2}" text-anchor="middle" font-size="24" font-weight="800" fill="${color}">${pct}%</text>
+          <text x="${size/2}" y="${size/2 + 14}" text-anchor="middle" font-size="11" fill="${C.slate}" font-weight="600" text-transform="uppercase" letter-spacing="0.5">${label}</text>
         </svg>
       </div>`;
     };
 
     const deltaArrow = (delta: number, suffix = '%') => {
-      if (delta === 0) return `<span style="color:${C.slate};font-size:11px;">— 0${suffix}</span>`;
+      if (delta === 0) return `<span style="color:${C.slate};font-size:14px;">— 0${suffix}</span>`;
       const color = delta > 0 ? C.emerald : C.red;
       const arrow = delta > 0 ? '&#9650;' : '&#9660;';
-      return `<span style="color:${color};font-size:11px;font-weight:700;">${arrow} ${delta > 0 ? '+' : ''}${delta}${suffix}</span>`;
+      return `<span style="color:${color};font-size:14px;font-weight:700;">${arrow} ${delta > 0 ? '+' : ''}${delta}${suffix}</span>`;
     };
 
     const miniBar = (pct: number, color: string, height = 6) =>
@@ -419,8 +419,8 @@ export default function Analytics() {
         const pct = it.max > 0 ? Math.min((it.value / it.max) * 100, 100) : 0;
         return `<div style="margin-bottom:10px;">
           <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
-            <span style="font-size:11px;font-weight:600;color:${C.darkSlate};max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.label}</span>
-            <span style="font-size:11px;font-weight:700;color:${it.color};">${it.value}${it.suffix || ''}</span>
+            <span style="font-size:14px;font-weight:600;color:${C.darkSlate};max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.label}</span>
+            <span style="font-size:14px;font-weight:700;color:${it.color};">${it.value}${it.suffix || ''}</span>
           </div>
           ${miniBar(pct, it.color)}
         </div>`;
@@ -440,8 +440,8 @@ export default function Analytics() {
           const y = height - barH;
           return `<g><rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="4" fill="${it.color}" opacity="0.85"/>
             <rect x="${x}" y="${y}" width="${barW}" height="${Math.min(6, barH)}" rx="4" fill="${it.color}"/>
-            <text x="${x + barW/2}" y="${y - 6}" text-anchor="middle" font-size="10" font-weight="700" fill="${it.color}">${it.value}</text>
-            <text x="${x + barW/2}" y="${height + 14}" text-anchor="middle" font-size="7" fill="${C.slate}" font-weight="500">${it.label.length > 10 ? it.label.slice(0,9)+'..' : it.label}</text>
+            <text x="${x + barW/2}" y="${y - 6}" text-anchor="middle" font-size="13" font-weight="700" fill="${it.color}">${it.value}</text>
+            <text x="${x + barW/2}" y="${height + 16}" text-anchor="middle" font-size="10" fill="${C.slate}" font-weight="500">${it.label.length > 10 ? it.label.slice(0,9)+'..' : it.label}</text>
           </g>`;
         }).join('')}
         <line x1="6" y1="${height}" x2="${chartW - 6}" y2="${height}" stroke="#E2E8F0" stroke-width="1"/>
@@ -466,7 +466,7 @@ export default function Analytics() {
         const largeArc = angle > 180 ? 1 : 0;
         return `<path d="M${cx},${cy} L${x1},${y1} A${rad},${rad} 0 ${largeArc},1 ${x2},${y2} Z" fill="${sl.color}"/>`;
       }).join('');
-      const legend = slices.filter(sl => sl.value > 0).map(sl => `<div style="display:flex;align-items:center;gap:6px;margin:3px 0;"><div style="width:10px;height:10px;border-radius:2px;background:${sl.color};flex-shrink:0;"></div><span style="font-size:11px;color:${C.charcoal};">${sl.label}: <strong>${sl.value}</strong> <span style="color:${C.lightSlate};">(${Math.round((sl.value/total)*100)}%)</span></span></div>`).join('');
+      const legend = slices.filter(sl => sl.value > 0).map(sl => `<div style="display:flex;align-items:center;gap:6px;margin:3px 0;"><div style="width:12px;height:12px;border-radius:2px;background:${sl.color};flex-shrink:0;"></div><span style="font-size:14px;color:${C.charcoal};">${sl.label}: <strong>${sl.value}</strong> <span style="color:${C.lightSlate};">(${Math.round((sl.value/total)*100)}%)</span></span></div>`).join('');
       return `<div style="display:flex;align-items:center;gap:24px;justify-content:center;flex-wrap:wrap;">
         <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${paths}</svg>
         <div>${legend}</div>
@@ -476,16 +476,16 @@ export default function Analytics() {
     // ── Section header helper ──
     const sectionHeader = (num: number, title: string, accentColor: string) =>
       `<div style="display:flex;align-items:center;gap:10px;margin:0 0 16px;padding-bottom:8px;border-bottom:2px solid ${accentColor}20;">
-        <div style="width:28px;height:28px;border-radius:6px;background:${accentColor};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:white;flex-shrink:0;">${num}</div>
-        <h2 style="font-size:17px;font-weight:700;color:${C.navy};margin:0;letter-spacing:-0.3px;">${title}</h2>
+        <div style="width:32px;height:32px;border-radius:6px;background:${accentColor};display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:white;flex-shrink:0;">${num}</div>
+        <h2 style="font-size:21px;font-weight:700;color:${C.navy};margin:0;letter-spacing:-0.3px;">${title}</h2>
       </div>`;
 
     // ── Metric card helper ──
     const metricCard = (value: string | number, label: string, color: string, bg: string, icon?: string) =>
       `<div style="padding:16px;background:${bg};border:1px solid ${color}20;border-radius:8px;text-align:center;min-width:0;">
-        ${icon ? `<div style="font-size:18px;margin-bottom:4px;">${icon}</div>` : ''}
-        <div style="font-size:24px;font-weight:800;color:${color};line-height:1.1;">${value}</div>
-        <div style="font-size:9px;color:${C.slate};text-transform:uppercase;letter-spacing:0.8px;margin-top:4px;font-weight:600;">${label}</div>
+        ${icon ? `<div style="font-size:22px;margin-bottom:4px;">${icon}</div>` : ''}
+        <div style="font-size:30px;font-weight:800;color:${color};line-height:1.1;">${value}</div>
+        <div style="font-size:12px;color:${C.slate};text-transform:uppercase;letter-spacing:0.8px;margin-top:4px;font-weight:600;">${label}</div>
       </div>`;
 
     // ── Data for charts ──
@@ -514,8 +514,8 @@ export default function Analytics() {
     const weeklyOnTimeData = (r.weeklyTrend || []).map((w: any) => w.onTimeRate);
 
     // ── Table builders ──
-    const thStyle = (align = 'left') => `padding:10px 12px;text-align:${align};color:${C.slate};font-weight:700;text-transform:uppercase;letter-spacing:0.5px;font-size:9px;border-bottom:2px solid #E2E8F0;`;
-    const tdStyle = (align = 'left') => `padding:9px 12px;text-align:${align};border-bottom:1px solid #F1F5F9;font-size:12px;`;
+    const thStyle = (align = 'left') => `padding:10px 12px;text-align:${align};color:${C.slate};font-weight:700;text-transform:uppercase;letter-spacing:0.5px;font-size:12px;border-bottom:2px solid #E2E8F0;`;
+    const tdStyle = (align = 'left') => `padding:9px 12px;text-align:${align};border-bottom:1px solid #F1F5F9;font-size:14px;`;
 
     const systemRows = (r.systemBreakdown || []).map((sys: any) => `
       <tr>
@@ -550,11 +550,11 @@ export default function Analytics() {
     const formatAI = (text: string) => {
       if (!text) return '';
       return text
-        .replace(/### (.*)/g, `<h4 style="color:${C.navy};margin:16px 0 6px;font-size:13px;font-weight:700;">$1</h4>`)
-        .replace(/## (.*)/g, `<h3 style="color:${C.navy};margin:20px 0 8px;font-size:14px;font-weight:700;border-bottom:1px solid #E2E8F0;padding-bottom:6px;">$1</h3>`)
+        .replace(/### (.*)/g, `<h4 style="color:${C.navy};margin:16px 0 6px;font-size:16px;font-weight:700;">$1</h4>`)
+        .replace(/## (.*)/g, `<h3 style="color:${C.navy};margin:20px 0 8px;font-size:17px;font-weight:700;border-bottom:1px solid #E2E8F0;padding-bottom:6px;">$1</h3>`)
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/^- (.+)/gm, `<div style="margin:3px 0;padding:4px 0 4px 14px;border-left:2px solid ${C.accent}40;font-size:12px;color:${C.charcoal};">$1</div>`)
-        .replace(/^(\d+)\. (.+)/gm, `<div style="margin:4px 0;padding:4px 0;font-size:12px;color:${C.charcoal};"><span style="display:inline-block;width:20px;height:20px;border-radius:50%;background:${C.accent};color:white;text-align:center;line-height:20px;font-size:10px;font-weight:700;margin-right:8px;">$1</span>$2</div>`)
+        .replace(/^- (.+)/gm, `<div style="margin:3px 0;padding:4px 0 4px 14px;border-left:2px solid ${C.accent}40;font-size:14px;color:${C.charcoal};">$1</div>`)
+        .replace(/^(\d+)\. (.+)/gm, `<div style="margin:4px 0;padding:4px 0;font-size:14px;color:${C.charcoal};"><span style="display:inline-block;width:22px;height:22px;border-radius:50%;background:${C.accent};color:white;text-align:center;line-height:22px;font-size:12px;font-weight:700;margin-right:8px;">$1</span>$2</div>`)
         .replace(/\n\n/g, '<br/>').replace(/\n/g, '<br/>');
     };
 
@@ -571,23 +571,23 @@ export default function Analytics() {
   <div style="background:linear-gradient(135deg,${C.navy} 0%,#1E3A5F 60%,${C.indigo} 100%);padding:36px 44px 32px;border-radius:0 0 12px 12px;">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;">
       <div>
-        <div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:3px;font-weight:500;margin-bottom:8px;">Confidential &bull; Proprietary &bull; Patented</div>
-        <h1 style="font-size:32px;font-weight:800;color:white;letter-spacing:-0.5px;margin:0;line-height:1.15;">Voice of Business&trade;</h1>
-        <div style="font-size:13px;color:rgba(255,255,255,0.7);margin-top:6px;">Operations Intelligence Report &mdash; v3.0</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:3px;font-weight:500;margin-bottom:8px;">Confidential &bull; Proprietary &bull; Patented</div>
+        <h1 style="font-size:40px;font-weight:800;color:white;letter-spacing:-0.5px;margin:0;line-height:1.15;">Voice of Business&trade;</h1>
+        <div style="font-size:16px;color:rgba(255,255,255,0.7);margin-top:6px;">Operations Intelligence Report &mdash; v3.0</div>
         <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
-          <span style="display:inline-block;padding:4px 12px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.15);border-radius:20px;font-size:11px;color:rgba(255,255,255,0.85);font-weight:500;">${r.organization.name}</span>
-          ${r.organization.industry ? `<span style="display:inline-block;padding:4px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.1);border-radius:20px;font-size:11px;color:rgba(255,255,255,0.65);">${r.organization.industry}</span>` : ''}
-          ${r.organization.businessType ? `<span style="display:inline-block;padding:4px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.1);border-radius:20px;font-size:11px;color:rgba(255,255,255,0.65);">${r.organization.businessType}</span>` : ''}
+          <span style="display:inline-block;padding:4px 12px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.15);border-radius:20px;font-size:13px;color:rgba(255,255,255,0.85);font-weight:500;">${r.organization.name}</span>
+          ${r.organization.industry ? `<span style="display:inline-block;padding:4px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.1);border-radius:20px;font-size:13px;color:rgba(255,255,255,0.65);">${r.organization.industry}</span>` : ''}
+          ${r.organization.businessType ? `<span style="display:inline-block;padding:4px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.1);border-radius:20px;font-size:13px;color:rgba(255,255,255,0.65);">${r.organization.businessType}</span>` : ''}
         </div>
       </div>
       <div style="text-align:right;flex-shrink:0;">
-        <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px;">Report Date</div>
-        <div style="font-size:13px;color:rgba(255,255,255,0.9);font-weight:600;">${genDate}</div>
-        <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:2px;">${genTime} IST</div>
-        <div style="font-size:10px;color:rgba(255,255,255,0.4);margin-top:8px;">Analysis: ${s.dataSpanDays} days &bull; ${s.totalTasks} tasks</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px;">Report Date</div>
+        <div style="font-size:16px;color:rgba(255,255,255,0.9);font-weight:600;">${genDate}</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:2px;">${genTime} IST</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:8px;">Analysis: ${s.dataSpanDays} days &bull; ${s.totalTasks} tasks</div>
         <div style="margin-top:10px;padding:6px 14px;background:${hs.color};border-radius:6px;display:inline-block;">
-          <span style="font-size:18px;font-weight:900;color:white;">${hs.grade}</span>
-          <span style="font-size:10px;color:rgba(255,255,255,0.85);margin-left:6px;">${hs.label}</span>
+          <span style="font-size:22px;font-weight:900;color:white;">${hs.grade}</span>
+          <span style="font-size:12px;color:rgba(255,255,255,0.85);margin-left:6px;">${hs.label}</span>
         </div>
       </div>
     </div>
@@ -605,7 +605,7 @@ export default function Analytics() {
       <div style="flex:0 0 170px;padding:20px 16px;background:linear-gradient(135deg,${hs.color}08,${hs.color}15);border:1.5px solid ${hs.color}30;border-radius:10px;text-align:center;">
         ${gaugeChart(hs.composite, 100, 'Health Score', hs.color, `/ 100`, 150)}
         <div style="margin-top:6px;padding:4px 10px;background:${hs.color};border-radius:12px;display:inline-block;">
-          <span style="font-size:11px;font-weight:700;color:white;">${hs.grade} — ${hs.label}</span>
+          <span style="font-size:14px;font-weight:700;color:white;">${hs.grade} — ${hs.label}</span>
         </div>
       </div>
       <!-- KPI Donuts -->
@@ -639,15 +639,15 @@ export default function Analytics() {
 
     <!-- Business Status Banner -->
     <div style="margin-top:16px;padding:16px 20px;background:linear-gradient(135deg,${C.bg},#EEF2FF);border:1px solid #E2E8F0;border-radius:8px;display:flex;align-items:center;gap:16px;">
-      <span style="font-size:32px;">${s.businessEmoji}</span>
+      <span style="font-size:38px;">${s.businessEmoji}</span>
       <div style="flex:1;">
-        <div style="font-size:18px;font-weight:800;color:${s.completionRate >= 80 && s.onTimeRate >= 80 ? C.emerald : s.completionRate >= 50 ? C.amber : C.red};letter-spacing:-0.3px;">${s.businessStatus}</div>
-        <div style="font-size:12px;color:${C.charcoal};margin-top:2px;">${s.actionPlan}</div>
+        <div style="font-size:22px;font-weight:800;color:${s.completionRate >= 80 && s.onTimeRate >= 80 ? C.emerald : s.completionRate >= 50 ? C.amber : C.red};letter-spacing:-0.3px;">${s.businessStatus}</div>
+        <div style="font-size:14px;color:${C.charcoal};margin-top:2px;">${s.actionPlan}</div>
       </div>
       <div style="text-align:right;flex-shrink:0;">
-        <div style="font-size:9px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:0.5px;">Process Maturity</div>
-        <div style="font-size:22px;font-weight:800;color:${C.indigo};">${pm.score}<span style="font-size:12px;color:${C.lightSlate};">/${pm.maxScore}</span></div>
-        <div style="font-size:10px;color:${C.slate};font-weight:600;">${pm.label}</div>
+        <div style="font-size:12px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:0.5px;">Process Maturity</div>
+        <div style="font-size:27px;font-weight:800;color:${C.indigo};">${pm.score}<span style="font-size:14px;color:${C.lightSlate};">/${pm.maxScore}</span></div>
+        <div style="font-size:12px;color:${C.slate};font-weight:600;">${pm.label}</div>
       </div>
     </div>
   </div>
@@ -655,7 +655,7 @@ export default function Analytics() {
   <!-- ╔══ 2. EXECUTIVE SUMMARY ══╗ -->
   <div style="margin-bottom:36px;">
     ${sectionHeader(2, 'Executive Summary', C.blue)}
-    <div style="font-size:13px;color:${C.charcoal};line-height:1.75;column-count:2;column-gap:32px;">
+    <div style="font-size:16px;color:${C.charcoal};line-height:1.75;column-count:2;column-gap:32px;">
       <p style="margin:0 0 10px;">
         Over the past <strong>${s.dataSpanDays} days</strong>, <strong>${r.organization.name}</strong> processed <strong>${s.totalTasks} tasks</strong> across <strong>${r.totalSystems} workflow systems</strong> with <strong>${r.totalFlowRules} configured flow rules</strong>.
         Of these, <strong>${s.completedTasks} tasks were completed</strong> achieving a <strong>${s.completionRate}% completion rate</strong> with <strong>${s.onTimeRate}% on-time delivery</strong>.
@@ -682,22 +682,22 @@ export default function Analytics() {
       <!-- Completion Trend -->
       <div style="padding:18px;background:${C.bg};border:1px solid #E2E8F0;border-radius:8px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <div style="font-size:12px;font-weight:700;color:${C.darkSlate};">Weekly Completions</div>
+          <div style="font-size:14px;font-weight:700;color:${C.darkSlate};">Weekly Completions</div>
           ${deltaArrow(trend.completionRateDelta)}
         </div>
         ${areaSparkline(weeklyTrendData, C.blue, 400, 60)}
-        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:10px;color:${C.lightSlate};">
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:${C.lightSlate};">
           ${(r.weeklyTrend || []).map((w: any) => `<span>${w.weekLabel}</span>`).join('')}
         </div>
       </div>
       <!-- On-Time Rate Trend -->
       <div style="padding:18px;background:${C.bg};border:1px solid #E2E8F0;border-radius:8px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <div style="font-size:12px;font-weight:700;color:${C.darkSlate};">Weekly On-Time Rate</div>
+          <div style="font-size:14px;font-weight:700;color:${C.darkSlate};">Weekly On-Time Rate</div>
           ${deltaArrow(trend.onTimeRateDelta)}
         </div>
         ${areaSparkline(weeklyOnTimeData, C.emerald, 400, 60)}
-        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:10px;color:${C.lightSlate};">
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:${C.lightSlate};">
           ${(r.weeklyTrend || []).map((w: any) => `<span>${w.weekLabel}</span>`).join('')}
         </div>
       </div>
@@ -705,20 +705,20 @@ export default function Analytics() {
     <!-- Trend Comparison Cards -->
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
       <div style="padding:14px;background:${C.bg};border:1px solid #E2E8F0;border-radius:8px;text-align:center;">
-        <div style="font-size:9px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:0.5px;">Prior Period Tasks</div>
-        <div style="font-size:20px;font-weight:700;color:${C.charcoal};">${trend.previousPeriod?.tasks || 0}</div>
+        <div style="font-size:12px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:0.5px;">Prior Period Tasks</div>
+        <div style="font-size:24px;font-weight:700;color:${C.charcoal};">${trend.previousPeriod?.tasks || 0}</div>
       </div>
       <div style="padding:14px;background:${C.bg};border:1px solid #E2E8F0;border-radius:8px;text-align:center;">
-        <div style="font-size:9px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:0.5px;">Current Period Tasks</div>
-        <div style="font-size:20px;font-weight:700;color:${C.blue};">${trend.currentPeriod?.tasks || 0}</div>
+        <div style="font-size:12px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:0.5px;">Current Period Tasks</div>
+        <div style="font-size:24px;font-weight:700;color:${C.blue};">${trend.currentPeriod?.tasks || 0}</div>
       </div>
       <div style="padding:14px;background:${C.bg};border:1px solid #E2E8F0;border-radius:8px;text-align:center;">
-        <div style="font-size:9px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:0.5px;">Volume Change</div>
-        <div style="font-size:20px;font-weight:700;">${deltaArrow(trend.volumeDelta, '')}</div>
+        <div style="font-size:12px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:0.5px;">Volume Change</div>
+        <div style="font-size:24px;font-weight:700;">${deltaArrow(trend.volumeDelta, '')}</div>
       </div>
       <div style="padding:14px;background:${trend.isImproving ? '#ECFDF5' : '#FEF2F2'};border:1px solid ${trend.isImproving ? C.emerald : C.red}20;border-radius:8px;text-align:center;">
-        <div style="font-size:9px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:0.5px;">Overall Trend</div>
-        <div style="font-size:16px;font-weight:800;color:${trend.isImproving ? C.emerald : C.red};">${trend.isImproving ? '&#9650; Improving' : '&#9660; Declining'}</div>
+        <div style="font-size:12px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:0.5px;">Overall Trend</div>
+        <div style="font-size:19px;font-weight:800;color:${trend.isImproving ? C.emerald : C.red};">${trend.isImproving ? '&#9650; Improving' : '&#9660; Declining'}</div>
       </div>
     </div>
   </div>
@@ -726,7 +726,7 @@ export default function Analytics() {
   <!-- ╔══ 4. RISK MATRIX ══╗ -->
   <div style="margin-bottom:36px;">
     ${sectionHeader(4, 'Risk Assessment Matrix', C.red)}
-    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
       <thead><tr style="background:#FFF7ED;">
         <th style="${thStyle()}">Risk</th>
         <th style="${thStyle('center')}width:80px;">Severity</th>
@@ -736,7 +736,7 @@ export default function Analytics() {
       <tbody>${(r.riskMatrix || []).map((ri: any) => `
         <tr>
           <td style="${tdStyle()}font-weight:700;color:${ri.color};">${ri.risk}</td>
-          <td style="${tdStyle('center')}"><span style="display:inline-block;padding:2px 10px;border-radius:12px;background:${ri.color}15;color:${ri.color};font-weight:700;font-size:10px;">${ri.severity}</span></td>
+          <td style="${tdStyle('center')}"><span style="display:inline-block;padding:2px 10px;border-radius:12px;background:${ri.color}15;color:${ri.color};font-weight:700;font-size:12px;">${ri.severity}</span></td>
           <td style="${tdStyle()}color:${C.charcoal};">${ri.impact}</td>
           <td style="${tdStyle()}color:${C.slate};font-style:italic;">${ri.mitigation}</td>
         </tr>`).join('')}
@@ -761,21 +761,21 @@ export default function Analytics() {
     <div>
       ${sectionHeader(6, 'Financial Impact Analysis', C.red)}
       <div style="padding:18px;background:linear-gradient(135deg,#FEF2F2,#FFF7ED);border:1px solid #FECACA;border-radius:8px;margin-bottom:12px;">
-        <div style="font-size:10px;color:${C.red};text-transform:uppercase;letter-spacing:1px;font-weight:700;">Estimated Loss from Delays</div>
-        <div style="font-size:32px;font-weight:900;color:${C.red};margin:4px 0;">&#8377;${r.lossCost.totalLossCost.toLocaleString('en-IN')}</div>
-        <div style="font-size:11px;color:${C.charcoal};">${r.lossCost.totalWaitHours}h total delay &times; &#8377;${r.lossCost.costPerHour}/hr</div>
+        <div style="font-size:12px;color:${C.red};text-transform:uppercase;letter-spacing:1px;font-weight:700;">Estimated Loss from Delays</div>
+        <div style="font-size:38px;font-weight:900;color:${C.red};margin:4px 0;">&#8377;${r.lossCost.totalLossCost.toLocaleString('en-IN')}</div>
+        <div style="font-size:14px;color:${C.charcoal};">${r.lossCost.totalWaitHours}h total delay &times; &#8377;${r.lossCost.costPerHour}/hr</div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
         <div style="padding:12px;background:${C.bg};border:1px solid #E2E8F0;border-radius:6px;text-align:center;">
-          <div style="font-size:18px;font-weight:800;color:${C.amber};">&#8377;${(r.lossCost.projectedMonthlyLoss || 0).toLocaleString('en-IN')}</div>
-          <div style="font-size:9px;color:${C.slate};text-transform:uppercase;">Monthly Projection</div>
+          <div style="font-size:22px;font-weight:800;color:${C.amber};">&#8377;${(r.lossCost.projectedMonthlyLoss || 0).toLocaleString('en-IN')}</div>
+          <div style="font-size:12px;color:${C.slate};text-transform:uppercase;">Monthly Projection</div>
         </div>
         <div style="padding:12px;background:${C.bg};border:1px solid #E2E8F0;border-radius:6px;text-align:center;">
-          <div style="font-size:18px;font-weight:800;color:${C.red};">&#8377;${(r.lossCost.projectedAnnualLoss || 0).toLocaleString('en-IN')}</div>
-          <div style="font-size:9px;color:${C.slate};text-transform:uppercase;">Annual Projection</div>
+          <div style="font-size:22px;font-weight:800;color:${C.red};">&#8377;${(r.lossCost.projectedAnnualLoss || 0).toLocaleString('en-IN')}</div>
+          <div style="font-size:12px;color:${C.slate};text-transform:uppercase;">Annual Projection</div>
         </div>
       </div>
-      <div style="margin-top:10px;font-size:11px;color:${C.slate};padding:8px 10px;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;">
+      <div style="margin-top:10px;font-size:14px;color:${C.slate};padding:8px 10px;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;">
         Reducing bottleneck cycle times by 20% could recover approx. <strong>&#8377;${Math.round(r.lossCost.totalLossCost * 0.2).toLocaleString('en-IN')}</strong> in productivity value.
       </div>
     </div>
@@ -797,7 +797,7 @@ export default function Analytics() {
         { metric: 'Overdue Tasks', actual: String(a.overdueTasks), ideal: '0', gap: g.overdueToResolve + ' to resolve', gapColor: g.overdueToResolve > 0 ? C.red : C.emerald, bar: 0 },
         { metric: 'Loss Cost', actual: '\u20B9' + (a.lossCost || 0).toLocaleString('en-IN'), ideal: '\u20B90', gap: '\u20B9' + (g.lossCostRecoverable || 0).toLocaleString('en-IN') + ' recoverable', gapColor: g.lossCostRecoverable > 0 ? C.red : C.emerald, bar: 0 },
       ];
-      return '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+      return '<table style="width:100%;border-collapse:collapse;font-size:14px;">' +
         `<thead><tr style="background:linear-gradient(135deg,#EEF2FF,#E0E7FF);">` +
         `<th style="${thStyle()}">Metric</th>` +
         `<th style="${thStyle('center')}">Actual</th>` +
@@ -817,17 +817,17 @@ export default function Analytics() {
         '</tbody></table>';
     })()}
     <div style="margin-top:14px;padding:12px 16px;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;">
-      <div style="font-size:10px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Recovery Potential at 100% Efficiency</div>
-      <div style="font-size:12px;color:#78350F;">If all tasks were completed on time, the organization could recover <strong>&#8377;${(r.idealComparison?.gap?.lossCostRecoverable || 0).toLocaleString('en-IN')}</strong> in loss costs, improve throughput by <strong>${r.idealComparison?.gap?.throughputPerDayGap || 0} tasks/day</strong>, and eliminate <strong>${r.idealComparison?.gap?.overdueToResolve || 0} overdue tasks</strong>.</div>
+      <div style="font-size:12px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Recovery Potential at 100% Efficiency</div>
+      <div style="font-size:14px;color:#78350F;">If all tasks were completed on time, the organization could recover <strong>&#8377;${(r.idealComparison?.gap?.lossCostRecoverable || 0).toLocaleString('en-IN')}</strong> in loss costs, improve throughput by <strong>${r.idealComparison?.gap?.throughputPerDayGap || 0} tasks/day</strong>, and eliminate <strong>${r.idealComparison?.gap?.overdueToResolve || 0} overdue tasks</strong>.</div>
     </div>
   </div>
 
   <!-- ╔══ 8. BOTTLENECK ANALYSIS ══╗ -->
   <div style="margin-bottom:36px;">
     ${sectionHeader(8, 'Bottleneck Analysis', C.amber)}
-    <p style="font-size:12px;color:${C.charcoal};margin:0 0 12px;">Tasks ranked by average cycle time (hours). High cycle time indicates process bottlenecks requiring review. P90 cycle time across all tasks: <strong>${s.p90CycleTimeHours || '-'}h</strong>.</p>
+    <p style="font-size:14px;color:${C.charcoal};margin:0 0 12px;">Tasks ranked by average cycle time (hours). High cycle time indicates process bottlenecks requiring review. P90 cycle time across all tasks: <strong>${s.p90CycleTimeHours || '-'}h</strong>.</p>
     ${vBarChart(bottleneckItems.map((b: any) => ({...b, value: b.value})), 160)}
-    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:12px;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:12px;">
       <thead><tr style="background:${C.bg};">
         <th style="${thStyle()}">Task Type</th>
         <th style="${thStyle('center')}">Instances</th>
@@ -853,7 +853,7 @@ export default function Analytics() {
   <div style="margin-bottom:36px;">
     ${sectionHeader(9, 'Workflow System Performance', C.blue)}
     <div style="margin-bottom:16px;">${vBarChart(systemChartItems, 150)}</div>
-    <table style="width:100%;border-collapse:collapse;font-size:11px;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead><tr style="background:${C.bg};">
         <th style="${thStyle()}">System</th>
         <th style="${thStyle('center')}">Total</th>
@@ -870,9 +870,9 @@ export default function Analytics() {
   <!-- ╔══ 10. FLOW COMPLETION TIME ══╗ -->
   <div style="margin-bottom:36px;">
     ${sectionHeader(10, 'Flow Average Completion Time', C.teal)}
-    <p style="font-size:12px;color:${C.charcoal};margin:0 0 10px;">Average completion time (days) per workflow. Overall average: <strong>${s.avgFlowCompletionDays || 0} days</strong>.</p>
+    <p style="font-size:14px;color:${C.charcoal};margin:0 0 10px;">Average completion time (days) per workflow. Overall average: <strong>${s.avgFlowCompletionDays || 0} days</strong>.</p>
     ${vBarChart(flowCompletionItems, 140)}
-    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:12px;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:12px;">
       <thead><tr style="background:#F0FDFA;">
         <th style="${thStyle()}">Flow / System</th>
         <th style="${thStyle('center')}">Avg Completion (days)</th>
@@ -893,33 +893,33 @@ export default function Analytics() {
   <!-- ╔══ 11. TEAM PERFORMANCE ══╗ -->
   <div style="margin-bottom:36px;">
     ${sectionHeader(11, 'Team Performance Intelligence', C.violet)}
-    <p style="font-size:12px;color:${C.charcoal};margin:0 0 12px;">On-time rate is calculated against <strong>total assigned tasks</strong> (not just completed), giving a realistic view. Avg TAT = average turnaround time from task creation to completion.</p>
+    <p style="font-size:14px;color:${C.charcoal};margin:0 0 12px;">On-time rate is calculated against <strong>total assigned tasks</strong> (not just completed), giving a realistic view. Avg TAT = average turnaround time from task creation to completion.</p>
     
     <!-- Team Distribution -->
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
       <div style="padding:12px;background:#ECFDF5;border:1px solid ${C.emerald}20;border-radius:8px;text-align:center;">
-        <div style="font-size:22px;font-weight:800;color:${C.emerald};">${pd.excellent}</div>
-        <div style="font-size:9px;color:${C.slate};text-transform:uppercase;">Excellent (≥80%)</div>
+        <div style="font-size:27px;font-weight:800;color:${C.emerald};">${pd.excellent}</div>
+        <div style="font-size:12px;color:${C.slate};text-transform:uppercase;">Excellent (≥80%)</div>
       </div>
       <div style="padding:12px;background:#FFFBEB;border:1px solid ${C.amber}20;border-radius:8px;text-align:center;">
-        <div style="font-size:22px;font-weight:800;color:${C.amber};">${pd.good}</div>
-        <div style="font-size:9px;color:${C.slate};text-transform:uppercase;">Good (60-79%)</div>
+        <div style="font-size:27px;font-weight:800;color:${C.amber};">${pd.good}</div>
+        <div style="font-size:12px;color:${C.slate};text-transform:uppercase;">Good (60-79%)</div>
       </div>
       <div style="padding:12px;background:#FFF7ED;border:1px solid #FB923C20;border-radius:8px;text-align:center;">
-        <div style="font-size:22px;font-weight:800;color:#EA580C;">${pd.average}</div>
-        <div style="font-size:9px;color:${C.slate};text-transform:uppercase;">Average (40-59%)</div>
+        <div style="font-size:27px;font-weight:800;color:#EA580C;">${pd.average}</div>
+        <div style="font-size:12px;color:${C.slate};text-transform:uppercase;">Average (40-59%)</div>
       </div>
       <div style="padding:12px;background:#FEF2F2;border:1px solid ${C.red}20;border-radius:8px;text-align:center;">
-        <div style="font-size:22px;font-weight:800;color:${C.red};">${pd.poor}</div>
-        <div style="font-size:9px;color:${C.slate};text-transform:uppercase;">Needs Attention (<40%)</div>
+        <div style="font-size:27px;font-weight:800;color:${C.red};">${pd.poor}</div>
+        <div style="font-size:12px;color:${C.slate};text-transform:uppercase;">Needs Attention (<40%)</div>
       </div>
     </div>
 
     <!-- Doer Chart -->
-    <div style="margin-bottom:16px;"><div style="font-size:11px;color:${C.slate};text-align:center;margin-bottom:6px;">Completion Rate by Member</div>${vBarChart(doerChartItems, 130)}</div>
+    <div style="margin-bottom:16px;"><div style="font-size:14px;color:${C.slate};text-align:center;margin-bottom:6px;">Completion Rate by Member</div>${vBarChart(doerChartItems, 130)}</div>
 
     <!-- Doer Table -->
-    <table style="width:100%;border-collapse:collapse;font-size:11px;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead><tr style="background:${C.bg};">
         <th style="${thStyle()}">Team Member</th>
         <th style="${thStyle('center')}">Total</th>
@@ -938,17 +938,17 @@ export default function Analytics() {
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:36px;">
     <div style="border:1.5px solid ${C.emerald}30;border-radius:10px;padding:18px;background:#F0FDF4;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-        <div style="width:24px;height:24px;border-radius:50%;background:${C.emerald};display:flex;align-items:center;justify-content:center;font-size:12px;color:white;">&#9733;</div>
-        <h3 style="font-size:13px;color:#065F46;margin:0;font-weight:700;">Top Performers</h3>
+        <div style="width:28px;height:28px;border-radius:50%;background:${C.emerald};display:flex;align-items:center;justify-content:center;font-size:14px;color:white;">&#9733;</div>
+        <h3 style="font-size:16px;color:#065F46;margin:0;font-weight:700;">Top Performers</h3>
       </div>
       ${(r.topPerformers || []).length > 0 ? (r.topPerformers || []).map((d: any, i: number) => `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;${i > 0 ? 'border-top:1px solid #D1FAE5;' : ''}">
-          <span style="font-size:12px;color:#065F46;font-weight:500;">${i === 0 ? '&#127942; ' : ''}${d.doerEmail}</span>
+          <span style="font-size:14px;color:#065F46;font-weight:500;">${i === 0 ? '&#127942; ' : ''}${d.doerEmail}</span>
           <div style="display:flex;align-items:center;gap:6px;">
             <div style="width:40px;">${miniBar(d.onTimeRate, C.emerald, 4)}</div>
-            <span style="font-size:12px;font-weight:700;color:${C.emerald};width:36px;text-align:right;">${d.onTimeRate}%</span>
+            <span style="font-size:14px;font-weight:700;color:${C.emerald};width:36px;text-align:right;">${d.onTimeRate}%</span>
           </div>
-        </div>`).join('') : `<div style="font-size:12px;color:${C.lightSlate};text-align:center;padding:10px;">No data</div>`}
+        </div>`).join('') : `<div style="font-size:14px;color:${C.lightSlate};text-align:center;padding:10px;">No data</div>`}
     </div>
     <div style="border:1.5px solid ${C.red}30;border-radius:10px;padding:18px;background:#FEF2F2;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
@@ -957,12 +957,12 @@ export default function Analytics() {
       </div>
       ${(r.needsAttention || []).length > 0 ? (r.needsAttention || []).map((d: any, i: number) => `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;${i > 0 ? 'border-top:1px solid #FECACA;' : ''}">
-          <span style="font-size:12px;color:#991B1B;font-weight:500;">${d.doerEmail}</span>
+          <span style="font-size:14px;color:#991B1B;font-weight:500;">${d.doerEmail}</span>
           <div style="display:flex;align-items:center;gap:6px;">
             <div style="width:40px;">${miniBar(d.onTimeRate, C.red, 4)}</div>
-            <span style="font-size:12px;font-weight:700;color:${C.red};width:36px;text-align:right;">${d.onTimeRate}%</span>
+            <span style="font-size:14px;font-weight:700;color:${C.red};width:36px;text-align:right;">${d.onTimeRate}%</span>
           </div>
-        </div>`).join('') : `<div style="font-size:12px;color:${C.lightSlate};text-align:center;padding:10px;">No data</div>`}
+        </div>`).join('') : `<div style="font-size:14px;color:${C.lightSlate};text-align:center;padding:10px;">No data</div>`}
     </div>
   </div>
 
@@ -974,9 +974,9 @@ export default function Analytics() {
       ${metricCard(cap.tasksPerPerson, 'Tasks / Person', C.blue, '#EFF6FF', '&#128203;')}
       ${metricCard(cap.completedPerPerson, 'Done / Person', C.emerald, '#ECFDF5', '&#9989;')}
       <div style="padding:16px;background:${C.bg};border:1px solid ${C.indigo}20;border-radius:8px;text-align:center;">
-        <div style="font-size:18px;margin-bottom:4px;">&#9881;</div>
-        <div style="font-size:20px;font-weight:800;color:${C.indigo};">${cap.overallUtilization}%</div>
-        <div style="font-size:9px;color:${C.slate};text-transform:uppercase;letter-spacing:0.8px;margin-top:4px;">Utilization</div>
+        <div style="font-size:22px;margin-bottom:4px;">&#9881;</div>
+        <div style="font-size:24px;font-weight:800;color:${C.indigo};">${cap.overallUtilization}%</div>
+        <div style="font-size:12px;color:${C.slate};text-transform:uppercase;letter-spacing:0.8px;margin-top:4px;">Utilization</div>
         <div style="margin-top:6px;">${miniBar(cap.overallUtilization, C.indigo)}</div>
       </div>
     </div>
@@ -987,40 +987,40 @@ export default function Analytics() {
   <div style="margin-bottom:36px;border:1.5px solid ${C.accent}30;border-radius:10px;overflow:hidden;">
     <div style="background:linear-gradient(135deg,#EEF2FF,#E0E7FF);padding:16px 22px;border-bottom:1px solid ${C.accent}20;">
       <div style="display:flex;align-items:center;gap:10px;">
-        <div style="width:28px;height:28px;border-radius:6px;background:${C.accent};display:flex;align-items:center;justify-content:center;font-size:14px;color:white;">&#9733;</div>
+        <div style="width:32px;height:32px;border-radius:6px;background:${C.accent};display:flex;align-items:center;justify-content:center;font-size:16px;color:white;">&#9733;</div>
         <div>
-          <h2 style="font-size:15px;color:${C.navy};margin:0;font-weight:700;">AI-Powered Strategic Analysis</h2>
-          <div style="font-size:10px;color:${C.accent};margin-top:1px;">Generated by artificial intelligence based on aggregated workflow data</div>
+          <h2 style="font-size:18px;color:${C.navy};margin:0;font-weight:700;">AI-Powered Strategic Analysis</h2>
+          <div style="font-size:12px;color:${C.accent};margin-top:1px;">Generated by artificial intelligence based on aggregated workflow data</div>
         </div>
       </div>
     </div>
-    <div style="padding:20px 24px;font-size:12px;color:${C.charcoal};line-height:1.75;">${formatAI(r.aiAnalysis)}</div>
+    <div style="padding:20px 24px;font-size:14px;color:${C.charcoal};line-height:1.75;">${formatAI(r.aiAnalysis)}</div>
   </div>` : ''}
 
   <!-- ╔══ HEALTH SCORE BREAKDOWN ══╗ -->
   <div style="margin-bottom:28px;padding:16px 20px;background:linear-gradient(135deg,${C.bg},#EEF2FF);border:1px solid #E2E8F0;border-radius:8px;">
-    <div style="font-size:10px;font-weight:700;color:${C.slate};text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Health Score Composition (${hs.composite}/100)</div>
+    <div style="font-size:12px;font-weight:700;color:${C.slate};text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Health Score Composition (${hs.composite}/100)</div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;">
-      <span style="font-size:11px;color:${C.charcoal};">Completion: <strong>${hs.breakdown?.completionComponent || 0}</strong>/30</span>
-      <span style="font-size:11px;color:${C.charcoal};">On-Time: <strong>${hs.breakdown?.onTimeComponent || 0}</strong>/30</span>
-      <span style="font-size:11px;color:${C.charcoal};">Efficiency: <strong>+${hs.breakdown?.efficiencyBonus || 0}</strong></span>
-      <span style="font-size:11px;color:${C.charcoal};">Bottleneck Penalty: <strong style="color:${C.red};">-${hs.breakdown?.bottleneckPenalty || 0}</strong></span>
-      <span style="font-size:11px;color:${C.charcoal};">Trend: <strong style="color:${(hs.breakdown?.trendBonus || 0) >= 0 ? C.emerald : C.red};">${(hs.breakdown?.trendBonus || 0) >= 0 ? '+' : ''}${hs.breakdown?.trendBonus || 0}</strong></span>
+      <span style="font-size:13px;color:${C.charcoal};">Completion: <strong>${hs.breakdown?.completionComponent || 0}</strong>/30</span>
+      <span style="font-size:13px;color:${C.charcoal};">On-Time: <strong>${hs.breakdown?.onTimeComponent || 0}</strong>/30</span>
+      <span style="font-size:13px;color:${C.charcoal};">Efficiency: <strong>+${hs.breakdown?.efficiencyBonus || 0}</strong></span>
+      <span style="font-size:13px;color:${C.charcoal};">Bottleneck Penalty: <strong style="color:${C.red};">-${hs.breakdown?.bottleneckPenalty || 0}</strong></span>
+      <span style="font-size:13px;color:${C.charcoal};">Trend: <strong style="color:${(hs.breakdown?.trendBonus || 0) >= 0 ? C.emerald : C.red};">${(hs.breakdown?.trendBonus || 0) >= 0 ? '+' : ''}${hs.breakdown?.trendBonus || 0}</strong></span>
     </div>
   </div>
 
   <!-- ╔══ COPYRIGHT & PATENT ══╗ -->
   <div style="padding:14px 18px;background:${C.bg};border:1px solid #E2E8F0;border-radius:6px;margin-bottom:16px;">
-    <div style="font-size:9px;color:${C.lightSlate};line-height:1.6;">${copyrightFull}</div>
+    <div style="font-size:11px;color:${C.lightSlate};line-height:1.6;">${copyrightFull}</div>
   </div>
 
   <!-- ╔══ FOOTER ══╗ -->
   <div style="border-top:2px solid ${C.navy};padding-top:14px;display:flex;justify-content:space-between;align-items:flex-end;">
     <div>
-      <div style="font-size:10px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:1px;font-weight:600;">Generated by Process Sutra &mdash; Voice of Business&trade; v3.0</div>
-      <div style="font-size:10px;color:${C.lightSlate};margin-top:3px;">${r.totalSystems} systems &bull; ${r.totalFlowRules} flow rules &bull; ${cap.totalTeamMembers} team members &bull; TAT: ${r.tatConfig.officeHours} (${r.tatConfig.timezone})${r.tatConfig.skipWeekends ? ' &bull; Weekends excluded' : ''}</div>
+      <div style="font-size:12px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:1px;font-weight:600;">Generated by Process Sutra &mdash; Voice of Business&trade; v3.0</div>
+      <div style="font-size:12px;color:${C.lightSlate};margin-top:3px;">${r.totalSystems} systems &bull; ${r.totalFlowRules} flow rules &bull; ${cap.totalTeamMembers} team members &bull; TAT: ${r.tatConfig.officeHours} (${r.tatConfig.timezone})${r.tatConfig.skipWeekends ? ' &bull; Weekends excluded' : ''}</div>
     </div>
-    <div style="font-size:9px;color:${C.lightSlate};font-style:italic;text-align:right;">${copyrightLine}</div>
+    <div style="font-size:11px;color:${C.lightSlate};font-style:italic;text-align:right;">${copyrightLine}</div>
   </div>
 
   </div>
