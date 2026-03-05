@@ -682,7 +682,11 @@ export default function Billing() {
             <input type="hidden" name="surl" value={payuData.surl} />
             <input type="hidden" name="furl" value={payuData.furl} />
             <input type="hidden" name="hash" value={payuData.hash} />
-            <input type="hidden" name="service_provider" value={payuData.service_provider} />
+            <input type="hidden" name="udf1" value={payuData.udf1 || ""} />
+            <input type="hidden" name="udf2" value={payuData.udf2 || ""} />
+            <input type="hidden" name="udf3" value={payuData.udf3 || ""} />
+            <input type="hidden" name="udf4" value={payuData.udf4 || ""} />
+            <input type="hidden" name="udf5" value={payuData.udf5 || ""} />
           </form>
         )}
       </div>

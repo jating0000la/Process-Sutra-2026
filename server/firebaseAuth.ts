@@ -2,6 +2,7 @@ import type { Express, RequestHandler, Request } from "express";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import rateLimit from 'express-rate-limit';
+import crypto from 'crypto';
 import { storage } from "./storage";
 import * as dotenv from 'dotenv';
 import { verifyIdToken, getAuthorizationUrl, getTokensFromCode, getUserInfo } from './services/googleOAuth';
@@ -322,7 +323,7 @@ export async function setupAuth(app: Express) {
         return res.status(503).json({ message: 'Google authentication not configured' });
       }
       
-      const state = require('crypto').randomBytes(32).toString('hex');
+      const state = crypto.randomBytes(32).toString('hex');
       const authUrl = getAuthorizationUrl(state);
       
       // Store state in session for CSRF protection

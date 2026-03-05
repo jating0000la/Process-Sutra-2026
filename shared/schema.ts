@@ -536,7 +536,7 @@ export const insertAuditLogSchema = z.object({
   actorId: z.string(),
   actorEmail: z.string().email(),
   action: z.string(),
-  targetType: z.enum(["organization", "user", "system"]).optional(),
+  targetType: z.enum(["organization", "user", "system", "payment", "subscription"]).optional(),
   targetId: z.string().optional(),
   targetEmail: z.string().optional(),
   oldValue: z.string().optional(),
@@ -755,6 +755,10 @@ export const organizationSubscriptions = pgTable(
     usedUsers: integer("used_users").default(0),
     // Outstanding balance from extra usage
     outstandingAmount: integer("outstanding_amount").default(0), // in INR
+    // Scheduled upgrade: new plan starts after current billing cycle ends
+    scheduledPlanId: varchar("scheduled_plan_id").references(() => subscriptionPlans.id),
+    scheduledPaymentId: varchar("scheduled_payment_id"), // txn ID of the upgrade payment
+    scheduledAt: timestamp("scheduled_at"), // when the upgrade was requested
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
   },

@@ -2,8 +2,11 @@ import { Express } from "express";
 import { storage } from "./storage";
 import { getQuickFormTemplatesByOrg, getQuickFormResponsesCollection } from "./mongo/quickFormClient";
 import { db } from "./db.js";
-import { organizations, users, tasks, flowRules, auditLogs, userLoginLogs } from "@shared/schema";
-import { eq, desc, sql, and, gte, lte } from "drizzle-orm";
+import {
+  organizations, users, tasks, flowRules, auditLogs, userLoginLogs,
+  subscriptionPlans, organizationSubscriptions, paymentTransactions, usageLogs,
+} from "@shared/schema";
+import { eq, desc, sql, and, gte, lte, count } from "drizzle-orm";
 
 /**
  * Super Admin Organization Management Routes
@@ -25,6 +28,20 @@ export function registerSuperAdminRoutes(
       if (!orgData.name || !orgData.domain) {
         return res.status(400).json({ message: "Organization name and domain are required" });
       }
+
+      // Sanitize input fields
+      if (typeof orgData.name !== 'string' || orgData.name.length > 200) {
+        return res.status(400).json({ message: "Invalid organization name" });
+      }
+      if (typeof orgData.domain !== 'string' || orgData.domain.length > 100) {
+        return res.status(400).json({ message: "Invalid domain" });
+      }
+      // Strip HTML tags from text fields
+      const stripTags = (s: any) => typeof s === 'string' ? s.replace(/<[^>]*>/g, '').trim() : s;
+      orgData.name = stripTags(orgData.name);
+      orgData.domain = stripTags(orgData.domain).toLowerCase();
+      if (orgData.companyName) orgData.companyName = stripTags(orgData.companyName);
+      if (orgData.ownerEmail) orgData.ownerEmail = stripTags(orgData.ownerEmail).toLowerCase();
       
       // Check if domain already exists
       const existing = await storage.getOrganizationByDomain(orgData.domain);
@@ -71,7 +88,25 @@ export function registerSuperAdminRoutes(
   app.put("/api/super-admin/organizations/:id", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
     try {
       const organizationId = req.params.id;
-      const updates = req.body;
+      const rawUpdates = req.body;
+      
+      // SECURITY: Whitelist allowed fields to prevent injection of sensitive fields
+      const ALLOWED_UPDATE_FIELDS = [
+        'name', 'domain', 'subdomain', 'companyName', 'logoUrl', 'primaryColor',
+        'isActive', 'maxUsers', 'maxFlows', 'maxStorage', 'planType',
+        'address', 'phone', 'gstNumber', 'industry', 'customerType', 'businessType',
+        'ownerEmail', 'ownerId', 'healthScore', 'healthStatus',
+      ];
+      const updates: Record<string, any> = {};
+      for (const key of ALLOWED_UPDATE_FIELDS) {
+        if (key in rawUpdates) {
+          updates[key] = rawUpdates[key];
+        }
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ message: "No valid fields to update" });
+      }
       
       // Get organization before update for audit trail
       const oldOrg = await storage.getOrganization(organizationId);
@@ -451,7 +486,11 @@ export function registerSuperAdminRoutes(
   function toCsv(headers: string[], rows: any[][]): string {
     const escape = (val: any) => {
       if (val == null) return "";
-      const str = String(val);
+      let str = String(val);
+      // CSV injection prevention: prefix cells starting with dangerous chars
+      if (/^[=+\-@\t\r]/.test(str)) {
+        str = "'" + str;
+      }
       if (str.includes(",") || str.includes('"') || str.includes("\n")) {
         return `"${str.replace(/"/g, '""')}"`;
       }
@@ -604,6 +643,823 @@ export function registerSuperAdminRoutes(
     } catch (error) {
       console.error("Error exporting CSV:", error);
       res.status(500).json({ message: "Failed to export data" });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  SUPER ADMIN — BILLING MANAGEMENT
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ── GET all billing info for an organization ─────────────────────────
+  app.get("/api/super-admin/organizations/:id/billing", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const organizationId = req.params.id;
+
+      const [org] = await db.select().from(organizations).where(eq(organizations.id, organizationId));
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+
+      // Safely query billing tables — they may not exist yet if migrations haven't run
+      let subscription = null;
+      let plan = null;
+      let scheduledPlan = null;
+      let subscriptionHistory: any[] = [];
+      let payments: any[] = [];
+      let allPlans: any[] = [];
+
+      try {
+        // Active subscription
+        const [sub] = await db
+          .select()
+          .from(organizationSubscriptions)
+          .where(and(
+            eq(organizationSubscriptions.organizationId, organizationId),
+            eq(organizationSubscriptions.status, "active")
+          ))
+          .orderBy(desc(organizationSubscriptions.createdAt))
+          .limit(1);
+        subscription = sub || null;
+
+        // Current plan
+        if (subscription) {
+          const [p] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, subscription.planId));
+          plan = p || null;
+        }
+
+        // Scheduled upgrade plan
+        if (subscription?.scheduledPlanId) {
+          const [sp] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, subscription.scheduledPlanId));
+          scheduledPlan = sp || null;
+        }
+
+        // All subscriptions history
+        subscriptionHistory = await db
+          .select()
+          .from(organizationSubscriptions)
+          .where(eq(organizationSubscriptions.organizationId, organizationId))
+          .orderBy(desc(organizationSubscriptions.createdAt))
+          .limit(20);
+      } catch (subErr: any) {
+        // Tables may not exist — log and continue with empty data
+        console.warn("[SuperAdmin] Billing tables query failed (tables may not exist):", subErr?.message || subErr);
+      }
+
+      try {
+        // Payment transactions
+        payments = await db
+          .select()
+          .from(paymentTransactions)
+          .where(eq(paymentTransactions.organizationId, organizationId))
+          .orderBy(desc(paymentTransactions.createdAt))
+          .limit(50);
+      } catch (payErr: any) {
+        console.warn("[SuperAdmin] Payment transactions query failed:", payErr?.message || payErr);
+      }
+
+      try {
+        // All plans
+        allPlans = await db
+          .select()
+          .from(subscriptionPlans)
+          .where(eq(subscriptionPlans.isActive, true))
+          .orderBy(subscriptionPlans.sortOrder);
+      } catch (planErr: any) {
+        console.warn("[SuperAdmin] Subscription plans query failed:", planErr?.message || planErr);
+      }
+
+      res.json({
+        organization: org,
+        subscription,
+        plan,
+        scheduledPlan,
+        subscriptionHistory,
+        payments,
+        allPlans,
+      });
+    } catch (error: any) {
+      console.error("[SuperAdmin] Error fetching billing:", error?.message || error);
+      res.status(500).json({ message: "Failed to fetch billing info", detail: error?.message });
+    }
+  });
+
+  // ── Manually confirm a pending payment (callback failure recovery) ───
+  app.post("/api/super-admin/billing/confirm-payment", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const { txnId, payuMihpayid, paymentMode, notes, planName: manualPlanName } = req.body;
+      if (!txnId) return res.status(400).json({ message: "Transaction ID is required" });
+
+      const [transaction] = await db
+        .select()
+        .from(paymentTransactions)
+        .where(eq(paymentTransactions.txnId, txnId));
+
+      if (!transaction) return res.status(404).json({ message: "Transaction not found" });
+
+      if (transaction.status === "success") {
+        return res.status(400).json({ message: "Transaction already confirmed" });
+      }
+
+      // Mark transaction as success
+      await db
+        .update(paymentTransactions)
+        .set({
+          status: "success",
+          payuMihpayid: payuMihpayid || `MANUAL_${Date.now()}`,
+          paymentMode: paymentMode || "MANUAL",
+          errorMessage: `Manually confirmed by super admin: ${req.currentUser.email}. ${notes || ""}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(paymentTransactions.id, transaction.id));
+
+      // Now process the subscription activation
+
+      // Determine target plan from productinfo pattern or payment type
+      const planNames = ["starter", "growth", "business"];
+      let targetPlanName = "";
+      // Try to find plan name from the transaction context
+      if (transaction.paymentType === "subscription" || transaction.paymentType === "combined") {
+        // Look for plan reference via PayU response or any stored data
+        const payuResp = transaction.payuResponse as any;
+        const productinfo = payuResp?.productinfo || "";
+        for (const pn of planNames) {
+          if (productinfo.toLowerCase().includes(pn)) {
+            targetPlanName = pn;
+            break;
+          }
+        }
+        // Fallback: use manually provided planName if productinfo didn't match
+        if (!targetPlanName && manualPlanName && planNames.includes(manualPlanName)) {
+          targetPlanName = manualPlanName;
+        }
+      }
+
+      if (targetPlanName) {
+        const [plan] = await db
+          .select()
+          .from(subscriptionPlans)
+          .where(eq(subscriptionPlans.name, targetPlanName));
+
+        if (plan) {
+          const now = new Date();
+
+          // Check for existing active subscription
+          const [existingSub] = await db
+            .select()
+            .from(organizationSubscriptions)
+            .where(and(
+              eq(organizationSubscriptions.organizationId, transaction.organizationId),
+              eq(organizationSubscriptions.status, "active")
+            ))
+            .orderBy(desc(organizationSubscriptions.createdAt))
+            .limit(1);
+
+          if (existingSub && new Date(existingSub.billingCycleEnd) > now) {
+            // Schedule upgrade (deferred)
+            await db
+              .update(organizationSubscriptions)
+              .set({
+                scheduledPlanId: plan.id,
+                scheduledPaymentId: transaction.txnId,
+                scheduledAt: now,
+                updatedAt: now,
+              })
+              .where(eq(organizationSubscriptions.id, existingSub.id));
+          } else {
+            // Activate immediately
+            if (existingSub) {
+              await db.update(organizationSubscriptions)
+                .set({ status: "expired", updatedAt: now })
+                .where(eq(organizationSubscriptions.id, existingSub.id));
+            }
+
+            const billingEnd = new Date(now);
+            billingEnd.setMonth(billingEnd.getMonth() + 1);
+
+            const orgUsers = await db.select({ count: count() }).from(users).where(eq(users.organizationId, transaction.organizationId));
+
+            await db.insert(organizationSubscriptions).values({
+              organizationId: transaction.organizationId,
+              planId: plan.id,
+              status: "active",
+              billingCycleStart: now,
+              billingCycleEnd: billingEnd,
+              usedUsers: orgUsers[0]?.count || 0,
+              outstandingAmount: 0,
+            });
+
+            await db.update(organizations).set({
+              planType: targetPlanName,
+              maxUsers: plan.maxUsers,
+              maxFlows: plan.maxFlows,
+              updatedAt: now,
+            }).where(eq(organizations.id, transaction.organizationId));
+          }
+        }
+      }
+
+      // Clear outstanding if payment type was outstanding/combined
+      if (transaction.paymentType === "outstanding" || transaction.paymentType === "combined") {
+        await db.update(organizationSubscriptions)
+          .set({ outstandingAmount: 0, updatedAt: new Date() })
+          .where(and(
+            eq(organizationSubscriptions.organizationId, transaction.organizationId),
+            eq(organizationSubscriptions.status, "active")
+          ));
+      }
+
+      // Audit log
+      await storage.createAuditLog({
+        actorId: req.currentUser.id,
+        actorEmail: req.currentUser.email,
+        action: "MANUAL_PAYMENT_CONFIRMATION",
+        targetType: "payment",
+        targetId: transaction.id,
+        newValue: JSON.stringify({ txnId, payuMihpayid, paymentMode, notes, targetPlanName }),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId: transaction.organizationId,
+      });
+
+      console.log(`[SuperAdmin] Payment manually confirmed: txn=${txnId} by ${req.currentUser.email}`);
+      res.json({ message: "Payment confirmed and subscription updated", txnId });
+    } catch (error) {
+      console.error("[SuperAdmin] Error confirming payment:", error);
+      res.status(500).json({ message: "Failed to confirm payment" });
+    }
+  });
+
+  // ── Force change organization plan (no payment involved) ─────────────
+  app.post("/api/super-admin/billing/change-plan", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const { organizationId, planName, reason, immediate } = req.body;
+      if (!organizationId || !planName) {
+        return res.status(400).json({ message: "Organization ID and plan name are required" });
+      }
+
+      const [org] = await db.select().from(organizations).where(eq(organizations.id, organizationId));
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+
+      const [plan] = await db
+        .select()
+        .from(subscriptionPlans)
+        .where(and(eq(subscriptionPlans.name, planName), eq(subscriptionPlans.isActive, true)));
+      if (!plan) return res.status(404).json({ message: "Plan not found" });
+
+      const now = new Date();
+
+      // Get current active subscription
+      const [existingSub] = await db
+        .select()
+        .from(organizationSubscriptions)
+        .where(and(
+          eq(organizationSubscriptions.organizationId, organizationId),
+          eq(organizationSubscriptions.status, "active")
+        ))
+        .orderBy(desc(organizationSubscriptions.createdAt))
+        .limit(1);
+
+      if (immediate || !existingSub || new Date(existingSub.billingCycleEnd) <= now) {
+        // Immediate plan change
+        if (existingSub) {
+          await db.update(organizationSubscriptions)
+            .set({ status: "expired", updatedAt: now })
+            .where(eq(organizationSubscriptions.id, existingSub.id));
+        }
+
+        const billingEnd = new Date(now);
+        billingEnd.setMonth(billingEnd.getMonth() + 1);
+
+        const orgUsers = await db.select({ count: count() }).from(users).where(eq(users.organizationId, organizationId));
+
+        await db.insert(organizationSubscriptions).values({
+          organizationId,
+          planId: plan.id,
+          status: "active",
+          billingCycleStart: now,
+          billingCycleEnd: billingEnd,
+          usedUsers: orgUsers[0]?.count || 0,
+          outstandingAmount: 0,
+        });
+
+        await db.update(organizations).set({
+          planType: planName,
+          maxUsers: plan.maxUsers,
+          maxFlows: plan.maxFlows,
+          updatedAt: now,
+        }).where(eq(organizations.id, organizationId));
+
+        console.log(`[SuperAdmin] Plan changed immediately: org=${organizationId} plan=${planName}`);
+      } else {
+        // Schedule for end of current billing cycle
+        await db.update(organizationSubscriptions).set({
+          scheduledPlanId: plan.id,
+          scheduledPaymentId: null,
+          scheduledAt: now,
+          updatedAt: now,
+        }).where(eq(organizationSubscriptions.id, existingSub.id));
+
+        console.log(`[SuperAdmin] Plan change scheduled: org=${organizationId} plan=${planName} after ${existingSub.billingCycleEnd}`);
+      }
+
+      await storage.createAuditLog({
+        actorId: req.currentUser.id,
+        actorEmail: req.currentUser.email,
+        action: "FORCE_PLAN_CHANGE",
+        targetType: "organization",
+        targetId: organizationId,
+        oldValue: JSON.stringify({ planType: org.planType }),
+        newValue: JSON.stringify({ planName, immediate, reason }),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId,
+      });
+
+      res.json({ message: `Plan ${immediate ? "changed immediately" : "scheduled for change"} to ${plan.displayName}` });
+    } catch (error) {
+      console.error("[SuperAdmin] Error changing plan:", error);
+      res.status(500).json({ message: "Failed to change plan" });
+    }
+  });
+
+  // ── Adjust outstanding amount ─────────────────────────────────────────
+  app.post("/api/super-admin/billing/adjust-outstanding", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const { organizationId, amount, reason } = req.body;
+      if (!organizationId || amount === undefined) {
+        return res.status(400).json({ message: "Organization ID and amount are required" });
+      }
+
+      // Validate amount is a finite non-negative number
+      const parsedAmount = Number(amount);
+      if (!Number.isFinite(parsedAmount) || parsedAmount < 0 || parsedAmount > 10000000) {
+        return res.status(400).json({ message: "Amount must be a valid number between 0 and 10,000,000" });
+      }
+
+      const [subscription] = await db
+        .select()
+        .from(organizationSubscriptions)
+        .where(and(
+          eq(organizationSubscriptions.organizationId, organizationId),
+          eq(organizationSubscriptions.status, "active")
+        ))
+        .orderBy(desc(organizationSubscriptions.createdAt))
+        .limit(1);
+
+      if (!subscription) return res.status(404).json({ message: "No active subscription found" });
+
+      const oldAmount = subscription.outstandingAmount || 0;
+
+      await db.update(organizationSubscriptions).set({
+        outstandingAmount: Math.max(0, Math.round(parsedAmount)),
+        updatedAt: new Date(),
+      }).where(eq(organizationSubscriptions.id, subscription.id));
+
+      await storage.createAuditLog({
+        actorId: req.currentUser.id,
+        actorEmail: req.currentUser.email,
+        action: "ADJUST_OUTSTANDING",
+        targetType: "subscription",
+        targetId: subscription.id,
+        oldValue: JSON.stringify({ outstandingAmount: oldAmount }),
+        newValue: JSON.stringify({ outstandingAmount: amount, reason }),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId,
+      });
+
+      res.json({ message: `Outstanding adjusted from ₹${oldAmount} to ₹${amount}` });
+    } catch (error) {
+      console.error("[SuperAdmin] Error adjusting outstanding:", error);
+      res.status(500).json({ message: "Failed to adjust outstanding" });
+    }
+  });
+
+  // ── Reset usage counters ──────────────────────────────────────────────
+  app.post("/api/super-admin/billing/reset-usage", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const { organizationId, resetFlows, resetSubmissions, resetUsers } = req.body;
+      if (!organizationId) return res.status(400).json({ message: "Organization ID is required" });
+
+      const [subscription] = await db
+        .select()
+        .from(organizationSubscriptions)
+        .where(and(
+          eq(organizationSubscriptions.organizationId, organizationId),
+          eq(organizationSubscriptions.status, "active")
+        ))
+        .orderBy(desc(organizationSubscriptions.createdAt))
+        .limit(1);
+
+      if (!subscription) return res.status(404).json({ message: "No active subscription found" });
+
+      const updates: any = { updatedAt: new Date() };
+      if (resetFlows) updates.usedFlows = 0;
+      if (resetSubmissions) updates.usedFormSubmissions = 0;
+      if (resetUsers) {
+        const orgUsers = await db.select({ count: count() }).from(users).where(eq(users.organizationId, organizationId));
+        updates.usedUsers = orgUsers[0]?.count || 0;
+      }
+
+      await db.update(organizationSubscriptions).set(updates).where(eq(organizationSubscriptions.id, subscription.id));
+
+      await storage.createAuditLog({
+        actorId: req.currentUser.id,
+        actorEmail: req.currentUser.email,
+        action: "RESET_USAGE_COUNTERS",
+        targetType: "subscription",
+        targetId: subscription.id,
+        newValue: JSON.stringify({ resetFlows, resetSubmissions, resetUsers }),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId,
+      });
+
+      res.json({ message: "Usage counters reset successfully" });
+    } catch (error) {
+      console.error("[SuperAdmin] Error resetting usage:", error);
+      res.status(500).json({ message: "Failed to reset usage" });
+    }
+  });
+
+  // ── Cancel scheduled upgrade ──────────────────────────────────────────
+  app.post("/api/super-admin/billing/cancel-scheduled-upgrade", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const { organizationId } = req.body;
+      if (!organizationId) return res.status(400).json({ message: "Organization ID is required" });
+
+      const [subscription] = await db
+        .select()
+        .from(organizationSubscriptions)
+        .where(and(
+          eq(organizationSubscriptions.organizationId, organizationId),
+          eq(organizationSubscriptions.status, "active")
+        ))
+        .orderBy(desc(organizationSubscriptions.createdAt))
+        .limit(1);
+
+      if (!subscription || !subscription.scheduledPlanId) {
+        return res.status(400).json({ message: "No scheduled upgrade to cancel" });
+      }
+
+      await db.update(organizationSubscriptions).set({
+        scheduledPlanId: null,
+        scheduledPaymentId: null,
+        scheduledAt: null,
+        updatedAt: new Date(),
+      }).where(eq(organizationSubscriptions.id, subscription.id));
+
+      await storage.createAuditLog({
+        actorId: req.currentUser.id,
+        actorEmail: req.currentUser.email,
+        action: "CANCEL_SCHEDULED_UPGRADE",
+        targetType: "subscription",
+        targetId: subscription.id,
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId,
+      });
+
+      res.json({ message: "Scheduled upgrade cancelled" });
+    } catch (error) {
+      console.error("[SuperAdmin] Error cancelling scheduled upgrade:", error);
+      res.status(500).json({ message: "Failed to cancel scheduled upgrade" });
+    }
+  });
+
+  // ── Mark payment as failed (manual override) ─────────────────────────
+  app.post("/api/super-admin/billing/fail-payment", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const { txnId, reason } = req.body;
+      if (!txnId) return res.status(400).json({ message: "Transaction ID is required" });
+
+      const [transaction] = await db
+        .select()
+        .from(paymentTransactions)
+        .where(eq(paymentTransactions.txnId, txnId));
+
+      if (!transaction) return res.status(404).json({ message: "Transaction not found" });
+      if (transaction.status === "success") {
+        return res.status(400).json({ message: "Cannot mark a successful payment as failed" });
+      }
+
+      await db.update(paymentTransactions).set({
+        status: "failed",
+        errorMessage: `Manually marked as failed by super admin: ${req.currentUser.email}. ${reason || ""}`,
+        updatedAt: new Date(),
+      }).where(eq(paymentTransactions.id, transaction.id));
+
+      await storage.createAuditLog({
+        actorId: req.currentUser.id,
+        actorEmail: req.currentUser.email,
+        action: "MANUAL_PAYMENT_FAILURE",
+        targetType: "payment",
+        targetId: transaction.id,
+        newValue: JSON.stringify({ txnId, reason }),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId: transaction.organizationId,
+      });
+
+      res.json({ message: "Payment marked as failed" });
+    } catch (error) {
+      console.error("[SuperAdmin] Error failing payment:", error);
+      res.status(500).json({ message: "Failed to update payment" });
+    }
+  });
+
+  // ── Extend billing cycle ──────────────────────────────────────────────
+  app.post("/api/super-admin/billing/extend-cycle", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const { organizationId, extraDays, reason } = req.body;
+      if (!organizationId || !extraDays) {
+        return res.status(400).json({ message: "Organization ID and extra days are required" });
+      }
+
+      // Validate extraDays bounds
+      const parsedDays = Number(extraDays);
+      if (!Number.isFinite(parsedDays) || parsedDays < 1 || parsedDays > 365) {
+        return res.status(400).json({ message: "Extra days must be between 1 and 365" });
+      }
+
+      const [subscription] = await db
+        .select()
+        .from(organizationSubscriptions)
+        .where(and(
+          eq(organizationSubscriptions.organizationId, organizationId),
+          eq(organizationSubscriptions.status, "active")
+        ))
+        .orderBy(desc(organizationSubscriptions.createdAt))
+        .limit(1);
+
+      if (!subscription) return res.status(404).json({ message: "No active subscription found" });
+
+      const oldEnd = new Date(subscription.billingCycleEnd);
+      const newEnd = new Date(oldEnd);
+      newEnd.setDate(newEnd.getDate() + parsedDays);
+
+      await db.update(organizationSubscriptions).set({
+        billingCycleEnd: newEnd,
+        updatedAt: new Date(),
+      }).where(eq(organizationSubscriptions.id, subscription.id));
+
+      // Also extend trial if applicable
+      if (subscription.trialEndsAt) {
+        const oldTrial = new Date(subscription.trialEndsAt);
+        const newTrial = new Date(oldTrial);
+        newTrial.setDate(newTrial.getDate() + parsedDays);
+        await db.update(organizationSubscriptions).set({
+          trialEndsAt: newTrial,
+        }).where(eq(organizationSubscriptions.id, subscription.id));
+      }
+
+      await storage.createAuditLog({
+        actorId: req.currentUser.id,
+        actorEmail: req.currentUser.email,
+        action: "EXTEND_BILLING_CYCLE",
+        targetType: "subscription",
+        targetId: subscription.id,
+        oldValue: JSON.stringify({ billingCycleEnd: oldEnd }),
+        newValue: JSON.stringify({ billingCycleEnd: newEnd, extraDays, reason }),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId,
+      });
+
+      res.json({ message: `Billing cycle extended by ${extraDays} days (new end: ${newEnd.toISOString().slice(0, 10)})` });
+    } catch (error) {
+      console.error("[SuperAdmin] Error extending cycle:", error);
+      res.status(500).json({ message: "Failed to extend billing cycle" });
+    }
+  });
+
+  // ── Override payment status (set any status including refunded) ────────
+  app.post("/api/super-admin/billing/override-payment-status", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const { txnId, newStatus, reason } = req.body;
+      if (!txnId || !newStatus) {
+        return res.status(400).json({ message: "Transaction ID and new status are required" });
+      }
+
+      const VALID_STATUSES = ["pending", "success", "failed", "refunded", "refund_pending"];
+      if (!VALID_STATUSES.includes(newStatus)) {
+        return res.status(400).json({ message: `Invalid status. Must be one of: ${VALID_STATUSES.join(", ")}` });
+      }
+
+      if (typeof reason !== "string" || reason.trim().length < 3) {
+        return res.status(400).json({ message: "A reason of at least 3 characters is required for status override" });
+      }
+
+      const [transaction] = await db
+        .select()
+        .from(paymentTransactions)
+        .where(eq(paymentTransactions.txnId, txnId));
+
+      if (!transaction) return res.status(404).json({ message: "Transaction not found" });
+
+      const oldStatus = transaction.status;
+      if (oldStatus === newStatus) {
+        return res.status(400).json({ message: `Transaction is already in '${newStatus}' status` });
+      }
+
+      await db.update(paymentTransactions).set({
+        status: newStatus,
+        errorMessage: `Status overridden from '${oldStatus}' to '${newStatus}' by ${req.currentUser.email}: ${reason.trim()}`,
+        updatedAt: new Date(),
+      }).where(eq(paymentTransactions.id, transaction.id));
+
+      // If overriding to "success", also activate the subscription
+      if (newStatus === "success" && oldStatus !== "success") {
+        try {
+          const planNames = ["starter", "growth", "business"];
+          let targetPlanName = "";
+          if (transaction.paymentType === "subscription" || transaction.paymentType === "combined") {
+            const payuResp = transaction.payuResponse as any;
+            const productinfo = payuResp?.productinfo || "";
+            for (const pn of planNames) {
+              if (productinfo.toLowerCase().includes(pn)) {
+                targetPlanName = pn;
+                break;
+              }
+            }
+          }
+
+          if (targetPlanName) {
+            const [plan] = await db
+              .select()
+              .from(subscriptionPlans)
+              .where(eq(subscriptionPlans.name, targetPlanName));
+
+            if (plan) {
+              const now = new Date();
+              const [existingSub] = await db
+                .select()
+                .from(organizationSubscriptions)
+                .where(and(
+                  eq(organizationSubscriptions.organizationId, transaction.organizationId),
+                  eq(organizationSubscriptions.status, "active")
+                ))
+                .orderBy(desc(organizationSubscriptions.createdAt))
+                .limit(1);
+
+              if (existingSub && new Date(existingSub.billingCycleEnd) > now) {
+                await db.update(organizationSubscriptions).set({
+                  scheduledPlanId: plan.id,
+                  scheduledPaymentId: transaction.txnId,
+                  scheduledAt: now,
+                  updatedAt: now,
+                }).where(eq(organizationSubscriptions.id, existingSub.id));
+                console.log(`[SuperAdmin] Override→success: scheduled upgrade for org=${transaction.organizationId} plan=${targetPlanName}`);
+              } else {
+                if (existingSub) {
+                  await db.update(organizationSubscriptions)
+                    .set({ status: "expired", updatedAt: now })
+                    .where(eq(organizationSubscriptions.id, existingSub.id));
+                }
+                const billingEnd = new Date(now);
+                billingEnd.setMonth(billingEnd.getMonth() + 1);
+                const orgUsers = await db.select({ count: count() }).from(users).where(eq(users.organizationId, transaction.organizationId));
+                await db.insert(organizationSubscriptions).values({
+                  organizationId: transaction.organizationId,
+                  planId: plan.id,
+                  status: "active",
+                  billingCycleStart: now,
+                  billingCycleEnd: billingEnd,
+                  usedUsers: orgUsers[0]?.count || 0,
+                  outstandingAmount: 0,
+                });
+                await db.update(organizations).set({
+                  planType: targetPlanName,
+                  maxUsers: plan.maxUsers,
+                  maxFlows: plan.maxFlows,
+                  updatedAt: now,
+                }).where(eq(organizations.id, transaction.organizationId));
+                console.log(`[SuperAdmin] Override→success: activated plan=${targetPlanName} for org=${transaction.organizationId}`);
+              }
+            }
+          }
+
+          // Clear outstanding if payment was for outstanding/combined
+          if (transaction.paymentType === "outstanding" || transaction.paymentType === "combined") {
+            await db.update(organizationSubscriptions)
+              .set({ outstandingAmount: 0, updatedAt: new Date() })
+              .where(and(
+                eq(organizationSubscriptions.organizationId, transaction.organizationId),
+                eq(organizationSubscriptions.status, "active")
+              ));
+          }
+        } catch (activationErr: any) {
+          console.error(`[SuperAdmin] Override→success subscription activation error:`, activationErr?.message);
+          // Status was already updated; log the activation failure but don't fail the request
+        }
+      }
+
+      await storage.createAuditLog({
+        actorId: req.currentUser.id,
+        actorEmail: req.currentUser.email,
+        action: "OVERRIDE_PAYMENT_STATUS",
+        targetType: "payment",
+        targetId: transaction.id,
+        oldValue: JSON.stringify({ status: oldStatus, txnId }),
+        newValue: JSON.stringify({ status: newStatus, reason: reason.trim(), amount: transaction.amount }),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId: transaction.organizationId,
+      });
+
+      console.log(`[SuperAdmin] Payment status overridden: txn=${txnId} ${oldStatus}→${newStatus} by ${req.currentUser.email}`);
+      res.json({ message: `Payment status changed from '${oldStatus}' to '${newStatus}'`, txnId, oldStatus, newStatus });
+    } catch (error) {
+      console.error("[SuperAdmin] Error overriding payment status:", error);
+      res.status(500).json({ message: "Failed to override payment status" });
+    }
+  });
+
+  // ── Create manual payment record (offline / bank transfer) ────────────
+  app.post("/api/super-admin/billing/create-manual-payment", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const { organizationId, amount, paymentType, paymentMode, reference, notes } = req.body;
+
+      if (!organizationId || !amount || !paymentType) {
+        return res.status(400).json({ message: "Organization ID, amount, and payment type are required" });
+      }
+
+      const parsedAmount = Number(amount);
+      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0 || parsedAmount > 10000000) {
+        return res.status(400).json({ message: "Amount must be between 1 and 10,000,000" });
+      }
+
+      const VALID_TYPES = ["subscription", "outstanding", "combined"];
+      if (!VALID_TYPES.includes(paymentType)) {
+        return res.status(400).json({ message: `Payment type must be one of: ${VALID_TYPES.join(", ")}` });
+      }
+
+      const VALID_MODES = ["BANK_TRANSFER", "CASH", "CHEQUE", "UPI", "MANUAL", "OTHER"];
+      const sanitizedMode = VALID_MODES.includes(paymentMode) ? paymentMode : "MANUAL";
+
+      // Verify org exists
+      const [org] = await db.select().from(organizations).where(eq(organizations.id, organizationId));
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+
+      // Get active subscription
+      const [subscription] = await db
+        .select()
+        .from(organizationSubscriptions)
+        .where(and(
+          eq(organizationSubscriptions.organizationId, organizationId),
+          eq(organizationSubscriptions.status, "active")
+        ))
+        .orderBy(desc(organizationSubscriptions.createdAt))
+        .limit(1);
+
+      // Generate a unique manual txn ID
+      const txnId = `MANUAL_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+      const sanitizedRef = typeof reference === "string" ? reference.trim().slice(0, 200) : "";
+      const sanitizedNotes = typeof notes === "string" ? notes.trim().slice(0, 500) : "";
+
+      // Create the payment record as already-successful
+      const [newPayment] = await db.insert(paymentTransactions).values({
+        organizationId,
+        subscriptionId: subscription?.id || null,
+        txnId,
+        payuMihpayid: sanitizedRef || `MANUAL_${Date.now()}`,
+        amount: Math.round(parsedAmount),
+        planAmount: paymentType === "subscription" || paymentType === "combined" ? Math.round(parsedAmount) : 0,
+        outstandingAmount: paymentType === "outstanding" || paymentType === "combined" ? Math.round(parsedAmount) : 0,
+        status: "success",
+        paymentMode: sanitizedMode,
+        paymentType,
+        payuResponse: { manual: true, reference: sanitizedRef, notes: sanitizedNotes, createdBy: req.currentUser.email },
+        errorMessage: `Manual payment recorded by ${req.currentUser.email}. Ref: ${sanitizedRef}`,
+        initiatedBy: req.currentUser.id,
+      }).returning();
+
+      // If paying outstanding, clear it from subscription
+      if (subscription && (paymentType === "outstanding" || paymentType === "combined")) {
+        const currentOutstanding = subscription.outstandingAmount || 0;
+        const newOutstanding = Math.max(0, currentOutstanding - Math.round(parsedAmount));
+        await db.update(organizationSubscriptions).set({
+          outstandingAmount: newOutstanding,
+          updatedAt: new Date(),
+        }).where(eq(organizationSubscriptions.id, subscription.id));
+      }
+
+      await storage.createAuditLog({
+        actorId: req.currentUser.id,
+        actorEmail: req.currentUser.email,
+        action: "CREATE_MANUAL_PAYMENT",
+        targetType: "payment",
+        targetId: newPayment.id,
+        newValue: JSON.stringify({ txnId, amount: Math.round(parsedAmount), paymentType, paymentMode: sanitizedMode, reference: sanitizedRef, notes: sanitizedNotes }),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId,
+      });
+
+      console.log(`[SuperAdmin] Manual payment created: txn=${txnId} amount=₹${parsedAmount} org=${organizationId} by ${req.currentUser.email}`);
+      res.json({ message: `Manual payment of ₹${Math.round(parsedAmount).toLocaleString()} recorded`, txnId, paymentId: newPayment.id });
+    } catch (error) {
+      console.error("[SuperAdmin] Error creating manual payment:", error);
+      res.status(500).json({ message: "Failed to create manual payment" });
     }
   });
 }

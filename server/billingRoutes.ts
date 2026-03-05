@@ -19,15 +19,53 @@ import crypto from "crypto";
 import https from "https";
 
 // PayU Configuration — loaded from .env
-const PAYU_MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY || "";
-const PAYU_MERCHANT_SALT = process.env.PAYU_MERCHANT_SALT || "";
-const PAYU_BASE_URL = process.env.PAYU_BASE_URL
-  ? `${process.env.PAYU_BASE_URL}/_payment`
-  : "https://test.payu.in/_payment";
+const PAYU_MERCHANT_KEY = (process.env.PAYU_MERCHANT_KEY || "").trim();
+const PAYU_MERCHANT_SALT = (process.env.PAYU_MERCHANT_SALT || "").trim();
+
+// Normalize PayU base URL — strip trailing /_payment if env already has it
+const rawPayuUrl = process.env.PAYU_BASE_URL || "https://test.payu.in";
+const PAYU_BASE_URL = rawPayuUrl.replace(/\/_payment\/?$/, "") + "/_payment";
+
 const PAYU_CALLBACK_BASE = process.env.BASE_URL || "";
 
 if (!PAYU_MERCHANT_KEY || !PAYU_MERCHANT_SALT) {
   console.warn("[Billing] ⚠️  PAYU_MERCHANT_KEY or PAYU_MERCHANT_SALT not set in .env — payments will fail");
+} else {
+  console.log(`[Billing] PayU configured: key=${PAYU_MERCHANT_KEY.substring(0, 4)}***, url=${PAYU_BASE_URL}, callback=${PAYU_CALLBACK_BASE || "(auto-detect)"}`);
+
+  // Verify PayU credentials on startup with a test API call
+  const verifyHash = crypto.createHash("sha512")
+    .update(`${PAYU_MERCHANT_KEY}|verify_payment|__startup_check__|${PAYU_MERCHANT_SALT}`)
+    .digest("hex");
+  const verifyData = `key=${encodeURIComponent(PAYU_MERCHANT_KEY)}&command=verify_payment&var1=__startup_check__&hash=${verifyHash}`;
+  const isTest = PAYU_BASE_URL.includes("test.payu.in");
+  const verifyReq = https.request({
+    hostname: isTest ? "test.payu.in" : "info.payu.in",
+    port: 443,
+    path: "/merchant/postservice.php?form=2",
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", "Content-Length": Buffer.byteLength(verifyData) },
+  }, (res) => {
+    let body = "";
+    res.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+    res.on("end", () => {
+      try {
+        const r = JSON.parse(body);
+        if (r.status === 0 || r.msg === "No Records Found" || r.transaction_details) {
+          console.log("[Billing] ✅ PayU credentials verified — API connection OK");
+        } else if (r.status === -1 && (r.msg || "").toLowerCase().includes("invalid")) {
+          console.error(`[Billing] ❌ PayU credentials INVALID: ${r.msg}. Update PAYU_MERCHANT_KEY and PAYU_MERCHANT_SALT in .env`);
+        } else {
+          console.warn(`[Billing] ⚠️  PayU credentials check response: ${JSON.stringify(r).substring(0, 200)}`);
+        }
+      } catch {
+        console.warn(`[Billing] ⚠️  PayU credentials check: unexpected response (HTTP ${res.statusCode}): ${body.substring(0, 200)}`);
+      }
+    });
+  });
+  verifyReq.on("error", (err) => console.warn(`[Billing] ⚠️  Could not verify PayU credentials: ${err.message}`));
+  verifyReq.write(verifyData);
+  verifyReq.end();
 }
 
 // Default plans to seed
@@ -100,7 +138,9 @@ function generatePayUHash(params: {
   const salt = params.salt || PAYU_MERCHANT_SALT;
   // PayU hash formula: sha512(key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||||salt)
   const hashString = `${key}|${params.txnid}|${params.amount}|${params.productinfo}|${params.firstname}|${params.email}|||||||||||${salt}`;
-  return crypto.createHash("sha512").update(hashString).digest("hex");
+  const hash = crypto.createHash("sha512").update(hashString).digest("hex");
+  console.log(`[PayU Hash] txnid=${params.txnid} amount=${params.amount} productinfo="${params.productinfo}" firstname="${params.firstname}" email="${params.email}" hashInput(masked)=${key.substring(0,3)}***|${params.txnid}|${params.amount}|${params.productinfo}|${params.firstname}|${params.email}|||||||||||*** hash=${hash.substring(0,16)}...`);
+  return hash;
 }
 
 /** Verify PayU response hash */
@@ -235,7 +275,7 @@ async function processSuccessfulPayment(transaction: any, payuDetails: {
     })
     .where(eq(paymentTransactions.id, transaction.id));
 
-  // Process subscription activation
+  // Process subscription activation / scheduled upgrade
   if (
     transaction.paymentType === "subscription" ||
     transaction.paymentType === "combined"
@@ -258,58 +298,97 @@ async function processSuccessfulPayment(transaction: any, payuDetails: {
 
       if (plan) {
         const now = new Date();
-        const billingEnd = new Date(now);
-        billingEnd.setMonth(billingEnd.getMonth() + 1);
 
-        // Cancel old subscription if exists
-        await db
-          .update(organizationSubscriptions)
-          .set({ status: "cancelled", updatedAt: new Date() })
+        // Check for an existing active subscription
+        const [existingSub] = await db
+          .select()
+          .from(organizationSubscriptions)
           .where(
             and(
               eq(organizationSubscriptions.organizationId, transaction.organizationId),
               eq(organizationSubscriptions.status, "active")
             )
+          )
+          .orderBy(desc(organizationSubscriptions.createdAt))
+          .limit(1);
+
+        if (existingSub && new Date(existingSub.billingCycleEnd) > now) {
+          // ─── DEFERRED UPGRADE ─────────────────────────────────────
+          // Current plan stays active until billingCycleEnd.
+          // Schedule the new plan to activate after cycle ends.
+          await db
+            .update(organizationSubscriptions)
+            .set({
+              scheduledPlanId: plan.id,
+              scheduledPaymentId: transaction.txnId,
+              scheduledAt: now,
+              updatedAt: now,
+            })
+            .where(eq(organizationSubscriptions.id, existingSub.id));
+
+          // Link payment to current subscription
+          await db
+            .update(paymentTransactions)
+            .set({ subscriptionId: existingSub.id })
+            .where(eq(paymentTransactions.id, transaction.id));
+
+          console.log(
+            `[Billing] Upgrade scheduled: org=${transaction.organizationId} ` +
+            `from current plan to ${targetPlanName}, activates after ${existingSub.billingCycleEnd}`
           );
+        } else {
+          // ─── IMMEDIATE ACTIVATION ─────────────────────────────────
+          // No active subscription or cycle already ended → activate now.
+          const billingEnd = new Date(now);
+          billingEnd.setMonth(billingEnd.getMonth() + 1);
 
-        // Count current users
-        const orgUsers = await db
-          .select({ count: count() })
-          .from(users)
-          .where(eq(users.organizationId, transaction.organizationId));
+          // Expire old subscription if exists
+          if (existingSub) {
+            await db
+              .update(organizationSubscriptions)
+              .set({ status: "expired", updatedAt: now })
+              .where(eq(organizationSubscriptions.id, existingSub.id));
+          }
 
-        // Create new subscription
-        const [newSub] = await db
-          .insert(organizationSubscriptions)
-          .values({
-            organizationId: transaction.organizationId,
-            planId: plan.id,
-            status: "active",
-            billingCycleStart: now,
-            billingCycleEnd: billingEnd,
-            usedUsers: orgUsers[0]?.count || 0,
-            outstandingAmount: 0,
-          })
-          .returning();
+          // Count current users
+          const orgUsers = await db
+            .select({ count: count() })
+            .from(users)
+            .where(eq(users.organizationId, transaction.organizationId));
 
-        // Update the transaction with new subscription ID
-        await db
-          .update(paymentTransactions)
-          .set({ subscriptionId: newSub.id })
-          .where(eq(paymentTransactions.id, transaction.id));
+          // Create new subscription
+          const [newSub] = await db
+            .insert(organizationSubscriptions)
+            .values({
+              organizationId: transaction.organizationId,
+              planId: plan.id,
+              status: "active",
+              billingCycleStart: now,
+              billingCycleEnd: billingEnd,
+              usedUsers: orgUsers[0]?.count || 0,
+              outstandingAmount: 0,
+            })
+            .returning();
 
-        // Update org planType
-        await db
-          .update(organizations)
-          .set({
-            planType: targetPlanName,
-            maxUsers: plan.maxUsers,
-            maxFlows: plan.maxFlows,
-            updatedAt: new Date(),
-          })
-          .where(eq(organizations.id, transaction.organizationId));
+          // Update the transaction with new subscription ID
+          await db
+            .update(paymentTransactions)
+            .set({ subscriptionId: newSub.id })
+            .where(eq(paymentTransactions.id, transaction.id));
 
-        console.log(`[Billing] Subscription activated: org=${transaction.organizationId} plan=${targetPlanName}`);
+          // Update org planType
+          await db
+            .update(organizations)
+            .set({
+              planType: targetPlanName,
+              maxUsers: plan.maxUsers,
+              maxFlows: plan.maxFlows,
+              updatedAt: new Date(),
+            })
+            .where(eq(organizations.id, transaction.organizationId));
+
+          console.log(`[Billing] Subscription activated immediately: org=${transaction.organizationId} plan=${targetPlanName}`);
+        }
       }
     }
   }
@@ -346,6 +425,113 @@ function calculateExtraUsage(
     extraUsers * (plan.extraUserCost || 100);
 
   return { extraFlows, extraSubmissions, extraUsers, totalExtra };
+}
+
+/**
+ * Process billing cycle transitions for an organization.
+ * If the current billing cycle has ended and a scheduled upgrade exists,
+ * activate the new plan. Called lazily on subscription access and periodically.
+ *
+ * Returns the (possibly updated) active subscription, or null.
+ */
+async function processBillingCycleTransition(organizationId: string): Promise<any | null> {
+  const now = new Date();
+
+  // Get the latest active subscription
+  const [subscription] = await db
+    .select()
+    .from(organizationSubscriptions)
+    .where(
+      and(
+        eq(organizationSubscriptions.organizationId, organizationId),
+        eq(organizationSubscriptions.status, "active")
+      )
+    )
+    .orderBy(desc(organizationSubscriptions.createdAt))
+    .limit(1);
+
+  if (!subscription) return null;
+
+  const cycleEnd = new Date(subscription.billingCycleEnd);
+  if (cycleEnd > now) {
+    // Cycle still active — no transition needed
+    return subscription;
+  }
+
+  // ─── Billing cycle has ended ──────────────────────────────────────────
+
+  if (subscription.scheduledPlanId) {
+    // ─── ACTIVATE SCHEDULED UPGRADE ─────────────────────────────────
+    const [newPlan] = await db
+      .select()
+      .from(subscriptionPlans)
+      .where(eq(subscriptionPlans.id, subscription.scheduledPlanId));
+
+    if (newPlan) {
+      // Expire current subscription (keeping its usage history intact)
+      await db
+        .update(organizationSubscriptions)
+        .set({
+          status: "expired",
+          scheduledPlanId: null,
+          scheduledPaymentId: null,
+          scheduledAt: null,
+          updatedAt: now,
+        })
+        .where(eq(organizationSubscriptions.id, subscription.id));
+
+      // New billing cycle: starts now, ends in 1 month
+      const newCycleEnd = new Date(now);
+      newCycleEnd.setMonth(newCycleEnd.getMonth() + 1);
+
+      // Count current users
+      const orgUsers = await db
+        .select({ count: count() })
+        .from(users)
+        .where(eq(users.organizationId, organizationId));
+
+      // Create new subscription with upgraded plan
+      const [newSub] = await db
+        .insert(organizationSubscriptions)
+        .values({
+          organizationId,
+          planId: newPlan.id,
+          status: "active",
+          billingCycleStart: now,
+          billingCycleEnd: newCycleEnd,
+          usedUsers: orgUsers[0]?.count || 0,
+          outstandingAmount: 0,
+        })
+        .returning();
+
+      // Update org planType
+      await db
+        .update(organizations)
+        .set({
+          planType: newPlan.name,
+          maxUsers: newPlan.maxUsers,
+          maxFlows: newPlan.maxFlows,
+          updatedAt: now,
+        })
+        .where(eq(organizations.id, organizationId));
+
+      console.log(
+        `[Billing] Scheduled upgrade activated: org=${organizationId} plan=${newPlan.name} ` +
+        `newCycle=${now.toISOString()} → ${newCycleEnd.toISOString()}`
+      );
+
+      return newSub;
+    }
+  }
+
+  // No scheduled upgrade — mark current subscription as expired
+  await db
+    .update(organizationSubscriptions)
+    .set({ status: "expired", updatedAt: now })
+    .where(eq(organizationSubscriptions.id, subscription.id));
+
+  console.log(`[Billing] Subscription expired: org=${organizationId} sub=${subscription.id}`);
+  return null;
 }
 
 export function registerBillingRoutes(
@@ -404,10 +590,19 @@ export function registerBillingRoutes(
           return res.status(400).json({ message: "No organization found" });
         }
 
+        // Run billing cycle transition (activates scheduled upgrades if cycle ended)
+        await processBillingCycleTransition(user.organizationId);
+
+        // Re-fetch the (possibly updated) active subscription
         const [subscription] = await db
           .select()
           .from(organizationSubscriptions)
-          .where(eq(organizationSubscriptions.organizationId, user.organizationId))
+          .where(
+            and(
+              eq(organizationSubscriptions.organizationId, user.organizationId),
+              eq(organizationSubscriptions.status, "active")
+            )
+          )
           .orderBy(desc(organizationSubscriptions.createdAt))
           .limit(1);
 
@@ -443,6 +638,22 @@ export function registerBillingRoutes(
           users: plan ? (subscription.usedUsers || 0) >= plan.maxUsers : false,
         };
 
+        // Fetch scheduled upgrade plan info (if any)
+        let scheduledUpgrade = null;
+        if (subscription.scheduledPlanId) {
+          const [scheduledPlan] = await db
+            .select()
+            .from(subscriptionPlans)
+            .where(eq(subscriptionPlans.id, subscription.scheduledPlanId));
+          if (scheduledPlan) {
+            scheduledUpgrade = {
+              plan: scheduledPlan,
+              scheduledAt: subscription.scheduledAt,
+              activatesAt: subscription.billingCycleEnd, // new plan starts after current cycle
+            };
+          }
+        }
+
         res.json({
           subscription,
           plan,
@@ -463,6 +674,7 @@ export function registerBillingRoutes(
           isExpired,
           isTrialExpired,
           outstandingAmount: subscription.outstandingAmount || 0,
+          scheduledUpgrade,
         });
       } catch (error) {
         console.error("[Billing] Error fetching subscription:", error);
@@ -566,9 +778,9 @@ export function registerBillingRoutes(
           return res.json({ subscription, message: "Free trial activated!" });
         }
 
-        // For paid plans - check outstanding first, then initiate payment
+        // For paid plans - calculate outstanding (included in combined payment, does not block upgrade)
+        let outstandingAmount = 0;
         if (existing) {
-          // Calculate outstanding from current subscription
           const [currentPlan] = await db
             .select()
             .from(subscriptionPlans)
@@ -576,26 +788,29 @@ export function registerBillingRoutes(
           
           if (currentPlan) {
             const { totalExtra } = calculateExtraUsage(existing, currentPlan);
-            const outstanding = (existing.outstandingAmount || 0) + totalExtra;
-            
-            if (outstanding > 0) {
-              return res.status(402).json({
-                message: "Please pay outstanding amount before upgrading",
-                outstandingAmount: outstanding,
-                requiresPayment: true,
-                paymentType: "outstanding",
-              });
-            }
+            outstandingAmount = (existing.outstandingAmount || 0) + totalExtra;
+          }
+
+          // Check if there's already a scheduled upgrade
+          if (existing.scheduledPlanId) {
+            return res.status(400).json({
+              message: "You already have a scheduled upgrade. Cancel it first to choose a different plan.",
+            });
           }
         }
 
         // For paid plans, return payment initiation data
+        // Current plan stays active → new plan starts after current cycle ends
         // Payment will happen through /api/billing/initiate-payment
         res.json({
           plan,
           requiresPayment: true,
-          paymentType: existing ? "upgrade" : "subscription",
-          amount: plan.priceMonthly,
+          paymentType: existing && outstandingAmount > 0 ? "combined" : existing ? "subscription" : "subscription",
+          amount: plan.priceMonthly + outstandingAmount,
+          planAmount: plan.priceMonthly,
+          outstandingAmount,
+          isUpgrade: !!existing,
+          activatesAt: existing ? existing.billingCycleEnd : null, // deferred activation date
         });
       } catch (error) {
         console.error("[Billing] Error subscribing:", error);
@@ -714,17 +929,28 @@ export function registerBillingRoutes(
           .from(organizations)
           .where(eq(organizations.id, user.organizationId));
 
-        const productInfo = targetPlan
+        const rawProductInfo = targetPlan
           ? `ProcessSutra ${targetPlan.displayName}${outstandingToPay > 0 ? " + Outstanding" : ""}`
           : "ProcessSutra Outstanding Payment";
+        // PayU productinfo: strip non-ASCII and pipe chars to prevent hash issues
+        const productInfo = rawProductInfo.replace(/[^a-zA-Z0-9 _.+\-]/g, "").trim() || "ProcessSutra Plan";
+
+        // Ensure required PayU fields are never empty
+        const firstname = (user.firstName || org?.name || "User").trim() || "User";
+        const email = (user.email || "").trim();
+        const phone = (org?.phone || "9999999999").trim(); // PayU requires phone; fallback to placeholder
+
+        if (!email) {
+          return res.status(400).json({ message: "User email is required for payment" });
+        }
 
         // Generate PayU hash
         const hash = generatePayUHash({
           txnid: txnId,
           amount: amount.toFixed(2),
           productinfo: productInfo,
-          firstname: user.firstName || org?.name || "User",
-          email: user.email || "",
+          firstname,
+          email,
         });
 
         // Build PayU form data
@@ -738,14 +964,21 @@ export function registerBillingRoutes(
           txnid: txnId,
           amount: amount.toFixed(2),
           productinfo: productInfo,
-          firstname: user.firstName || org?.name || "User",
-          email: user.email || "",
-          phone: org?.phone || "",
+          firstname,
+          email,
+          phone,
           surl: `${baseUrl}/api/billing/payment-callback`,
           furl: `${baseUrl}/api/billing/payment-callback`,
           hash,
-          service_provider: "payu_paisa",
+          // Explicitly send UDF fields even when empty — PayU official SDK requires them
+          udf1: "",
+          udf2: "",
+          udf3: "",
+          udf4: "",
+          udf5: "",
         };
+
+        console.log(`[Billing] Payment initiated: txn=${txnId} amount=₹${amount} plan=${targetPlan?.name || "outstanding"} payuUrl=${PAYU_BASE_URL} surl=${payuData.surl}`);
 
         res.json({
           transaction,
@@ -817,9 +1050,27 @@ export function registerBillingRoutes(
 
       const hashValid = receivedHash === expectedHash;
       if (!hashValid) {
-        console.warn(`[Billing] Hash mismatch for txn ${txnid} (will still process in test mode)`);
+        console.warn(`[Billing] Hash mismatch for txn ${txnid}`);
         console.warn(`[Billing]   received: ${(receivedHash || "").substring(0, 32)}...`);
         console.warn(`[Billing]   expected: ${expectedHash.substring(0, 32)}...`);
+
+        // SECURITY: In production, reject forged callbacks
+        const isTestMode = PAYU_BASE_URL.includes("test.payu.in");
+        if (!isTestMode) {
+          console.error(`[Billing] REJECTING payment callback with invalid hash for txn ${txnid} in production`);
+          await db
+            .update(paymentTransactions)
+            .set({
+              status: "failed",
+              errorMessage: "Payment callback hash verification failed — possible forgery",
+              payuResponse: req.body,
+              updatedAt: new Date(),
+            })
+            .where(eq(paymentTransactions.id, transaction.id));
+          return res.redirect(`/billing?payment=failed&reason=${encodeURIComponent("Payment verification failed")}`);
+        }
+        // In test mode, log warning and continue processing
+        console.warn(`[Billing] Allowing hash mismatch in PayU TEST mode for txn ${txnid}`);
       }
 
       // Store PayU response regardless
@@ -1128,11 +1379,13 @@ export function registerBillingRoutes(
 
   // ═══════════════════════════════════════════════════════════════════════
   //  POST /api/billing/track-usage - Track a billable action (internal use)
+  //  Requires admin role to prevent abuse by regular users
   // ═══════════════════════════════════════════════════════════════════════
   app.post(
     "/api/billing/track-usage",
     isAuthenticated,
     addUserToRequest,
+    requireAdmin,
     async (req: any, res: Response) => {
       try {
         const user = req.currentUser;
@@ -1183,6 +1436,129 @@ export function registerBillingRoutes(
     }
   );
 
+  // ═══════════════════════════════════════════════════════════════════════
+  //  POST /api/billing/cancel-upgrade - Cancel a scheduled (deferred) upgrade
+  // ═══════════════════════════════════════════════════════════════════════
+  app.post(
+    "/api/billing/cancel-upgrade",
+    isAuthenticated,
+    addUserToRequest,
+    requireAdmin,
+    async (req: any, res: Response) => {
+      try {
+        const user = req.currentUser;
+        if (!user?.organizationId) {
+          return res.status(400).json({ message: "No organization found" });
+        }
+
+        const [subscription] = await db
+          .select()
+          .from(organizationSubscriptions)
+          .where(
+            and(
+              eq(organizationSubscriptions.organizationId, user.organizationId),
+              eq(organizationSubscriptions.status, "active")
+            )
+          )
+          .orderBy(desc(organizationSubscriptions.createdAt))
+          .limit(1);
+
+        if (!subscription || !subscription.scheduledPlanId) {
+          return res.status(400).json({ message: "No scheduled upgrade to cancel" });
+        }
+
+        // Clear the scheduled upgrade
+        await db
+          .update(organizationSubscriptions)
+          .set({
+            scheduledPlanId: null,
+            scheduledPaymentId: null,
+            scheduledAt: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(organizationSubscriptions.id, subscription.id));
+
+        // Note: The payment was already collected. A refund would need to be
+        // handled separately (manual or via PayU refund API). We mark the
+        // transaction for refund review.
+        if (subscription.scheduledPaymentId) {
+          await db
+            .update(paymentTransactions)
+            .set({
+              status: "refund_pending",
+              errorMessage: "Scheduled upgrade cancelled by admin",
+              updatedAt: new Date(),
+            })
+            .where(eq(paymentTransactions.txnId, subscription.scheduledPaymentId));
+        }
+
+        console.log(`[Billing] Scheduled upgrade cancelled: org=${user.organizationId}`);
+        res.json({ message: "Scheduled upgrade cancelled. Refund will be processed." });
+      } catch (error) {
+        console.error("[Billing] Error cancelling upgrade:", error);
+        res.status(500).json({ message: "Failed to cancel scheduled upgrade" });
+      }
+    }
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  POST /api/billing/process-transitions - Process all billing cycle transitions (cron-friendly)
+  //  Protected by internal API key or super admin auth
+  // ═══════════════════════════════════════════════════════════════════════
+  app.post(
+    "/api/billing/process-transitions",
+    async (_req: Request, res: Response) => {
+      // SECURITY: Require an internal API key or authenticated super admin session
+      const authHeader = _req.headers["x-internal-api-key"];
+      const internalKey = process.env.INTERNAL_API_KEY;
+      const sessionUser = (_req.session as any)?.user;
+
+      let authorizedViaSuperAdmin = false;
+      if (sessionUser?.id) {
+        try {
+          const u = await storage.getUser(sessionUser.id);
+          if (u?.isSuperAdmin) authorizedViaSuperAdmin = true;
+        } catch {}
+      }
+
+      if (!authorizedViaSuperAdmin) {
+        if (!internalKey || authHeader !== internalKey) {
+          console.warn("[Billing] Unauthorized process-transitions attempt");
+          return res.status(401).json({ message: "Unauthorized. Provide valid X-Internal-API-Key header or super admin session." });
+        }
+      }
+      try {
+        // Find all active subscriptions whose billing cycle has ended
+        const now = new Date();
+        const expiredSubs = await db
+          .select({ organizationId: organizationSubscriptions.organizationId })
+          .from(organizationSubscriptions)
+          .where(
+            and(
+              eq(organizationSubscriptions.status, "active"),
+              sql`${organizationSubscriptions.billingCycleEnd} <= ${now}`
+            )
+          );
+
+        let processed = 0;
+        for (const sub of expiredSubs) {
+          try {
+            await processBillingCycleTransition(sub.organizationId);
+            processed++;
+          } catch (err) {
+            console.error(`[Billing] Transition error for org=${sub.organizationId}:`, err);
+          }
+        }
+
+        console.log(`[Billing] Processed ${processed}/${expiredSubs.length} billing cycle transitions`);
+        res.json({ processed, total: expiredSubs.length });
+      } catch (error) {
+        console.error("[Billing] Error processing transitions:", error);
+        res.status(500).json({ message: "Failed to process transitions" });
+      }
+    }
+  );
+
   console.log("[Billing] Routes registered");
 }
 
@@ -1197,6 +1573,9 @@ export async function trackUsage(
   actionId?: string
 ): Promise<{ allowed: boolean; withinLimit: boolean; message?: string }> {
   try {
+    // Process any pending billing cycle transitions first
+    await processBillingCycleTransition(organizationId);
+
     // Get active subscription
     const [subscription] = await db
       .select()
@@ -1235,7 +1614,6 @@ export async function trackUsage(
     }
 
     let withinLimit = true;
-    let updateField: string = "";
 
     // Check and increment usage
     if (actionType === "flow_execution") {
@@ -1322,6 +1700,9 @@ export async function checkLimit(
   message?: string;
 }> {
   try {
+    // Process any pending billing cycle transitions first
+    await processBillingCycleTransition(organizationId);
+
     const [subscription] = await db
       .select()
       .from(organizationSubscriptions)

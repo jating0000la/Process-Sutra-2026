@@ -34,6 +34,7 @@ import QuickFormResponses from "@/pages/quick-form-responses";
 import ReportBuilder from "@/pages/report-builder";
 import AIAssistant from "@/pages/ai-assistant";
 import Billing from "@/pages/billing";
+import SuperAdminBilling from "@/pages/super-admin-billing";
 import { useEffect } from "react";
 import { useOrganizationCheck } from "@/hooks/useOrganizationCheck";
 import { useGoogleDriveCheck } from "@/hooks/useGoogleDriveCheck";
@@ -180,6 +181,7 @@ function Router() {
 
           {/* Billing & Subscription */}
           <Route path="/billing" component={Billing} />
+          <Route path="/super-admin-billing" component={SuperAdminBilling} />
         </>
       )}
     </Switch>

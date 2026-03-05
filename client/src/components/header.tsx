@@ -23,6 +23,8 @@ import {
   Database,
   Activity,
   Shield,
+  CreditCard,
+  ShieldCheck,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { NotificationDropdown } from "@/components/notification-dropdown";
@@ -41,6 +43,7 @@ export default function Header({ title, description, actions }: HeaderProps) {
   const { toggleSidebar, sidebarOpen } = useLayout();
 
   const isAdmin = dbUser?.role === 'admin';
+  const isSuperAdmin = dbUser?.isSuperAdmin === true;
 
   const handleLogout = async () => {
     // Logout function now handles redirect automatically
@@ -174,6 +177,19 @@ export default function Header({ title, description, actions }: HeaderProps) {
                         <Shield className="mr-2 h-4 w-4" />
                         NDA & Security
                       </DropdownMenuItem>
+
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel>Billing & Subscription</DropdownMenuLabel>
+                      <DropdownMenuItem onSelect={() => setLocation("/billing")}>
+                        <CreditCard className="mr-2 h-4 w-4" />
+                        Billing & Plans
+                      </DropdownMenuItem>
+                      {isSuperAdmin && (
+                        <DropdownMenuItem onSelect={() => setLocation("/super-admin-billing")}>
+                          <ShieldCheck className="mr-2 h-4 w-4" />
+                          Billing Management
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
                 )}
