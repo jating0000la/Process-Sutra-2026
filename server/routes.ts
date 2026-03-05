@@ -33,6 +33,7 @@ import * as crypto from 'crypto';
 import { sanitizeFlowRule, sanitizeFlowRules } from './inputSanitizer.js';
 import archiver from 'archiver';
 import { registerSuperAdminRoutes } from './superAdminRoutes.js';
+import { registerBillingRoutes, trackUsage, checkLimit } from './billingRoutes.js';
 import { createQuickFormResponse, getQuickFormResponsesCollection, getQuickFormTemplatesCollection } from './mongo/quickFormClient.js';
 
 
@@ -273,6 +274,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // AI Assistant API — authenticated admin-only routes
   app.use('/api/ai-assistant', isAuthenticated, requireAdmin, addUserToRequest, aiAssistantRouter);
+
+  // Billing & Subscription API
+  registerBillingRoutes(app, { isAuthenticated, requireAdmin, addUserToRequest });
 
   // Flow Rules API (Organization-specific, Admin only)
   app.get("/api/flow-rules", isAuthenticated, addUserToRequest, async (req: any, res) => {
@@ -994,6 +998,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!description) {
         return res.status(400).json({ message: "Flow description is required" });
       }
+
+      // Check billing limits before starting flow
+      const limitCheck = await checkLimit(user.organizationId, "flow_execution");
+      if (!limitCheck.allowed) {
+        return res.status(403).json({
+          message: limitCheck.message || "You have reached the free usage limit. Upgrade your plan to continue using ProcessSutra workflows.",
+          limitExceeded: true,
+          planName: limitCheck.planName,
+          used: limitCheck.used,
+          limit: limitCheck.limit,
+        });
+      }
       
       // Find the starting rule (currentTask is empty) - organization-specific
       const flowRules = await storage.getFlowRulesByOrganization(user.organizationId, system);
@@ -1109,6 +1125,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         initiatedAt: flowStartTime.toISOString(),
         message: "Flow started successfully"
       });
+
+      // Track billing usage (non-blocking, after response)
+      trackUsage(user.organizationId, "flow_execution", flowId).catch(err =>
+        console.error('[Billing] Error tracking flow usage:', err)
+      );
     } catch (error) {
       console.error("Error starting flow:", error);
       res.status(500).json({ message: "Failed to start flow" });
@@ -2936,6 +2957,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/users", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
       const currentUser = req.currentUser;
+
+      // Check billing limits before adding user
+      const limitCheck = await checkLimit(currentUser.organizationId, "user_added");
+      if (!limitCheck.allowed) {
+        return res.status(403).json({
+          message: limitCheck.message || "You have reached the free usage limit. Upgrade your plan to add more users.",
+          limitExceeded: true,
+          planName: limitCheck.planName,
+          used: limitCheck.used,
+          limit: limitCheck.limit,
+        });
+      }
       
       // Check if username already exists
       const existingUser = await storage.getUserByUsername(req.body.username);
@@ -2956,6 +2989,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         organizationId: currentUser.organizationId
       };
       const user = await storage.createUser(userData);
+
+      // Track billing usage (non-blocking)
+      trackUsage(currentUser.organizationId, "user_added", user.id).catch(err =>
+        console.error('[Billing] Error tracking user addition:', err)
+      );
+
       res.status(201).json(user);
     } catch (error) {
       console.error("Error creating user:", error);

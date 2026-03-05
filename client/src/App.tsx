@@ -33,6 +33,7 @@ import QuickFormFill from "@/pages/quick-form-fill";
 import QuickFormResponses from "@/pages/quick-form-responses";
 import ReportBuilder from "@/pages/report-builder";
 import AIAssistant from "@/pages/ai-assistant";
+import Billing from "@/pages/billing";
 import { useEffect } from "react";
 import { useOrganizationCheck } from "@/hooks/useOrganizationCheck";
 import { useGoogleDriveCheck } from "@/hooks/useGoogleDriveCheck";
@@ -176,6 +177,9 @@ function Router() {
               <AIAssistant />
             </ProtectedRoute>
           </Route>
+
+          {/* Billing & Subscription */}
+          <Route path="/billing" component={Billing} />
         </>
       )}
     </Switch>

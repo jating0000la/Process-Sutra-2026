@@ -19,6 +19,7 @@ import {
   Shield,
   PieChart,
   Bot,
+  CreditCard,
 } from "lucide-react";
 
 // All navigation items in the correct order
@@ -98,6 +99,15 @@ const allNavigationItems = [
     badge: null,
     adminOnly: true,
     section: "analytics",
+  },
+  // Billing section — visible to all users
+  {
+    name: "Billing",
+    href: "/billing",
+    icon: CreditCard,
+    badge: null,
+    adminOnly: false,
+    section: "settings",
   },
   // Super Admin section — only visible to super admins (filtered below)
   {

@@ -707,3 +707,196 @@ export const insertApiKeySchema = createInsertSchema(apiKeys).omit({
 
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
+
+// ============================================
+// BILLING & SUBSCRIPTION TABLES
+// ============================================
+
+// Subscription Plans - defines available plans
+export const subscriptionPlans = pgTable(
+  "subscription_plans",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    name: varchar("name").notNull(), // free_trial, starter, growth, business
+    displayName: varchar("display_name").notNull(), // "Free Trial", "Starter Plan", etc.
+    priceMonthly: integer("price_monthly").notNull().default(0), // in INR (paise would be too granular)
+    maxUsers: integer("max_users").notNull().default(3),
+    maxFlows: integer("max_flows").notNull().default(10),
+    maxFormSubmissions: integer("max_form_submissions").notNull().default(25),
+    extraFlowCost: integer("extra_flow_cost").default(5), // ₹5 per extra flow
+    extraSubmissionCost: integer("extra_submission_cost").default(2), // ₹2 per extra submission
+    extraUserCost: integer("extra_user_cost").default(100), // ₹100 per extra user
+    trialDurationDays: integer("trial_duration_days"), // null for paid plans, 14 or 30 for free
+    isActive: boolean("is_active").default(true),
+    sortOrder: integer("sort_order").default(0),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_subscription_plans_name").on(table.name),
+    index("idx_subscription_plans_active").on(table.isActive),
+  ]
+);
+
+// Organization Subscriptions - tracks which plan each org is on
+export const organizationSubscriptions = pgTable(
+  "organization_subscriptions",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    planId: varchar("plan_id").notNull().references(() => subscriptionPlans.id),
+    status: varchar("status").notNull().default("active"), // active, expired, cancelled, suspended, pending_payment
+    billingCycleStart: timestamp("billing_cycle_start").notNull(),
+    billingCycleEnd: timestamp("billing_cycle_end").notNull(),
+    trialEndsAt: timestamp("trial_ends_at"), // set for free trial
+    // Usage counters for current billing cycle
+    usedFlows: integer("used_flows").default(0),
+    usedFormSubmissions: integer("used_form_submissions").default(0),
+    usedUsers: integer("used_users").default(0),
+    // Outstanding balance from extra usage
+    outstandingAmount: integer("outstanding_amount").default(0), // in INR
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_org_subscriptions_org").on(table.organizationId),
+    index("idx_org_subscriptions_status").on(table.status),
+    index("idx_org_subscriptions_billing_end").on(table.billingCycleEnd),
+    index("idx_org_subscriptions_trial").on(table.trialEndsAt).where(sql`${table.trialEndsAt} IS NOT NULL`),
+  ]
+);
+
+// Payment Transactions - tracks all payments via PayU
+export const paymentTransactions = pgTable(
+  "payment_transactions",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    subscriptionId: varchar("subscription_id").references(() => organizationSubscriptions.id),
+    // PayU fields
+    payuTxnId: varchar("payu_txn_id").unique(), // PayU transaction ID
+    payuMihpayid: varchar("payu_mihpayid"), // PayU's internal ID
+    txnId: varchar("txn_id").notNull().unique(), // Our internal transaction ID
+    amount: integer("amount").notNull(), // in INR
+    // Breakdown
+    planAmount: integer("plan_amount").default(0), // Plan subscription fee
+    outstandingAmount: integer("outstanding_amount_paid").default(0), // Outstanding amount being paid
+    extraUsageAmount: integer("extra_usage_amount").default(0), // Extra usage charges
+    // Status
+    status: varchar("status").notNull().default("pending"), // pending, success, failed, refunded
+    paymentMode: varchar("payment_mode"), // CC, DC, NB, UPI, WALLET
+    // PayU callback data
+    payuResponse: jsonb("payu_response"), // Full PayU callback response
+    errorMessage: text("error_message"),
+    // Payment purpose
+    paymentType: varchar("payment_type").notNull().default("subscription"), // subscription, outstanding, combined
+    // Metadata
+    initiatedBy: varchar("initiated_by").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_payment_txn_org").on(table.organizationId),
+    index("idx_payment_txn_status").on(table.status),
+    index("idx_payment_txn_payu").on(table.payuTxnId),
+    index("idx_payment_txn_id").on(table.txnId),
+    index("idx_payment_txn_sub").on(table.subscriptionId),
+  ]
+);
+
+// Usage Logs - detailed log of every billable action
+export const usageLogs = pgTable(
+  "usage_logs",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    subscriptionId: varchar("subscription_id").references(() => organizationSubscriptions.id),
+    actionType: varchar("action_type").notNull(), // flow_execution, form_submission, user_added
+    actionId: varchar("action_id"), // ID of the flow/form/user
+    isWithinLimit: boolean("is_within_limit").default(true), // whether this counted against plan limit or overage
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_usage_logs_org").on(table.organizationId, table.createdAt),
+    index("idx_usage_logs_sub").on(table.subscriptionId, table.actionType),
+    index("idx_usage_logs_type").on(table.actionType, table.createdAt),
+  ]
+);
+
+// Relations for billing tables
+export const subscriptionPlansRelations = relations(subscriptionPlans, ({ many }) => ({
+  subscriptions: many(organizationSubscriptions),
+}));
+
+export const organizationSubscriptionsRelations = relations(organizationSubscriptions, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [organizationSubscriptions.organizationId],
+    references: [organizations.id],
+  }),
+  plan: one(subscriptionPlans, {
+    fields: [organizationSubscriptions.planId],
+    references: [subscriptionPlans.id],
+  }),
+  payments: many(paymentTransactions),
+  usageLogs: many(usageLogs),
+}));
+
+export const paymentTransactionsRelations = relations(paymentTransactions, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [paymentTransactions.organizationId],
+    references: [organizations.id],
+  }),
+  subscription: one(organizationSubscriptions, {
+    fields: [paymentTransactions.subscriptionId],
+    references: [organizationSubscriptions.id],
+  }),
+  initiator: one(users, {
+    fields: [paymentTransactions.initiatedBy],
+    references: [users.id],
+  }),
+}));
+
+export const usageLogsRelations = relations(usageLogs, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [usageLogs.organizationId],
+    references: [organizations.id],
+  }),
+  subscription: one(organizationSubscriptions, {
+    fields: [usageLogs.subscriptionId],
+    references: [organizationSubscriptions.id],
+  }),
+}));
+
+// Insert schemas for billing
+export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertOrganizationSubscriptionSchema = createInsertSchema(organizationSubscriptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertPaymentTransactionSchema = createInsertSchema(paymentTransactions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertUsageLogSchema = createInsertSchema(usageLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Types for billing
+export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
+export type InsertSubscriptionPlan = z.infer<typeof insertSubscriptionPlanSchema>;
+export type OrganizationSubscription = typeof organizationSubscriptions.$inferSelect;
+export type InsertOrganizationSubscription = z.infer<typeof insertOrganizationSubscriptionSchema>;
+export type PaymentTransaction = typeof paymentTransactions.$inferSelect;
+export type InsertPaymentTransaction = z.infer<typeof insertPaymentTransactionSchema>;
+export type UsageLog = typeof usageLogs.$inferSelect;
+export type InsertUsageLog = z.infer<typeof insertUsageLogSchema>;

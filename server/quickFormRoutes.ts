@@ -25,6 +25,7 @@ import {
   getQuickFormResponsesByFlowTasks,
 } from "./mongo/quickFormClient.js";
 import { fireWebhooksForEvent } from "./webhookUtils.js";
+import { trackUsage, checkLimit } from "./billingRoutes.js";
 
 // Rate limiter for form submissions: 20 per minute per user
 const submitLimiter = rateLimit({
@@ -257,6 +258,18 @@ router.post("/responses", submitLimiter, async (req: any, res) => {
     const userId = req.currentUser?.email || req.session?.user?.id;
     if (!orgId) return res.status(400).json({ message: "Organization not found" });
 
+    // Check billing limits before accepting submission
+    const limitCheck = await checkLimit(orgId, "form_submission");
+    if (!limitCheck.allowed) {
+      return res.status(403).json({
+        message: limitCheck.message || "You have reached the free usage limit. Upgrade your plan to continue using ProcessSutra workflows.",
+        limitExceeded: true,
+        planName: limitCheck.planName,
+        used: limitCheck.used,
+        limit: limitCheck.limit,
+      });
+    }
+
     const { formId, data, flowId, taskId, taskName } = req.body;
     if (!formId || !data || typeof data !== "object") {
       return res.status(400).json({ message: "formId and data object are required" });
@@ -314,6 +327,11 @@ router.post("/responses", submitLimiter, async (req: any, res) => {
     });
 
     res.status(201).json(response);
+
+    // Track billing usage (non-blocking, after response)
+    trackUsage(orgId, "form_submission", formId).catch(err =>
+      console.error('[Billing] Error tracking form submission usage:', err)
+    );
   } catch (err: any) {
     console.error("[quick-forms] submit error:", err);
     res.status(500).json({ message: "Failed to submit form response" });
