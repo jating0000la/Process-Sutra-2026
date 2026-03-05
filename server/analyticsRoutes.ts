@@ -511,6 +511,52 @@ export function registerAnalyticsRoutes(
         })
         .sort((a, b) => b.avgCycleHours - a.avgCycleHours);
 
+      // 4b. Per-flow bottleneck analysis — group by (system, taskName)
+      const flowTaskGroups: Record<string, Record<string, { count: number; totalCycleHrs: number; overdueCount: number; pendingCount: number; completedCount: number }>> = {};
+      allTasks.forEach(t => {
+        const sys = t.system || 'Unknown';
+        if (!flowTaskGroups[sys]) flowTaskGroups[sys] = {};
+        if (!flowTaskGroups[sys][t.taskName]) {
+          flowTaskGroups[sys][t.taskName] = { count: 0, totalCycleHrs: 0, overdueCount: 0, pendingCount: 0, completedCount: 0 };
+        }
+        const g = flowTaskGroups[sys][t.taskName];
+        g.count++;
+        if (t.status === 'overdue') g.overdueCount++;
+        if (t.status === 'pending' || t.status === 'in_progress') g.pendingCount++;
+        if (t.status === 'completed') {
+          g.completedCount++;
+          if (t.actualCompletionTime && t.createdAt) {
+            g.totalCycleHrs += (new Date(t.actualCompletionTime).getTime() - new Date(t.createdAt).getTime()) / (1000 * 60 * 60);
+          }
+        }
+      });
+
+      const flowBottlenecks = Object.entries(flowTaskGroups).map(([system, tasks]) => {
+        const taskList = Object.entries(tasks)
+          .map(([taskName, g]) => ({
+            taskName,
+            totalInstances: g.count,
+            avgCycleHours: g.completedCount > 0 ? Math.round((g.totalCycleHrs / g.completedCount) * 10) / 10 : 0,
+            overdueCount: g.overdueCount,
+            pendingCount: g.pendingCount,
+            completionRate: g.count > 0 ? Math.round((g.completedCount / g.count) * 100) : 0,
+          }))
+          .sort((a, b) => b.avgCycleHours - a.avgCycleHours);
+        const systemTotalTasks = Object.values(tasks).reduce((s, g) => s + g.count, 0);
+        const systemCompletedTasks = Object.values(tasks).reduce((s, g) => s + g.completedCount, 0);
+        const systemOverdueTasks = Object.values(tasks).reduce((s, g) => s + g.overdueCount, 0);
+        const systemTotalCycleHrs = Object.values(tasks).reduce((s, g) => s + g.totalCycleHrs, 0);
+        return {
+          system,
+          totalTasks: systemTotalTasks,
+          completedTasks: systemCompletedTasks,
+          overdueTasks: systemOverdueTasks,
+          avgCycleHours: systemCompletedTasks > 0 ? Math.round((systemTotalCycleHrs / systemCompletedTasks) * 10) / 10 : 0,
+          completionRate: systemTotalTasks > 0 ? Math.round((systemCompletedTasks / systemTotalTasks) * 100) : 0,
+          tasks: taskList,
+        };
+      }).sort((a, b) => b.avgCycleHours - a.avgCycleHours);
+
       // 5. Per-system breakdown
       const systemGroups: Record<string, { total: number; completed: number; overdue: number; pending: number; totalCycleHrs: number }> = {};
       allTasks.forEach(t => {
@@ -700,6 +746,7 @@ export function registerAnalyticsRoutes(
           currency: 'INR',
         },
         bottlenecks: bottlenecks.slice(0, 10),
+        flowBottlenecks,
         systemBreakdown,
         flowPerformance: flowPerf,
         doerPerformance: doersPerf,

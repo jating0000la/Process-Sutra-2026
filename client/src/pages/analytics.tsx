@@ -489,11 +489,6 @@ export default function Analytics() {
       </div>`;
 
     // ── Data for charts ──
-    const bottleneckItems = (r.bottlenecks || []).slice(0, 8).map((b: any) => ({
-      label: b.taskName, value: b.avgCycleHours,
-      color: b.avgCycleHours > 48 ? C.red : b.avgCycleHours > 24 ? C.amber : C.emerald
-    }));
-
     const systemChartItems = (r.systemBreakdown || []).slice(0, 8).map((sys: any, i: number) => ({
       label: sys.system, value: sys.totalTasks,
       color: [C.blue, C.violet, C.emerald, C.amber, C.red, C.teal, C.indigo, C.rose][i % 8]
@@ -822,31 +817,79 @@ export default function Analytics() {
     </div>
   </div>
 
-  <!-- ╔══ 8. BOTTLENECK ANALYSIS ══╗ -->
+  <!-- ╔══ 8. BOTTLENECK ANALYSIS — PER FLOW ══╗ -->
   <div style="margin-bottom:36px;">
-    ${sectionHeader(8, 'Bottleneck Analysis', C.amber)}
-    <p style="font-size:14px;color:${C.charcoal};margin:0 0 12px;">Tasks ranked by average cycle time (hours). High cycle time indicates process bottlenecks requiring review. P90 cycle time across all tasks: <strong>${s.p90CycleTimeHours || '-'}h</strong>.</p>
-    ${vBarChart(bottleneckItems.map((b: any) => ({...b, value: b.value})), 160)}
-    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:12px;">
-      <thead><tr style="background:${C.bg};">
-        <th style="${thStyle()}">Task Type</th>
-        <th style="${thStyle('center')}">Instances</th>
-        <th style="${thStyle('center')}">Avg Cycle</th>
-        <th style="${thStyle('center')}">Overdue</th>
-        <th style="${thStyle('center')}">Pending</th>
-        <th style="${thStyle('center')}">Completion</th>
-      </tr></thead>
-      <tbody>${(r.bottlenecks || []).slice(0, 10).map((b: any) => `
-        <tr>
-          <td style="${tdStyle()}font-weight:600;color:${C.darkSlate};">${b.taskName}</td>
-          <td style="${tdStyle('center')}">${b.totalInstances}</td>
-          <td style="${tdStyle('center')}font-weight:700;color:${b.avgCycleHours > 48 ? C.red : b.avgCycleHours > 24 ? C.amber : C.emerald};">${b.avgCycleHours}h</td>
-          <td style="${tdStyle('center')}color:${b.overdueCount > 0 ? C.red : C.slate};">${b.overdueCount}</td>
-          <td style="${tdStyle('center')}">${b.pendingCount}</td>
-          <td style="${tdStyle('center')}font-weight:700;color:${b.completionRate >= 80 ? C.emerald : b.completionRate >= 50 ? C.amber : C.red};">${b.completionRate}%</td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
+    ${sectionHeader(8, 'Bottleneck Analysis — Every Flow', C.amber)}
+    <p style="font-size:14px;color:${C.charcoal};margin:0 0 16px;">Tasks ranked by average cycle time (hours) within each workflow system. High cycle time indicates process bottlenecks requiring review. Overall P90 cycle time: <strong>${s.p90CycleTimeHours || '-'}h</strong>.</p>
+
+    ${(r.flowBottlenecks || []).map((fb: any, fi: number) => {
+      const flowColor = [C.blue, C.violet, C.emerald, C.amber, C.teal, C.indigo, C.rose, C.red][fi % 8];
+      const flowChartItems = (fb.tasks || []).slice(0, 6).map((t: any) => ({
+        label: t.taskName, value: t.avgCycleHours,
+        color: t.avgCycleHours > 48 ? C.red : t.avgCycleHours > 24 ? C.amber : C.emerald
+      }));
+      return `
+      <div style="margin-bottom:24px;border:1.5px solid ${flowColor}25;border-radius:10px;overflow:hidden;">
+        <!-- Flow Header -->
+        <div style="background:linear-gradient(135deg,${flowColor}08,${flowColor}15);padding:14px 20px;border-bottom:1px solid ${flowColor}20;display:flex;justify-content:space-between;align-items:center;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:30px;height:30px;border-radius:6px;background:${flowColor};display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:white;">${fi + 1}</div>
+            <div>
+              <div style="font-size:17px;font-weight:700;color:${C.navy};">${fb.system}</div>
+              <div style="font-size:12px;color:${C.slate};margin-top:1px;">${fb.totalTasks} tasks &bull; ${fb.completedTasks} done &bull; ${fb.overdueTasks} overdue</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:center;">
+            <div style="text-align:center;">
+              <div style="font-size:20px;font-weight:800;color:${fb.completionRate >= 80 ? C.emerald : fb.completionRate >= 50 ? C.amber : C.red};">${fb.completionRate}%</div>
+              <div style="font-size:11px;color:${C.slate};text-transform:uppercase;">Done Rate</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:20px;font-weight:800;color:${fb.avgCycleHours > 48 ? C.red : fb.avgCycleHours > 24 ? C.amber : C.teal};">${fb.avgCycleHours}h</div>
+              <div style="font-size:11px;color:${C.slate};text-transform:uppercase;">Avg Cycle</div>
+            </div>
+          </div>
+        </div>
+        <!-- Flow Tasks Table -->
+        <div style="padding:16px 20px;">
+          ${flowChartItems.length > 1 ? vBarChart(flowChartItems, 120) : ''}
+          <table style="width:100%;border-collapse:collapse;font-size:13px;${flowChartItems.length > 1 ? 'margin-top:12px;' : ''}">
+            <thead><tr style="background:${C.bg};">
+              <th style="${thStyle()}">Task Type</th>
+              <th style="${thStyle('center')}">Instances</th>
+              <th style="${thStyle('center')}">Avg Cycle</th>
+              <th style="${thStyle('center')}">Overdue</th>
+              <th style="${thStyle('center')}">Pending</th>
+              <th style="${thStyle('center')}">Completion</th>
+            </tr></thead>
+            <tbody>${(fb.tasks || []).map((b: any, bi: number) => `
+              <tr style="background:${bi % 2 === 0 ? C.white : C.bg};">
+                <td style="${tdStyle()}font-weight:600;color:${C.darkSlate};">${b.taskName}</td>
+                <td style="${tdStyle('center')}">${b.totalInstances}</td>
+                <td style="${tdStyle('center')}font-weight:700;color:${b.avgCycleHours > 48 ? C.red : b.avgCycleHours > 24 ? C.amber : C.emerald};">${b.avgCycleHours}h</td>
+                <td style="${tdStyle('center')}color:${b.overdueCount > 0 ? C.red : C.slate};">${b.overdueCount}</td>
+                <td style="${tdStyle('center')}">${b.pendingCount}</td>
+                <td style="${tdStyle('center')}font-weight:700;color:${b.completionRate >= 80 ? C.emerald : b.completionRate >= 50 ? C.amber : C.red};">${b.completionRate}%</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+    }).join('')}
+
+    <!-- Overall Bottleneck Summary -->
+    <div style="margin-top:16px;padding:14px 18px;background:linear-gradient(135deg,#FFFBEB,#FEF3C7);border:1px solid #FDE68A;border-radius:8px;">
+      <div style="font-size:12px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Overall Top Bottlenecks (All Flows Combined)</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        ${(r.bottlenecks || []).slice(0, 5).map((b: any) => `
+          <div style="padding:8px 14px;background:white;border:1px solid #FDE68A;border-radius:6px;">
+            <div style="font-size:14px;font-weight:700;color:${b.avgCycleHours > 48 ? C.red : b.avgCycleHours > 24 ? C.amber : C.emerald};">${b.avgCycleHours}h</div>
+            <div style="font-size:12px;color:${C.darkSlate};font-weight:600;">${b.taskName}</div>
+            <div style="font-size:11px;color:${C.slate};">${b.totalInstances} instances &bull; ${b.completionRate}% done</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
   </div>
 
   <!-- ╔══ 9. FLOW & SYSTEM PERFORMANCE ══╗ -->
