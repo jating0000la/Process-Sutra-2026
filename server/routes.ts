@@ -2839,15 +2839,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Access denied. Admin only." });
       }
 
-      const filters = {
-        organizationId: user.organizationId,
-        startDate: req.query.startDate as string,
-        endDate: req.query.endDate as string,
-        doerName: req.query.doerName as string,
-        doerEmail: req.query.doerEmail as string,
-      };
+      const orgId = user.organizationId;
+      // Compute doer performance from actual task data for accuracy
+      const allTasks = await storage.getTasksByOrganization(orgId);
 
-      const doersPerformance = await storage.getOrganizationDoersPerformance(filters);
+      // Apply date & name filters
+      let filtered = allTasks;
+      const startDate = req.query.startDate as string;
+      const endDate = req.query.endDate as string;
+      const doerEmail = req.query.doerEmail as string;
+      const doerName = req.query.doerName as string;
+      if (startDate) {
+        const sd = new Date(startDate);
+        if (!isNaN(sd.getTime())) filtered = filtered.filter(t => new Date(t.plannedTime!) >= sd);
+      }
+      if (endDate) {
+        const ed = new Date(endDate);
+        if (!isNaN(ed.getTime())) filtered = filtered.filter(t => new Date(t.plannedTime!) <= ed);
+      }
+      if (doerEmail) {
+        const q = doerEmail.toLowerCase();
+        filtered = filtered.filter(t => (t.doerEmail || '').toLowerCase().includes(q));
+      }
+      if (doerName) {
+        const q = doerName.toLowerCase();
+        filtered = filtered.filter(t => (t.doerEmail || '').toLowerCase().includes(q));
+      }
+
+      // Group by doerEmail
+      const doerGroups: Record<string, { total: number; completed: number; pending: number; overdue: number; onTime: number; totalTurnHrs: number; completedCount: number; lastTaskDate: Date | null }> = {};
+      filtered.forEach(t => {
+        const email = (t.doerEmail || '').trim();
+        if (!email) return;
+        if (!doerGroups[email]) doerGroups[email] = { total: 0, completed: 0, pending: 0, overdue: 0, onTime: 0, totalTurnHrs: 0, completedCount: 0, lastTaskDate: null };
+        const g = doerGroups[email];
+        g.total++;
+        if (t.status === 'completed') {
+          g.completed++;
+          if (t.actualCompletionTime && t.plannedTime && new Date(t.actualCompletionTime) <= new Date(t.plannedTime)) g.onTime++;
+          if (t.actualCompletionTime && t.createdAt) {
+            g.totalTurnHrs += (new Date(t.actualCompletionTime).getTime() - new Date(t.createdAt).getTime()) / (1000 * 60 * 60);
+            g.completedCount++;
+          }
+        } else if (t.status === 'overdue') {
+          g.overdue++;
+        } else if (t.status === 'pending' || t.status === 'in_progress') {
+          g.pending++;
+        }
+        const td = t.plannedTime ? new Date(t.plannedTime) : null;
+        if (td && (!g.lastTaskDate || td > g.lastTaskDate)) g.lastTaskDate = td;
+      });
+
+      const doersPerformance = Object.entries(doerGroups).map(([email, g]) => ({
+        doerEmail: email,
+        doerName: email,
+        totalTasks: g.total,
+        completedTasks: g.completed,
+        pendingTasks: g.pending,
+        overdueTasks: g.overdue,
+        onTimeTasks: g.onTime,
+        // On-time rate against total tasks (realistic metric)
+        onTimeRate: g.total > 0 ? Math.round((g.onTime / g.total) * 100) : 0,
+        completionRate: g.total > 0 ? Math.round((g.completed / g.total) * 100) : 0,
+        // Avg turnaround time (creation → completion) in days
+        avgCompletionDays: g.completedCount > 0 ? Math.round((g.totalTurnHrs / g.completedCount / 24) * 10) / 10 : 0,
+        lastTaskDate: g.lastTaskDate?.toISOString() || null,
+      })).sort((a, b) => b.totalTasks - a.totalTasks);
+
       res.json(doersPerformance);
     } catch (error) {
       console.error("Error fetching doers performance:", error);

@@ -506,8 +506,8 @@ export default function Analytics() {
 
     const doerChartItems = (r.doerPerformance || []).slice(0, 10).map((d: any) => ({
       label: (d.doerEmail || '').split('@')[0],
-      value: d.onTimeRate || 0,
-      color: (d.onTimeRate || 0) >= 80 ? C.emerald : (d.onTimeRate || 0) >= 50 ? C.amber : C.red
+      value: d.completionRate || 0,
+      color: (d.completionRate || 0) >= 80 ? C.emerald : (d.completionRate || 0) >= 50 ? C.amber : C.red
     }));
 
     const weeklyTrendData = (r.weeklyTrend || []).map((w: any) => w.completed);
@@ -533,8 +533,14 @@ export default function Analytics() {
         <td style="${tdStyle()}font-weight:600;color:${C.darkSlate};">${d.doerEmail}</td>
         <td style="${tdStyle('center')}">${d.totalTasks}</td>
         <td style="${tdStyle('center')}color:${C.emerald};font-weight:600;">${d.completedTasks}</td>
+        <td style="${tdStyle('center')}color:${d.pendingTasks > 0 ? C.amber : C.slate};">${d.pendingTasks || 0}</td>
+        <td style="${tdStyle('center')}color:${d.overdueTasks > 0 ? C.red : C.slate};font-weight:${d.overdueTasks > 0 ? '700' : '400'};">${d.overdueTasks || 0}</td>
         <td style="${tdStyle('center')}"><div style="display:flex;align-items:center;gap:6px;justify-content:center;">
-          <span style="font-weight:700;color:${(d.onTimeRate||0) >= 80 ? C.emerald : (d.onTimeRate||0) >= 50 ? C.amber : C.red};">${d.onTimeRate}%</span>
+          <span style="font-weight:700;color:${(d.completionRate||0) >= 80 ? C.emerald : (d.completionRate||0) >= 50 ? C.amber : C.red};">${d.completionRate || 0}%</span>
+          <div style="width:40px;">${miniBar(d.completionRate || 0, (d.completionRate||0) >= 80 ? C.emerald : (d.completionRate||0) >= 50 ? C.amber : C.red, 4)}</div>
+        </div></td>
+        <td style="${tdStyle('center')}"><div style="display:flex;align-items:center;gap:6px;justify-content:center;">
+          <span style="font-weight:700;color:${(d.onTimeRate||0) >= 80 ? C.emerald : (d.onTimeRate||0) >= 50 ? C.amber : C.red};">${d.onTimeRate || 0}%</span>
           <div style="width:40px;">${miniBar(d.onTimeRate || 0, (d.onTimeRate||0) >= 80 ? C.emerald : (d.onTimeRate||0) >= 50 ? C.amber : C.red, 4)}</div>
         </div></td>
         <td style="${tdStyle('center')}color:${C.teal};">${d.avgCompletionDays?.toFixed(1) || '-'}d</td>
@@ -887,6 +893,7 @@ export default function Analytics() {
   <!-- ╔══ 11. TEAM PERFORMANCE ══╗ -->
   <div style="margin-bottom:36px;">
     ${sectionHeader(11, 'Team Performance Intelligence', C.violet)}
+    <p style="font-size:12px;color:${C.charcoal};margin:0 0 12px;">On-time rate is calculated against <strong>total assigned tasks</strong> (not just completed), giving a realistic view. Avg TAT = average turnaround time from task creation to completion.</p>
     
     <!-- Team Distribution -->
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
@@ -909,18 +916,21 @@ export default function Analytics() {
     </div>
 
     <!-- Doer Chart -->
-    <div style="margin-bottom:16px;">${vBarChart(doerChartItems, 130)}</div>
+    <div style="margin-bottom:16px;"><div style="font-size:11px;color:${C.slate};text-align:center;margin-bottom:6px;">Completion Rate by Member</div>${vBarChart(doerChartItems, 130)}</div>
 
     <!-- Doer Table -->
     <table style="width:100%;border-collapse:collapse;font-size:11px;">
       <thead><tr style="background:${C.bg};">
         <th style="${thStyle()}">Team Member</th>
-        <th style="${thStyle('center')}">Tasks</th>
-        <th style="${thStyle('center')}">Completed</th>
-        <th style="${thStyle('center')}">On-Time Rate</th>
-        <th style="${thStyle('center')}">Avg Time</th>
+        <th style="${thStyle('center')}">Total</th>
+        <th style="${thStyle('center')}">Done</th>
+        <th style="${thStyle('center')}">Pending</th>
+        <th style="${thStyle('center')}">Overdue</th>
+        <th style="${thStyle('center')}">Done %</th>
+        <th style="${thStyle('center')}">On-Time %</th>
+        <th style="${thStyle('center')}">Avg TAT</th>
       </tr></thead>
-      <tbody>${doerRows || `<tr><td colspan="5" style="text-align:center;padding:20px;color:${C.lightSlate};">No team data</td></tr>`}</tbody>
+      <tbody>${doerRows || `<tr><td colspan="8" style="text-align:center;padding:20px;color:${C.lightSlate};">No team data</td></tr>`}</tbody>
     </table>
   </div>
 
@@ -1792,11 +1802,13 @@ export default function Analytics() {
                           <TableHeader>
                             <TableRow className="bg-gradient-to-r from-gray-50 to-purple-50 hover:from-gray-100 hover:to-purple-100">
                               <TableHead className="font-semibold text-gray-700">Doer</TableHead>
-                              <TableHead className="font-semibold text-gray-700">Total Tasks</TableHead>
-                              <TableHead className="font-semibold text-gray-700">Completed</TableHead>
-                              <TableHead className="font-semibold text-gray-700">On-Time Rate</TableHead>
-                              <TableHead className="font-semibold text-gray-700">Avg Days</TableHead>
-                              <TableHead className="font-semibold text-gray-700">Last Task</TableHead>
+                              <TableHead className="font-semibold text-gray-700">Total</TableHead>
+                              <TableHead className="font-semibold text-gray-700">Done</TableHead>
+                              <TableHead className="font-semibold text-gray-700">Pending</TableHead>
+                              <TableHead className="font-semibold text-gray-700">Overdue</TableHead>
+                              <TableHead className="font-semibold text-gray-700">Done %</TableHead>
+                              <TableHead className="font-semibold text-gray-700">On-Time %</TableHead>
+                              <TableHead className="font-semibold text-gray-700">Avg TAT</TableHead>
                               <TableHead className="font-semibold text-gray-700 text-center">Actions</TableHead>
                             </TableRow>
                           </TableHeader>
@@ -1825,20 +1837,33 @@ export default function Analytics() {
                                   </span>
                                 </TableCell>
                                 <TableCell>
+                                  <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full font-medium ${(doer.pendingTasks || 0) > 0 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {doer.pendingTasks || 0}
+                                  </span>
+                                </TableCell>
+                                <TableCell>
+                                  <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full font-medium ${(doer.overdueTasks || 0) > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {doer.overdueTasks || 0}
+                                  </span>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge 
+                                    variant={(doer.completionRate || 0) >= 80 ? "default" : (doer.completionRate || 0) >= 60 ? "secondary" : "destructive"}
+                                    className={(doer.completionRate || 0) >= 80 ? "bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700" : ""}
+                                  >
+                                    {doer.completionRate || 0}%
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
                                   <Badge 
                                     variant={doer.onTimeRate >= 80 ? "default" : doer.onTimeRate >= 60 ? "secondary" : "destructive"}
-                                    className={doer.onTimeRate >= 80 ? "bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700" : ""}
+                                    className={doer.onTimeRate >= 80 ? "bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700" : ""}
                                   >
                                     {doer.onTimeRate}%
                                   </Badge>
                                 </TableCell>
                                 <TableCell>
-                                  <span className="font-semibold text-gray-700">{doer.avgCompletionDays.toFixed(1)}</span>
-                                </TableCell>
-                                <TableCell>
-                                  <span className="text-sm text-gray-600">
-                                    {doer.lastTaskDate ? format(new Date(doer.lastTaskDate), "MMM dd, yyyy") : 'Never'}
-                                  </span>
+                                  <span className="font-semibold text-gray-700">{doer.avgCompletionDays > 0 ? doer.avgCompletionDays.toFixed(1) + 'd' : '-'}</span>
                                 </TableCell>
                                 <TableCell className="text-center">
                                   <Button 

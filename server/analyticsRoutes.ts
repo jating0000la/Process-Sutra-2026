@@ -264,14 +264,12 @@ export function registerAnalyticsRoutes(
       const [
         orgMetrics,
         flowPerf,
-        doersPerf,
         allFlowRules,
         tatConfigData,
         orgData
       ] = await Promise.all([
         storage.getOrganizationTaskMetrics(orgId),
         storage.getOrganizationFlowPerformance(orgId),
-        storage.getOrganizationDoersPerformance({ organizationId: orgId }),
         storage.getFlowRulesByOrganization(orgId),
         storage.getTATConfig(orgId),
         storage.getOrganization(orgId),
@@ -401,6 +399,46 @@ export function registerAnalyticsRoutes(
 
       const healthGrade = getHealthGrade(compositeHealthScore);
 
+      // ═══ DOER PERFORMANCE — Computed from allTasks for accuracy ═══
+      const doerGroups: Record<string, { total: number; completed: number; pending: number; overdue: number; inProgress: number; onTime: number; totalTurnHrs: number; completedCount: number }> = {};
+      allTasks.forEach(t => {
+        const email = (t.doerEmail || '').trim();
+        if (!email) return;
+        if (!doerGroups[email]) doerGroups[email] = { total: 0, completed: 0, pending: 0, overdue: 0, inProgress: 0, onTime: 0, totalTurnHrs: 0, completedCount: 0 };
+        const g = doerGroups[email];
+        g.total++;
+        if (t.status === 'completed') {
+          g.completed++;
+          if (t.actualCompletionTime && t.plannedTime && new Date(t.actualCompletionTime) <= new Date(t.plannedTime)) g.onTime++;
+          if (t.actualCompletionTime && t.createdAt) {
+            g.totalTurnHrs += (new Date(t.actualCompletionTime).getTime() - new Date(t.createdAt).getTime()) / (1000 * 60 * 60);
+            g.completedCount++;
+          }
+        } else if (t.status === 'overdue') {
+          g.overdue++;
+        } else if (t.status === 'in_progress') {
+          g.inProgress++;
+        } else if (t.status === 'pending') {
+          g.pending++;
+        }
+      });
+
+      const doersPerf = Object.entries(doerGroups).map(([email, g]) => ({
+        doerEmail: email,
+        doerName: email,
+        totalTasks: g.total,
+        completedTasks: g.completed,
+        pendingTasks: g.pending + g.inProgress,
+        overdueTasks: g.overdue,
+        onTimeTasks: g.onTime,
+        // On-time rate of TOTAL tasks (not just completed) — gives real picture
+        onTimeRate: g.total > 0 ? Math.round((g.onTime / g.total) * 100) : 0,
+        // Completion rate
+        completionRate: g.total > 0 ? Math.round((g.completed / g.total) * 100) : 0,
+        // Avg turnaround time (creation → completion) in days
+        avgCompletionDays: g.completedCount > 0 ? Math.round((g.totalTurnHrs / g.completedCount / 24) * 10) / 10 : 0,
+      })).sort((a, b) => b.totalTasks - a.totalTasks);
+
       // ═══ RISK MATRIX ═══
       const riskItems: Array<{ risk: string; severity: string; impact: string; mitigation: string; color: string }> = [];
       if (overdueTasks.length > totalTasks * 0.2) riskItems.push({ risk: 'High Overdue Rate', severity: 'Critical', impact: `${overdueTasks.length} tasks overdue (${Math.round((overdueTasks.length / Math.max(totalTasks, 1)) * 100)}%)`, mitigation: 'Immediate task prioritization, escalation to managers, consider deadline extensions', color: '#DC2626' });
@@ -419,12 +457,12 @@ export function registerAnalyticsRoutes(
         return groups;
       })()).filter(([_, g]) => g.count > 2 && (g.totalCycleHrs / Math.max(g.count, 1)) > 48);
       if (highCycleBottlenecks.length > 0) riskItems.push({ risk: 'Process Bottlenecks', severity: 'Medium', impact: `${highCycleBottlenecks.length} task types with >48hr avg cycle time`, mitigation: 'Review and optimize slow processes, consider automation or parallel execution', color: '#D97706' });
-      if ((doersPerf || []).some((d: any) => d.onTimeRate < 30)) riskItems.push({ risk: 'Team Capability Gap', severity: 'Medium', impact: 'One or more team members with <30% on-time rate', mitigation: 'Targeted training, mentoring, or workload redistribution', color: '#D97706' });
+      if (doersPerf.some(d => d.onTimeRate < 30)) riskItems.push({ risk: 'Team Capability Gap', severity: 'Medium', impact: 'One or more team members with <30% on-time rate', mitigation: 'Targeted training, mentoring, or workload redistribution', color: '#D97706' });
       if (cancelledTasks.length > totalTasks * 0.1) riskItems.push({ risk: 'High Cancellation Rate', severity: 'Low', impact: `${cancelledTasks.length} tasks cancelled (${Math.round((cancelledTasks.length / Math.max(totalTasks, 1)) * 100)}%)`, mitigation: 'Review task creation process, improve requirement clarity', color: '#6366F1' });
       if (riskItems.length === 0) riskItems.push({ risk: 'No Critical Risks Detected', severity: 'Info', impact: 'Operations are running within acceptable thresholds', mitigation: 'Continue monitoring, focus on continuous improvement', color: '#059669' });
 
       // ═══ CAPACITY UTILIZATION ═══
-      const totalTeamMembers = new Set(allTasks.map(t => t.doerEmail)).size;
+      const totalTeamMembers = new Set(allTasks.filter(t => (t.doerEmail || '').trim()).map(t => t.doerEmail)).size;
       const tasksPerPerson = totalTeamMembers > 0 ? Math.round((totalTasks / totalTeamMembers) * 10) / 10 : 0;
       const completedPerPerson = totalTeamMembers > 0 ? Math.round((completedTasks.length / totalTeamMembers) * 10) / 10 : 0;
       const overallUtilization = totalTeamMembers > 0 ? Math.min(100, Math.round(((completedTasks.length + inProgressTasks.length) / Math.max(totalTasks, 1)) * 100)) : 0;
@@ -534,21 +572,23 @@ export function registerAnalyticsRoutes(
         ((100 - Math.min(100, (overdueTasks.length / Math.max(totalTasks, 1)) * 100)) * 0.15)
       );
 
-      // 8. Doer rankings
-      const topPerformers = [...(doersPerf || [])]
-        .sort((a: any, b: any) => b.onTimeRate - a.onTimeRate)
+      // 8. Doer rankings (use computed doersPerf with real on-time rates)
+      const topPerformers = [...doersPerf]
+        .filter(d => d.completedTasks > 0)
+        .sort((a, b) => b.onTimeRate - a.onTimeRate || b.completedTasks - a.completedTasks)
         .slice(0, 5);
-      const needsAttention = [...(doersPerf || [])]
-        .sort((a: any, b: any) => a.onTimeRate - b.onTimeRate)
+      const needsAttention = [...doersPerf]
+        .filter(d => d.totalTasks > 0)
+        .sort((a, b) => a.onTimeRate - b.onTimeRate || a.completionRate - b.completionRate)
         .slice(0, 5);
 
-      // ═══ DOER HEAT MAP (performance distribution) ═══
+      // ═══ DOER HEAT MAP (performance distribution based on on-time rate) ═══
       const performanceDistribution = {
-        excellent: (doersPerf || []).filter((d: any) => d.onTimeRate >= 80).length,
-        good: (doersPerf || []).filter((d: any) => d.onTimeRate >= 60 && d.onTimeRate < 80).length,
-        average: (doersPerf || []).filter((d: any) => d.onTimeRate >= 40 && d.onTimeRate < 60).length,
-        poor: (doersPerf || []).filter((d: any) => d.onTimeRate < 40).length,
-        total: (doersPerf || []).length,
+        excellent: doersPerf.filter(d => d.onTimeRate >= 80).length,
+        good: doersPerf.filter(d => d.onTimeRate >= 60 && d.onTimeRate < 80).length,
+        average: doersPerf.filter(d => d.onTimeRate >= 40 && d.onTimeRate < 60).length,
+        poor: doersPerf.filter(d => d.onTimeRate < 40).length,
+        total: doersPerf.length,
       };
 
       // 9. Business health status (Patented — Process Sutra)
