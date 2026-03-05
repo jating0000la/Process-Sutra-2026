@@ -251,7 +251,8 @@ export function registerAnalyticsRoutes(
   // ─── Voice of Business — Performance Report Generation (Admin-only) ──
   // Copyright © Process Sutra. Patented.
   // Generates a comprehensive performance report with bottleneck analysis,
-  // throughput, productivity, loss cost, and optional AI-powered insights.
+  // throughput, productivity, loss cost, trend analysis, SLA scoring,
+  // risk matrix, efficiency index, and optional AI-powered insights.
   app.get("/api/analytics/performance-report", analyticsLimiter, isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res: any) => {
     try {
       const user = req.currentUser;
@@ -285,6 +286,7 @@ export function registerAnalyticsRoutes(
       const pendingTasks = allTasks.filter(t => t.status === 'pending' || t.status === 'in_progress');
       const overdueTasks = allTasks.filter(t => t.status === 'overdue');
       const cancelledTasks = allTasks.filter(t => t.status === 'cancelled');
+      const inProgressTasks = allTasks.filter(t => t.status === 'in_progress');
 
       // Completion rate & on-time rate
       const completionRate = totalTasks > 0 ? Math.round((completedTasks.length / totalTasks) * 100) : 0;
@@ -306,11 +308,141 @@ export function registerAnalyticsRoutes(
         .filter(t => t.actualCompletionTime && t.createdAt)
         .map(t => (new Date(t.actualCompletionTime!).getTime() - new Date(t.createdAt!).getTime()) / (1000 * 60 * 60));
       const avgCycleTimeHours = cycleTimes.length > 0 ? cycleTimes.reduce((a, b) => a + b, 0) / cycleTimes.length : 0;
+      const medianCycleTimeHours = cycleTimes.length > 0 ? (() => {
+        const sorted = [...cycleTimes].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+      })() : 0;
+
+      // P90 cycle time (90th percentile)
+      const p90CycleTimeHours = cycleTimes.length > 0 ? (() => {
+        const sorted = [...cycleTimes].sort((a, b) => a - b);
+        const idx = Math.ceil(sorted.length * 0.9) - 1;
+        return sorted[Math.min(idx, sorted.length - 1)];
+      })() : 0;
 
       // Average flow completion time (from flowPerf data)
       const avgFlowCompletionDays = (flowPerf && flowPerf.length > 0)
         ? Math.round((flowPerf.reduce((sum: number, f: any) => sum + (f.avgCompletionTime || 0), 0) / flowPerf.length) * 10) / 10
         : 0;
+
+      // ═══ TREND ANALYSIS — Current half vs previous half ═══
+      const midpointTs = taskDates.length > 1
+        ? Math.min(...taskDates) + (dataSpanMs / 2)
+        : Date.now() - 15 * 24 * 60 * 60 * 1000;
+      const currentPeriodTasks = allTasks.filter(t => new Date(t.createdAt!).getTime() >= midpointTs);
+      const previousPeriodTasks = allTasks.filter(t => new Date(t.createdAt!).getTime() < midpointTs);
+
+      const currentCompleted = currentPeriodTasks.filter(t => t.status === 'completed');
+      const prevCompleted = previousPeriodTasks.filter(t => t.status === 'completed');
+      const currentCompletionRate = currentPeriodTasks.length > 0 ? Math.round((currentCompleted.length / currentPeriodTasks.length) * 100) : 0;
+      const prevCompletionRate = previousPeriodTasks.length > 0 ? Math.round((prevCompleted.length / previousPeriodTasks.length) * 100) : 0;
+
+      const currentOnTime = currentCompleted.filter(t => t.actualCompletionTime && t.plannedTime && new Date(t.actualCompletionTime) <= new Date(t.plannedTime));
+      const prevOnTime = prevCompleted.filter(t => t.actualCompletionTime && t.plannedTime && new Date(t.actualCompletionTime) <= new Date(t.plannedTime));
+      const currentOnTimeRate = currentCompleted.length > 0 ? Math.round((currentOnTime.length / currentCompleted.length) * 100) : 0;
+      const prevOnTimeRate = prevCompleted.length > 0 ? Math.round((prevOnTime.length / prevCompleted.length) * 100) : 0;
+
+      const trendAnalysis = {
+        currentPeriod: { tasks: currentPeriodTasks.length, completed: currentCompleted.length, completionRate: currentCompletionRate, onTimeRate: currentOnTimeRate },
+        previousPeriod: { tasks: previousPeriodTasks.length, completed: prevCompleted.length, completionRate: prevCompletionRate, onTimeRate: prevOnTimeRate },
+        completionRateDelta: currentCompletionRate - prevCompletionRate,
+        onTimeRateDelta: currentOnTimeRate - prevOnTimeRate,
+        volumeDelta: currentPeriodTasks.length - previousPeriodTasks.length,
+        isImproving: (currentCompletionRate - prevCompletionRate) + (currentOnTimeRate - prevOnTimeRate) > 0,
+      };
+
+      // ═══ WEEKLY TREND DATA (last 8 weeks) ═══
+      const weeklyTrend: Array<{ weekLabel: string; tasks: number; completed: number; overdue: number; onTimeRate: number }> = [];
+      const now = new Date();
+      for (let w = 7; w >= 0; w--) {
+        const weekStart = new Date(now);
+        weekStart.setDate(weekStart.getDate() - (w * 7 + 6));
+        weekStart.setHours(0, 0, 0, 0);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        weekEnd.setHours(23, 59, 59, 999);
+        const weekTasks = allTasks.filter(t => {
+          const d = new Date(t.createdAt!).getTime();
+          return d >= weekStart.getTime() && d <= weekEnd.getTime();
+        });
+        const weekCompleted = weekTasks.filter(t => t.status === 'completed');
+        const weekOnTime = weekCompleted.filter(t => t.actualCompletionTime && t.plannedTime && new Date(t.actualCompletionTime) <= new Date(t.plannedTime));
+        const weekOverdue = weekTasks.filter(t => t.status === 'overdue');
+        weeklyTrend.push({
+          weekLabel: `W${8 - w}`,
+          tasks: weekTasks.length,
+          completed: weekCompleted.length,
+          overdue: weekOverdue.length,
+          onTimeRate: weekCompleted.length > 0 ? Math.round((weekOnTime.length / weekCompleted.length) * 100) : 0,
+        });
+      }
+
+      // ═══ SLA SCORING (Composite Business Health Score 0–100) ═══
+      const slaCompletionScore = Math.min(completionRate, 100) * 0.30;
+      const slaOnTimeScore = Math.min(onTimeRate, 100) * 0.30;
+      const slaBottleneckPenalty = overdueTasks.length > 0 ? Math.min(20, (overdueTasks.length / Math.max(totalTasks, 1)) * 100) : 0;
+      const slaEfficiencyBonus = throughputPerDay >= 1 ? Math.min(20, throughputPerDay * 4) : throughputPerDay * 10;
+      const slaTrendBonus = trendAnalysis.isImproving ? 5 : -5;
+      const compositeHealthScore = Math.max(0, Math.min(100, Math.round(
+        slaCompletionScore + slaOnTimeScore + slaEfficiencyBonus - slaBottleneckPenalty + slaTrendBonus + 10
+      )));
+
+      const getHealthGrade = (score: number) => {
+        if (score >= 90) return { grade: 'A+', label: 'World-Class Operations', color: '#059669' };
+        if (score >= 80) return { grade: 'A', label: 'Excellent Operations', color: '#10B981' };
+        if (score >= 70) return { grade: 'B+', label: 'Strong Performance', color: '#3B82F6' };
+        if (score >= 60) return { grade: 'B', label: 'Good — Room for Growth', color: '#6366F1' };
+        if (score >= 50) return { grade: 'C+', label: 'Average — Action Needed', color: '#D97706' };
+        if (score >= 40) return { grade: 'C', label: 'Below Average', color: '#EA580C' };
+        if (score >= 30) return { grade: 'D', label: 'Poor — Urgent Fix Required', color: '#DC2626' };
+        return { grade: 'F', label: 'Critical — Immediate Intervention', color: '#991B1B' };
+      };
+
+      const healthGrade = getHealthGrade(compositeHealthScore);
+
+      // ═══ RISK MATRIX ═══
+      const riskItems: Array<{ risk: string; severity: string; impact: string; mitigation: string; color: string }> = [];
+      if (overdueTasks.length > totalTasks * 0.2) riskItems.push({ risk: 'High Overdue Rate', severity: 'Critical', impact: `${overdueTasks.length} tasks overdue (${Math.round((overdueTasks.length / Math.max(totalTasks, 1)) * 100)}%)`, mitigation: 'Immediate task prioritization, escalation to managers, consider deadline extensions', color: '#DC2626' });
+      if (onTimeRate < 50) riskItems.push({ risk: 'SLA Breach Risk', severity: 'High', impact: `Only ${onTimeRate}% tasks delivered on time`, mitigation: 'Review TAT targets, redistribute workload, add buffer time to estimates', color: '#EA580C' });
+      if (completionRate < 60) riskItems.push({ risk: 'Low Throughput', severity: 'High', impact: `Only ${completionRate}% tasks completed`, mitigation: 'Identify blockers, streamline approval processes, automate repetitive steps', color: '#EA580C' });
+      if (trendAnalysis.completionRateDelta < -10) riskItems.push({ risk: 'Declining Performance', severity: 'Medium', impact: `Completion rate dropped ${Math.abs(trendAnalysis.completionRateDelta)}% vs prior period`, mitigation: 'Root cause analysis, team check-ins, process audit', color: '#D97706' });
+      const highCycleBottlenecks = Object.entries((() => {
+        const groups: Record<string, { count: number; totalCycleHrs: number }> = {};
+        allTasks.forEach(t => {
+          if (!groups[t.taskName]) groups[t.taskName] = { count: 0, totalCycleHrs: 0 };
+          groups[t.taskName].count++;
+          if (t.status === 'completed' && t.actualCompletionTime && t.createdAt) {
+            groups[t.taskName].totalCycleHrs += (new Date(t.actualCompletionTime).getTime() - new Date(t.createdAt).getTime()) / (1000 * 60 * 60);
+          }
+        });
+        return groups;
+      })()).filter(([_, g]) => g.count > 2 && (g.totalCycleHrs / Math.max(g.count, 1)) > 48);
+      if (highCycleBottlenecks.length > 0) riskItems.push({ risk: 'Process Bottlenecks', severity: 'Medium', impact: `${highCycleBottlenecks.length} task types with >48hr avg cycle time`, mitigation: 'Review and optimize slow processes, consider automation or parallel execution', color: '#D97706' });
+      if ((doersPerf || []).some((d: any) => d.onTimeRate < 30)) riskItems.push({ risk: 'Team Capability Gap', severity: 'Medium', impact: 'One or more team members with <30% on-time rate', mitigation: 'Targeted training, mentoring, or workload redistribution', color: '#D97706' });
+      if (cancelledTasks.length > totalTasks * 0.1) riskItems.push({ risk: 'High Cancellation Rate', severity: 'Low', impact: `${cancelledTasks.length} tasks cancelled (${Math.round((cancelledTasks.length / Math.max(totalTasks, 1)) * 100)}%)`, mitigation: 'Review task creation process, improve requirement clarity', color: '#6366F1' });
+      if (riskItems.length === 0) riskItems.push({ risk: 'No Critical Risks Detected', severity: 'Info', impact: 'Operations are running within acceptable thresholds', mitigation: 'Continue monitoring, focus on continuous improvement', color: '#059669' });
+
+      // ═══ CAPACITY UTILIZATION ═══
+      const totalTeamMembers = new Set(allTasks.map(t => t.doerEmail)).size;
+      const tasksPerPerson = totalTeamMembers > 0 ? Math.round((totalTasks / totalTeamMembers) * 10) / 10 : 0;
+      const completedPerPerson = totalTeamMembers > 0 ? Math.round((completedTasks.length / totalTeamMembers) * 10) / 10 : 0;
+      const overallUtilization = totalTeamMembers > 0 ? Math.min(100, Math.round(((completedTasks.length + inProgressTasks.length) / Math.max(totalTasks, 1)) * 100)) : 0;
+
+      // ═══ PROCESS MATURITY (0–5 scale, like CMMI) ═══
+      let maturityScore = 1.0;
+      if (totalTasks >= 20) maturityScore += 0.5;
+      if (completionRate >= 60) maturityScore += 0.5;
+      if (completionRate >= 80) maturityScore += 0.5;
+      if (onTimeRate >= 60) maturityScore += 0.5;
+      if (onTimeRate >= 80) maturityScore += 0.5;
+      if (allFlowRules.length >= 5) maturityScore += 0.3;
+      if (totalTeamMembers >= 3) maturityScore += 0.2;
+      if (trendAnalysis.isImproving) maturityScore += 0.3;
+      if (overdueTasks.length === 0) maturityScore += 0.7;
+      maturityScore = Math.min(5, Math.round(maturityScore * 10) / 10);
+
+      const maturityLabel = maturityScore >= 4.5 ? 'Optimizing' : maturityScore >= 3.5 ? 'Quantitatively Managed' : maturityScore >= 2.5 ? 'Defined' : maturityScore >= 1.5 ? 'Managed' : 'Initial';
 
       // 4. Bottleneck analysis — group by taskName, find slowest
       const taskNameGroups: Record<string, { count: number; totalCycleHrs: number; overdueCount: number; pendingCount: number }> = {};
@@ -342,15 +474,16 @@ export function registerAnalyticsRoutes(
         .sort((a, b) => b.avgCycleHours - a.avgCycleHours);
 
       // 5. Per-system breakdown
-      const systemGroups: Record<string, { total: number; completed: number; overdue: number; totalCycleHrs: number }> = {};
+      const systemGroups: Record<string, { total: number; completed: number; overdue: number; pending: number; totalCycleHrs: number }> = {};
       allTasks.forEach(t => {
         if (!systemGroups[t.system]) {
-          systemGroups[t.system] = { total: 0, completed: 0, overdue: 0, totalCycleHrs: 0 };
+          systemGroups[t.system] = { total: 0, completed: 0, overdue: 0, pending: 0, totalCycleHrs: 0 };
         }
         const g = systemGroups[t.system];
         g.total++;
         if (t.status === 'completed') g.completed++;
         if (t.status === 'overdue') g.overdue++;
+        if (t.status === 'pending' || t.status === 'in_progress') g.pending++;
         if (t.status === 'completed' && t.actualCompletionTime && t.createdAt) {
           g.totalCycleHrs += (new Date(t.actualCompletionTime).getTime() - new Date(t.createdAt).getTime()) / (1000 * 60 * 60);
         }
@@ -361,8 +494,10 @@ export function registerAnalyticsRoutes(
         totalTasks: g.total,
         completed: g.completed,
         overdue: g.overdue,
+        pending: g.pending,
         completionRate: g.total > 0 ? Math.round((g.completed / g.total) * 100) : 0,
         avgCycleHours: g.completed > 0 ? Math.round((g.totalCycleHrs / g.completed) * 10) / 10 : 0,
+        slaScore: g.total > 0 ? Math.round(((g.completed - g.overdue) / g.total) * 100) : 0,
       }));
 
       // 6. Loss cost calculation
@@ -380,10 +515,24 @@ export function registerAnalyticsRoutes(
       });
       const lossCost = Math.round(totalWaitHours * costPerHour);
 
+      // Monthly loss projection
+      const lossCostPerDay = dataSpanDays > 0 ? lossCost / dataSpanDays : 0;
+      const projectedMonthlyLoss = Math.round(lossCostPerDay * 30);
+      const projectedAnnualLoss = Math.round(lossCostPerDay * 365);
+
       // 7. Productivity & Performance
       const activeTasks = totalTasks - cancelledTasks.length;
       const productivity = activeTasks > 0 ? Math.round((completedTasks.length / activeTasks) * 100) : 0;
       const performance = onTimeRate;
+
+      // ═══ EFFICIENCY INDEX (weighted composite 0-100) ═══
+      const efficiencyIndex = Math.round(
+        (completionRate * 0.25) +
+        (onTimeRate * 0.25) +
+        (productivity * 0.20) +
+        (Math.min(100, throughputPerDay * 20) * 0.15) +
+        ((100 - Math.min(100, (overdueTasks.length / Math.max(totalTasks, 1)) * 100)) * 0.15)
+      );
 
       // 8. Doer rankings
       const topPerformers = [...(doersPerf || [])]
@@ -392,6 +541,15 @@ export function registerAnalyticsRoutes(
       const needsAttention = [...(doersPerf || [])]
         .sort((a: any, b: any) => a.onTimeRate - b.onTimeRate)
         .slice(0, 5);
+
+      // ═══ DOER HEAT MAP (performance distribution) ═══
+      const performanceDistribution = {
+        excellent: (doersPerf || []).filter((d: any) => d.onTimeRate >= 80).length,
+        good: (doersPerf || []).filter((d: any) => d.onTimeRate >= 60 && d.onTimeRate < 80).length,
+        average: (doersPerf || []).filter((d: any) => d.onTimeRate >= 40 && d.onTimeRate < 60).length,
+        poor: (doersPerf || []).filter((d: any) => d.onTimeRate < 40).length,
+        total: (doersPerf || []).length,
+      };
 
       // 9. Business health status (Patented — Process Sutra)
       let businessStatus = '';
@@ -417,9 +575,10 @@ export function registerAnalyticsRoutes(
         actionPlan = 'Immediate system audit, assign clear accountability, enforce strict follow-ups, consider restructuring.';
       }
 
-      // Build report object (all data stays server-side, only aggregated KPIs go to AI)
+      // Build report object
       const report = {
         generatedAt: new Date().toISOString(),
+        reportVersion: '3.0',
         copyright: COPYRIGHT_NOTICE,
         copyrightShort: COPYRIGHT_SHORT,
         organization: {
@@ -427,6 +586,7 @@ export function registerAnalyticsRoutes(
           domain: orgData?.domain || '',
           industry: orgData?.industry || '',
           businessType: orgData?.businessType || '',
+          customerType: orgData?.customerType || '',
         },
         tatConfig: {
           officeHours: `${tatConfigData?.officeStartHour || 9}:00 - ${tatConfigData?.officeEndHour || 17}:00`,
@@ -438,6 +598,7 @@ export function registerAnalyticsRoutes(
           completedTasks: completedTasks.length,
           pendingTasks: pendingTasks.length,
           overdueTasks: overdueTasks.length,
+          inProgressTasks: inProgressTasks.length,
           cancelledTasks: cancelledTasks.length,
           completionRate,
           onTimeRate,
@@ -447,16 +608,55 @@ export function registerAnalyticsRoutes(
           throughputPerDay,
           avgCycleTimeHours: Math.round(avgCycleTimeHours * 10) / 10,
           avgCycleTimeDays: Math.round((avgCycleTimeHours / 24) * 10) / 10,
+          medianCycleTimeHours: Math.round(medianCycleTimeHours * 10) / 10,
+          p90CycleTimeHours: Math.round(p90CycleTimeHours * 10) / 10,
           avgFlowCompletionDays,
           dataSpanDays: Math.round(dataSpanDays),
           businessStatus,
           businessEmoji,
           actionPlan,
+          efficiencyIndex,
         },
+        // ═══ NEW: Health Score & Grade ═══
+        healthScore: {
+          composite: compositeHealthScore,
+          grade: healthGrade.grade,
+          label: healthGrade.label,
+          color: healthGrade.color,
+          breakdown: {
+            completionComponent: Math.round(slaCompletionScore * 10) / 10,
+            onTimeComponent: Math.round(slaOnTimeScore * 10) / 10,
+            efficiencyBonus: Math.round(slaEfficiencyBonus * 10) / 10,
+            bottleneckPenalty: Math.round(slaBottleneckPenalty * 10) / 10,
+            trendBonus: slaTrendBonus,
+          },
+        },
+        // ═══ NEW: Trend Analysis ═══
+        trendAnalysis,
+        weeklyTrend,
+        // ═══ NEW: Risk Matrix ═══
+        riskMatrix: riskItems,
+        // ═══ NEW: Capacity ═══
+        capacity: {
+          totalTeamMembers,
+          tasksPerPerson,
+          completedPerPerson,
+          overallUtilization,
+        },
+        // ═══ NEW: Process Maturity ═══
+        processMaturity: {
+          score: maturityScore,
+          label: maturityLabel,
+          maxScore: 5,
+        },
+        // ═══ NEW: Performance Distribution ═══
+        performanceDistribution,
         lossCost: {
           totalWaitHours: Math.round(totalWaitHours * 10) / 10,
           costPerHour,
           totalLossCost: lossCost,
+          projectedMonthlyLoss,
+          projectedAnnualLoss,
           currency: 'INR',
         },
         bottlenecks: bottlenecks.slice(0, 10),
@@ -467,7 +667,6 @@ export function registerAnalyticsRoutes(
         needsAttention,
         totalFlowRules: allFlowRules.length,
         totalSystems: Array.from(new Set(allFlowRules.map(r => r.system))).length,
-        // Actual vs Ideal (100% productivity & 100% efficiency) comparison
         idealComparison: {
           actual: {
             completionRate,

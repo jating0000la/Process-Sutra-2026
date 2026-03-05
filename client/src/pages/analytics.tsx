@@ -321,70 +321,139 @@ export default function Analytics() {
     }
   };
 
-  // Build "Voice of Business" report — professional document with SVG charts
+  // Build "Voice of Business" report — Premium Operations Intelligence Document
   const buildReportHTML = (r: any) => {
     const genDate = new Date(r.generatedAt).toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const genTime = new Date(r.generatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
     const s = r.summary;
+    const hs = r.healthScore || { composite: 0, grade: 'N/A', label: 'No Data', color: '#94A3B8', breakdown: {} };
+    const trend = r.trendAnalysis || { completionRateDelta: 0, onTimeRateDelta: 0, volumeDelta: 0, isImproving: false, currentPeriod: {}, previousPeriod: {} };
+    const cap = r.capacity || { totalTeamMembers: 0, tasksPerPerson: 0, completedPerPerson: 0, overallUtilization: 0 };
+    const pm = r.processMaturity || { score: 0, label: 'Initial', maxScore: 5 };
+    const pd = r.performanceDistribution || { excellent: 0, good: 0, average: 0, poor: 0, total: 0 };
 
-    // --- SVG Chart Helpers ---
-    const donutChart = (pct: number, label: string, color: string, size = 120) => {
-      const radius = 44;
+    // ── Premium Color Palette ──
+    const C = {
+      navy: '#0B1437', darkSlate: '#1E293B', charcoal: '#334155', blue: '#1D4ED8', indigo: '#4338CA',
+      teal: '#0D9488', emerald: '#059669', amber: '#D97706', red: '#DC2626', rose: '#E11D48',
+      violet: '#7C3AED', slate: '#64748B', lightSlate: '#94A3B8', bg: '#F8FAFC', white: '#FFFFFF',
+      gold: '#B8860B', accent: '#2563EB',
+    };
+
+    // ── SVG Chart Helpers ──
+    const gaugeChart = (value: number, max: number, label: string, color: string, subLabel: string, size = 130) => {
+      const radius = 50;
+      const circ = Math.PI * radius; // half circle
+      const pct = Math.min(value / max, 1);
+      const dash = pct * circ;
+      return `<div style="text-align:center;">
+        <svg width="${size}" height="${size * 0.7}" viewBox="0 0 ${size} ${size * 0.65}">
+          <path d="M ${size * 0.1} ${size * 0.55} A ${radius} ${radius} 0 0 1 ${size * 0.9} ${size * 0.55}" fill="none" stroke="#E2E8F0" stroke-width="10" stroke-linecap="round"/>
+          <path d="M ${size * 0.1} ${size * 0.55} A ${radius} ${radius} 0 0 1 ${size * 0.9} ${size * 0.55}" fill="none" stroke="${color}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${dash} ${circ}" />
+          <text x="${size/2}" y="${size * 0.48}" text-anchor="middle" font-size="26" font-weight="800" fill="${color}">${value}</text>
+          <text x="${size/2}" y="${size * 0.62}" text-anchor="middle" font-size="8" fill="${C.slate}" font-weight="600" letter-spacing="1">${subLabel}</text>
+        </svg>
+        <div style="font-size:10px;font-weight:700;color:${C.darkSlate};margin-top:-4px;text-transform:uppercase;letter-spacing:0.5px;">${label}</div>
+      </div>`;
+    };
+
+    const donutChart = (pct: number, label: string, color: string, size = 110) => {
+      const radius = 40;
       const circ = 2 * Math.PI * radius;
       const dash = (pct / 100) * circ;
       return `<div style="text-align:center;">
         <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-          <circle cx="${size/2}" cy="${size/2}" r="${radius}" fill="none" stroke="#E5E7EB" stroke-width="10"/>
-          <circle cx="${size/2}" cy="${size/2}" r="${radius}" fill="none" stroke="${color}" stroke-width="10" stroke-dasharray="${dash} ${circ}" stroke-dashoffset="${circ * 0.25}" stroke-linecap="round" transform="rotate(-90 ${size/2} ${size/2})"/>
-          <text x="${size/2}" y="${size/2 - 4}" text-anchor="middle" font-size="22" font-weight="800" fill="${color}">${pct}%</text>
-          <text x="${size/2}" y="${size/2 + 14}" text-anchor="middle" font-size="9" fill="#6B7280" font-weight="600" text-transform="uppercase">${label}</text>
+          <circle cx="${size/2}" cy="${size/2}" r="${radius}" fill="none" stroke="#E5E7EB" stroke-width="8"/>
+          <circle cx="${size/2}" cy="${size/2}" r="${radius}" fill="none" stroke="${color}" stroke-width="8" stroke-dasharray="${dash} ${circ}" stroke-dashoffset="${circ * 0.25}" stroke-linecap="round" transform="rotate(-90 ${size/2} ${size/2})"/>
+          <text x="${size/2}" y="${size/2 - 2}" text-anchor="middle" font-size="20" font-weight="800" fill="${color}">${pct}%</text>
+          <text x="${size/2}" y="${size/2 + 12}" text-anchor="middle" font-size="8" fill="${C.slate}" font-weight="600" text-transform="uppercase" letter-spacing="0.5">${label}</text>
         </svg>
       </div>`;
     };
 
+    const deltaArrow = (delta: number, suffix = '%') => {
+      if (delta === 0) return `<span style="color:${C.slate};font-size:11px;">— 0${suffix}</span>`;
+      const color = delta > 0 ? C.emerald : C.red;
+      const arrow = delta > 0 ? '&#9650;' : '&#9660;';
+      return `<span style="color:${color};font-size:11px;font-weight:700;">${arrow} ${delta > 0 ? '+' : ''}${delta}${suffix}</span>`;
+    };
+
+    const miniBar = (pct: number, color: string, height = 6) =>
+      `<div style="height:${height}px;background:#E5E7EB;border-radius:${height}px;overflow:hidden;width:100%;"><div style="height:100%;width:${Math.min(pct, 100)}%;background:${color};border-radius:${height}px;"></div></div>`;
+
+    // Sparkline (SVG polyline)
+    const sparkline = (values: number[], color: string, w = 120, h = 30) => {
+      if (!values.length) return '';
+      const max = Math.max(...values, 1);
+      const min = Math.min(...values, 0);
+      const range = max - min || 1;
+      const points = values.map((v, i) => `${(i / Math.max(values.length - 1, 1)) * w},${h - ((v - min) / range) * (h - 4) - 2}`).join(' ');
+      return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    };
+
+    // Area sparkline
+    const areaSparkline = (values: number[], color: string, w = 200, h = 50) => {
+      if (!values.length) return '';
+      const max = Math.max(...values, 1);
+      const min = 0;
+      const range = max - min || 1;
+      const points = values.map((v, i) => `${(i / Math.max(values.length - 1, 1)) * w},${h - ((v - min) / range) * (h - 6) - 3}`);
+      const polyline = points.join(' ');
+      const areaPoints = `${points[0]} ${polyline} ${(values.length - 1) / Math.max(values.length - 1, 1) * w},${h} 0,${h}`;
+      return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+        <defs><linearGradient id="ag_${color.replace('#','')}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity="0.3"/><stop offset="100%" stop-color="${color}" stop-opacity="0.02"/></linearGradient></defs>
+        <polygon points="${areaPoints}" fill="url(#ag_${color.replace('#','')})" />
+        <polyline points="${polyline}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        ${values.map((v, i) => {
+          const x = (i / Math.max(values.length - 1, 1)) * w;
+          const y = h - ((v - min) / range) * (h - 6) - 3;
+          return i === values.length - 1 ? `<circle cx="${x}" cy="${y}" r="3" fill="${color}" stroke="${C.white}" stroke-width="1.5"/>` : '';
+        }).join('')}
+      </svg>`;
+    };
+
     // Horizontal bar chart
-    const hBarChart = (items: {label: string; value: number; max: number; color: string}[]) => {
-      if (!items.length) return '<div style="padding:20px;text-align:center;color:#9CA3AF;">No data available</div>';
+    const hBarChart = (items: {label: string; value: number; max: number; color: string; suffix?: string}[]) => {
+      if (!items.length) return `<div style="padding:20px;text-align:center;color:${C.lightSlate};">No data available</div>`;
       return items.map(it => {
         const pct = it.max > 0 ? Math.min((it.value / it.max) * 100, 100) : 0;
         return `<div style="margin-bottom:10px;">
           <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
-            <span style="font-size:12px;font-weight:500;color:#374151;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.label}</span>
-            <span style="font-size:12px;font-weight:700;color:${it.color};">${it.value}${typeof it.value === 'number' && it.value > 0 ? 'h' : ''}</span>
+            <span style="font-size:11px;font-weight:600;color:${C.darkSlate};max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.label}</span>
+            <span style="font-size:11px;font-weight:700;color:${it.color};">${it.value}${it.suffix || ''}</span>
           </div>
-          <div style="height:10px;background:#F1F5F9;border-radius:5px;overflow:hidden;">
-            <div style="height:100%;width:${pct}%;background:${it.color};border-radius:5px;transition:width 0.3s;"></div>
-          </div>
+          ${miniBar(pct, it.color)}
         </div>`;
       }).join('');
     };
 
-    // Vertical bar chart (SVG)
-    const vBarChart = (items: {label: string; value: number; color: string}[], height = 180) => {
-      if (!items.length) return '<div style="padding:20px;text-align:center;color:#9CA3AF;">No data available</div>';
+    // Vertical bar chart
+    const vBarChart = (items: {label: string; value: number; color: string}[], height = 160) => {
+      if (!items.length) return `<div style="padding:20px;text-align:center;color:${C.lightSlate};">No data available</div>`;
       const maxVal = Math.max(...items.map(i => i.value), 1);
-      const barW = Math.min(40, Math.floor(480 / items.length) - 8);
-      const chartW = items.length * (barW + 12) + 20;
+      const barW = Math.min(36, Math.floor(480 / items.length) - 10);
+      const chartW = items.length * (barW + 14) + 24;
       return `<svg width="100%" height="${height + 30}" viewBox="0 0 ${chartW} ${height + 30}" style="display:block;margin:0 auto;">
         ${items.map((it, i) => {
-          const barH = Math.max(4, (it.value / maxVal) * (height - 24));
-          const x = 10 + i * (barW + 12);
+          const barH = Math.max(4, (it.value / maxVal) * (height - 28));
+          const x = 12 + i * (barW + 14);
           const y = height - barH;
-          return `<g>
-            <rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="4" fill="${it.color}" />
-            <text x="${x + barW/2}" y="${y - 5}" text-anchor="middle" font-size="10" font-weight="700" fill="${it.color}">${it.value}</text>
-            <text x="${x + barW/2}" y="${height + 14}" text-anchor="middle" font-size="8" fill="#6B7280" font-weight="500">${it.label.length > 10 ? it.label.slice(0,9) + '..' : it.label}</text>
+          return `<g><rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="4" fill="${it.color}" opacity="0.85"/>
+            <rect x="${x}" y="${y}" width="${barW}" height="${Math.min(6, barH)}" rx="4" fill="${it.color}"/>
+            <text x="${x + barW/2}" y="${y - 6}" text-anchor="middle" font-size="10" font-weight="700" fill="${it.color}">${it.value}</text>
+            <text x="${x + barW/2}" y="${height + 14}" text-anchor="middle" font-size="7" fill="${C.slate}" font-weight="500">${it.label.length > 10 ? it.label.slice(0,9)+'..' : it.label}</text>
           </g>`;
         }).join('')}
-        <line x1="5" y1="${height}" x2="${chartW - 5}" y2="${height}" stroke="#E5E7EB" stroke-width="1"/>
+        <line x1="6" y1="${height}" x2="${chartW - 6}" y2="${height}" stroke="#E2E8F0" stroke-width="1"/>
       </svg>`;
     };
 
-    // Pie chart (SVG)
-    const pieChart = (slices: {label: string; value: number; color: string}[], size = 150) => {
-      const total = slices.reduce((a, s) => a + s.value, 0);
-      if (total === 0) return '<div style="padding:20px;text-align:center;color:#9CA3AF;">No data</div>';
+    // Pie chart
+    const pieChart = (slices: {label: string; value: number; color: string}[], size = 140) => {
+      const total = slices.reduce((a, sl) => a + sl.value, 0);
+      if (total === 0) return `<div style="padding:20px;text-align:center;color:${C.lightSlate};">No data</div>`;
       let cumulativeAngle = 0;
-      const cx = size / 2, cy = size / 2, rad = size / 2 - 10;
+      const cx = size / 2, cy = size / 2, rad = size / 2 - 12;
       const paths = slices.filter(sl => sl.value > 0).map(sl => {
         const angle = (sl.value / total) * 360;
         const startAngle = cumulativeAngle;
@@ -397,331 +466,553 @@ export default function Analytics() {
         const largeArc = angle > 180 ? 1 : 0;
         return `<path d="M${cx},${cy} L${x1},${y1} A${rad},${rad} 0 ${largeArc},1 ${x2},${y2} Z" fill="${sl.color}"/>`;
       }).join('');
-      const legend = slices.filter(sl => sl.value > 0).map(sl => `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;"><div style="width:10px;height:10px;border-radius:2px;background:${sl.color};flex-shrink:0;"></div><span style="font-size:11px;color:#374151;">${sl.label}: <strong>${sl.value}</strong></span></div>`).join('');
-      return `<div style="display:flex;align-items:center;gap:20px;justify-content:center;flex-wrap:wrap;">
+      const legend = slices.filter(sl => sl.value > 0).map(sl => `<div style="display:flex;align-items:center;gap:6px;margin:3px 0;"><div style="width:10px;height:10px;border-radius:2px;background:${sl.color};flex-shrink:0;"></div><span style="font-size:11px;color:${C.charcoal};">${sl.label}: <strong>${sl.value}</strong> <span style="color:${C.lightSlate};">(${Math.round((sl.value/total)*100)}%)</span></span></div>`).join('');
+      return `<div style="display:flex;align-items:center;gap:24px;justify-content:center;flex-wrap:wrap;">
         <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${paths}</svg>
         <div>${legend}</div>
       </div>`;
     };
 
-    // --- Data for charts ---
-    const bottleneckItems = (r.bottlenecks || []).slice(0, 6).map((b: any) => ({
+    // ── Section header helper ──
+    const sectionHeader = (num: number, title: string, accentColor: string) =>
+      `<div style="display:flex;align-items:center;gap:10px;margin:0 0 16px;padding-bottom:8px;border-bottom:2px solid ${accentColor}20;">
+        <div style="width:28px;height:28px;border-radius:6px;background:${accentColor};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:white;flex-shrink:0;">${num}</div>
+        <h2 style="font-size:17px;font-weight:700;color:${C.navy};margin:0;letter-spacing:-0.3px;">${title}</h2>
+      </div>`;
+
+    // ── Metric card helper ──
+    const metricCard = (value: string | number, label: string, color: string, bg: string, icon?: string) =>
+      `<div style="padding:16px;background:${bg};border:1px solid ${color}20;border-radius:8px;text-align:center;min-width:0;">
+        ${icon ? `<div style="font-size:18px;margin-bottom:4px;">${icon}</div>` : ''}
+        <div style="font-size:24px;font-weight:800;color:${color};line-height:1.1;">${value}</div>
+        <div style="font-size:9px;color:${C.slate};text-transform:uppercase;letter-spacing:0.8px;margin-top:4px;font-weight:600;">${label}</div>
+      </div>`;
+
+    // ── Data for charts ──
+    const bottleneckItems = (r.bottlenecks || []).slice(0, 8).map((b: any) => ({
       label: b.taskName, value: b.avgCycleHours,
-      color: b.avgCycleHours > 48 ? '#DC2626' : b.avgCycleHours > 24 ? '#D97706' : '#059669'
+      color: b.avgCycleHours > 48 ? C.red : b.avgCycleHours > 24 ? C.amber : C.emerald
     }));
 
     const systemChartItems = (r.systemBreakdown || []).slice(0, 8).map((sys: any, i: number) => ({
-      label: sys.system,
-      value: sys.totalTasks,
-      color: ['#3B82F6','#8B5CF6','#059669','#D97706','#DC2626','#0D9488','#6366F1','#EC4899'][i % 8]
+      label: sys.system, value: sys.totalTasks,
+      color: [C.blue, C.violet, C.emerald, C.amber, C.red, C.teal, C.indigo, C.rose][i % 8]
     }));
 
-    // Flow avg completion time chart data
     const flowCompletionItems = (r.flowPerformance || []).slice(0, 8).map((f: any, i: number) => ({
-      label: f.system,
-      value: Math.abs(f.avgCompletionTime) || 0,
-      color: ['#0D9488','#3B82F6','#8B5CF6','#D97706','#059669','#DC2626','#6366F1','#EC4899'][i % 8]
+      label: f.system, value: Math.abs(f.avgCompletionTime) || 0,
+      color: [C.teal, C.blue, C.violet, C.amber, C.emerald, C.red, C.indigo, C.rose][i % 8]
     }));
 
-    const doerChartItems = (r.doerPerformance || []).slice(0, 8).map((d: any, i: number) => ({
+    const doerChartItems = (r.doerPerformance || []).slice(0, 10).map((d: any) => ({
       label: (d.doerEmail || '').split('@')[0],
       value: d.onTimeRate || 0,
-      color: (d.onTimeRate || 0) >= 80 ? '#059669' : (d.onTimeRate || 0) >= 50 ? '#D97706' : '#DC2626'
+      color: (d.onTimeRate || 0) >= 80 ? C.emerald : (d.onTimeRate || 0) >= 50 ? C.amber : C.red
     }));
 
-    // --- Table rows ---
+    const weeklyTrendData = (r.weeklyTrend || []).map((w: any) => w.completed);
+    const weeklyOnTimeData = (r.weeklyTrend || []).map((w: any) => w.onTimeRate);
+
+    // ── Table builders ──
+    const thStyle = (align = 'left') => `padding:10px 12px;text-align:${align};color:${C.slate};font-weight:700;text-transform:uppercase;letter-spacing:0.5px;font-size:9px;border-bottom:2px solid #E2E8F0;`;
+    const tdStyle = (align = 'left') => `padding:9px 12px;text-align:${align};border-bottom:1px solid #F1F5F9;font-size:12px;`;
+
     const systemRows = (r.systemBreakdown || []).map((sys: any) => `
       <tr>
-        <td style="padding:9px 14px;font-weight:600;color:#1E293B;border-bottom:1px solid #F1F5F9;">${sys.system}</td>
-        <td style="padding:9px 14px;text-align:center;border-bottom:1px solid #F1F5F9;">${sys.totalTasks}</td>
-        <td style="padding:9px 14px;text-align:center;color:#059669;font-weight:600;border-bottom:1px solid #F1F5F9;">${sys.completed}</td>
-        <td style="padding:9px 14px;text-align:center;color:${sys.overdue > 0 ? '#DC2626' : '#64748B'};font-weight:600;border-bottom:1px solid #F1F5F9;">${sys.overdue}</td>
-        <td style="padding:9px 14px;text-align:center;font-weight:700;color:${sys.completionRate >= 80 ? '#059669' : sys.completionRate >= 50 ? '#D97706' : '#DC2626'};border-bottom:1px solid #F1F5F9;">${sys.completionRate}%</td>
+        <td style="${tdStyle()}font-weight:600;color:${C.darkSlate};">${sys.system}</td>
+        <td style="${tdStyle('center')}">${sys.totalTasks}</td>
+        <td style="${tdStyle('center')}color:${C.emerald};font-weight:600;">${sys.completed}</td>
+        <td style="${tdStyle('center')}">${sys.pending || 0}</td>
+        <td style="${tdStyle('center')}color:${sys.overdue > 0 ? C.red : C.slate};font-weight:600;">${sys.overdue}</td>
+        <td style="${tdStyle('center')}font-weight:700;color:${sys.completionRate >= 80 ? C.emerald : sys.completionRate >= 50 ? C.amber : C.red};">${sys.completionRate}%</td>
+        <td style="${tdStyle('center')}font-weight:600;color:${C.teal};">${sys.avgCycleHours}h</td>
       </tr>`).join('');
 
-    const doerRows = (r.doerPerformance || []).slice(0, 12).map((d: any) => `
-      <tr>
-        <td style="padding:8px 14px;font-weight:500;border-bottom:1px solid #F1F5F9;">${d.doerEmail}</td>
-        <td style="padding:8px 14px;text-align:center;border-bottom:1px solid #F1F5F9;">${d.totalTasks}</td>
-        <td style="padding:8px 14px;text-align:center;color:#059669;font-weight:600;border-bottom:1px solid #F1F5F9;">${d.completedTasks}</td>
-        <td style="padding:8px 14px;text-align:center;font-weight:700;color:${(d.onTimeRate||0) >= 80 ? '#059669' : (d.onTimeRate||0) >= 50 ? '#D97706' : '#DC2626'};border-bottom:1px solid #F1F5F9;">${d.onTimeRate}%</td>
-        <td style="padding:8px 14px;text-align:center;border-bottom:1px solid #F1F5F9;">${d.avgCompletionDays?.toFixed(1) || '-'} days</td>
+    const doerRows = (r.doerPerformance || []).slice(0, 15).map((d: any, i: number) => `
+      <tr style="background:${i % 2 === 0 ? C.white : C.bg};">
+        <td style="${tdStyle()}font-weight:600;color:${C.darkSlate};">${d.doerEmail}</td>
+        <td style="${tdStyle('center')}">${d.totalTasks}</td>
+        <td style="${tdStyle('center')}color:${C.emerald};font-weight:600;">${d.completedTasks}</td>
+        <td style="${tdStyle('center')}"><div style="display:flex;align-items:center;gap:6px;justify-content:center;">
+          <span style="font-weight:700;color:${(d.onTimeRate||0) >= 80 ? C.emerald : (d.onTimeRate||0) >= 50 ? C.amber : C.red};">${d.onTimeRate}%</span>
+          <div style="width:40px;">${miniBar(d.onTimeRate || 0, (d.onTimeRate||0) >= 80 ? C.emerald : (d.onTimeRate||0) >= 50 ? C.amber : C.red, 4)}</div>
+        </div></td>
+        <td style="${tdStyle('center')}color:${C.teal};">${d.avgCompletionDays?.toFixed(1) || '-'}d</td>
       </tr>`).join('');
 
-    // Format AI analysis markdown to HTML
+    // Format AI analysis
     const formatAI = (text: string) => {
       if (!text) return '';
       return text
-        .replace(/### (.*)/g, '<h4 style="color:#1E3A5F;margin:16px 0 6px;font-size:14px;font-weight:700;">$1</h4>')
-        .replace(/## (.*)/g, '<h3 style="color:#1E3A5F;margin:18px 0 8px;font-size:15px;font-weight:700;border-bottom:1px solid #E2E8F0;padding-bottom:5px;">$1</h3>')
+        .replace(/### (.*)/g, `<h4 style="color:${C.navy};margin:16px 0 6px;font-size:13px;font-weight:700;">$1</h4>`)
+        .replace(/## (.*)/g, `<h3 style="color:${C.navy};margin:20px 0 8px;font-size:14px;font-weight:700;border-bottom:1px solid #E2E8F0;padding-bottom:6px;">$1</h3>`)
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/^- (.+)/gm, '<div style="margin:3px 0;padding:4px 0 4px 14px;border-left:2px solid #CBD5E1;font-size:13px;color:#475569;">$1</div>')
-        .replace(/^(\d+)\. (.+)/gm, '<div style="margin:3px 0;padding:4px 0;font-size:13px;color:#475569;"><span style="font-weight:700;color:#1E40AF;margin-right:6px;">$1.</span>$2</div>')
-        .replace(/\n\n/g, '<br/>')
-        .replace(/\n/g, '<br/>');
+        .replace(/^- (.+)/gm, `<div style="margin:3px 0;padding:4px 0 4px 14px;border-left:2px solid ${C.accent}40;font-size:12px;color:${C.charcoal};">$1</div>`)
+        .replace(/^(\d+)\. (.+)/gm, `<div style="margin:4px 0;padding:4px 0;font-size:12px;color:${C.charcoal};"><span style="display:inline-block;width:20px;height:20px;border-radius:50%;background:${C.accent};color:white;text-align:center;line-height:20px;font-size:10px;font-weight:700;margin-right:8px;">$1</span>$2</div>`)
+        .replace(/\n\n/g, '<br/>').replace(/\n/g, '<br/>');
     };
 
     const copyrightYear = new Date().getFullYear();
-    const copyrightLine = `© ${copyrightYear} Process Sutra. All rights reserved. Patented.`;
-    const copyrightFull = `© ${copyrightYear} Process Sutra — "Voice of Business" Performance Report Engine. All rights reserved. This report format, methodology, scoring matrix, and analytical framework are proprietary and protected under applicable intellectual property laws. Patented. Unauthorized reproduction, distribution, or reverse-engineering of this report or its underlying algorithms is strictly prohibited.`;
+    const copyrightLine = `\u00A9 ${copyrightYear} Process Sutra. All rights reserved. Patented.`;
+    const copyrightFull = `\u00A9 ${copyrightYear} Process Sutra \u2014 "Voice of Business" Operations Intelligence Report Engine v3.0. All rights reserved. This report format, methodology, scoring matrix, health grading algorithm, risk analysis framework, and process maturity model are proprietary and protected under applicable intellectual property laws. Patented. Unauthorized reproduction, distribution, or reverse-engineering of this report or its underlying algorithms is strictly prohibited.`;
 
-    return `<div style="font-family:Georgia,'Times New Roman',serif;color:#1E293B;background:#fff;padding:40px 48px;max-width:1050px;line-height:1.65;">
-  <!-- Cover / Header -->
-  <div style="border-bottom:3px solid #1E3A5F;padding-bottom:28px;margin-bottom:32px;">
-    <div style="display:flex;align-items:flex-end;justify-content:space-between;">
+    // ═══════════════════════════════════════════════════════════════
+    //  PREMIUM REPORT HTML
+    // ═══════════════════════════════════════════════════════════════
+    return `<div style="font-family:'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:${C.darkSlate};background:${C.white};padding:0;max-width:1050px;line-height:1.6;">
+
+  <!-- ╔══ COVER HEADER ══╗ -->
+  <div style="background:linear-gradient(135deg,${C.navy} 0%,#1E3A5F 60%,${C.indigo} 100%);padding:36px 44px 32px;border-radius:0 0 12px 12px;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;">
       <div>
-        <div style="font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:3px;font-family:Arial,sans-serif;margin-bottom:6px;">Confidential &bull; Proprietary &bull; Patented</div>
-        <h1 style="font-size:34px;font-weight:700;color:#0F172A;letter-spacing:-0.5px;margin:0;">Voice of Business&trade;</h1>
-        <div style="font-size:14px;color:#475569;margin-top:6px;">${r.organization.name}${r.organization.industry ? ' &mdash; ' + r.organization.industry : ''}${r.organization.businessType ? ' (' + r.organization.businessType + ')' : ''}</div>
+        <div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:3px;font-weight:500;margin-bottom:8px;">Confidential &bull; Proprietary &bull; Patented</div>
+        <h1 style="font-size:32px;font-weight:800;color:white;letter-spacing:-0.5px;margin:0;line-height:1.15;">Voice of Business&trade;</h1>
+        <div style="font-size:13px;color:rgba(255,255,255,0.7);margin-top:6px;">Operations Intelligence Report &mdash; v3.0</div>
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+          <span style="display:inline-block;padding:4px 12px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.15);border-radius:20px;font-size:11px;color:rgba(255,255,255,0.85);font-weight:500;">${r.organization.name}</span>
+          ${r.organization.industry ? `<span style="display:inline-block;padding:4px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.1);border-radius:20px;font-size:11px;color:rgba(255,255,255,0.65);">${r.organization.industry}</span>` : ''}
+          ${r.organization.businessType ? `<span style="display:inline-block;padding:4px 12px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.1);border-radius:20px;font-size:11px;color:rgba(255,255,255,0.65);">${r.organization.businessType}</span>` : ''}
+        </div>
       </div>
-      <div style="text-align:right;">
-        <div style="font-size:11px;color:#94A3B8;font-family:Arial,sans-serif;">Report Date</div>
-        <div style="font-size:14px;color:#334155;font-weight:600;">${genDate}</div>
-        <div style="font-size:11px;color:#94A3B8;margin-top:4px;font-family:Arial,sans-serif;">Analysis Period: ${s.dataSpanDays} days</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Executive Summary -->
-  <div style="margin-bottom:32px;">
-    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #1E3A5F;padding-left:12px;">1. Executive Summary</h2>
-    <div style="display:flex;gap:16px;align-items:center;padding:18px 22px;background:linear-gradient(135deg,#F8FAFC,#EEF2FF);border:1px solid #E2E8F0;border-radius:8px;margin-bottom:16px;">
-      <span style="font-size:36px;">${s.businessEmoji}</span>
-      <div>
-        <div style="font-size:20px;font-weight:700;color:${s.completionRate >= 80 ? '#059669' : s.completionRate >= 50 ? '#B45309' : '#DC2626'};">${s.businessStatus}</div>
-        <div style="font-size:13px;color:#475569;margin-top:2px;">${s.actionPlan}</div>
-      </div>
-    </div>
-    <p style="font-size:13.5px;color:#334155;">
-      Over the past <strong>${s.dataSpanDays} days</strong>, the organization processed <strong>${s.totalTasks} tasks</strong> across <strong>${r.totalSystems} workflow systems</strong> with <strong>${r.totalFlowRules} flow rules</strong>.
-      Of these, <strong>${s.completedTasks} tasks were completed</strong> (${s.completionRate}% completion rate), with <strong>${s.onTimeRate}% delivered on time</strong>.
-      ${s.overdueTasks > 0 ? `There are currently <strong style="color:#DC2626;">${s.overdueTasks} overdue tasks</strong> requiring immediate attention.` : 'All active tasks are within their deadlines.'}
-      The estimated <strong>loss from delays is &#8377;${r.lossCost.totalLossCost.toLocaleString('en-IN')}</strong>, accounting for ${r.lossCost.totalWaitHours} hours of cumulative delay at &#8377;${r.lossCost.costPerHour}/hour.
-    </p>
-  </div>
-
-  <!-- Key Performance Indicators — donut charts -->
-  <div style="margin-bottom:32px;">
-    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #1E3A5F;padding-left:12px;">2. Key Performance Indicators</h2>
-    <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-bottom:18px;">
-      ${donutChart(s.completionRate, 'Completion', s.completionRate >= 80 ? '#059669' : s.completionRate >= 50 ? '#D97706' : '#DC2626')}
-      ${donutChart(s.onTimeRate, 'On-Time', s.onTimeRate >= 80 ? '#059669' : s.onTimeRate >= 50 ? '#D97706' : '#DC2626')}
-      ${donutChart(s.productivity, 'Productivity', s.productivity >= 80 ? '#059669' : s.productivity >= 50 ? '#D97706' : '#DC2626')}
-      ${donutChart(s.performance, 'Performance', s.performance >= 80 ? '#059669' : s.performance >= 50 ? '#D97706' : '#DC2626')}
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;font-family:Arial,sans-serif;">
-      <div style="text-align:center;padding:14px 8px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;">
-        <div style="font-size:24px;font-weight:800;color:#1D4ED8;">${s.totalTasks}</div>
-        <div style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;">Total Tasks</div>
-      </div>
-      <div style="text-align:center;padding:14px 8px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;">
-        <div style="font-size:24px;font-weight:800;color:#059669;">${s.completedTasks}</div>
-        <div style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;">Completed</div>
-      </div>
-      <div style="text-align:center;padding:14px 8px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;">
-        <div style="font-size:24px;font-weight:800;color:#1D4ED8;">${s.throughputPerDay}</div>
-        <div style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;">Tasks / Day</div>
-      </div>
-      <div style="text-align:center;padding:14px 8px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;">
-        <div style="font-size:24px;font-weight:800;color:#0D9488;">${s.avgCycleTimeDays}d</div>
-        <div style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;">Avg Cycle Time</div>
-      </div>
-      <div style="text-align:center;padding:14px 8px;background:#F0FDFA;border:1px solid #CCFBF1;border-radius:6px;">
-        <div style="font-size:24px;font-weight:800;color:#0F766E;">${s.avgFlowCompletionDays || 0}d</div>
-        <div style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;">Avg Flow Time</div>
+      <div style="text-align:right;flex-shrink:0;">
+        <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px;">Report Date</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.9);font-weight:600;">${genDate}</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:2px;">${genTime} IST</div>
+        <div style="font-size:10px;color:rgba(255,255,255,0.4);margin-top:8px;">Analysis: ${s.dataSpanDays} days &bull; ${s.totalTasks} tasks</div>
+        <div style="margin-top:10px;padding:6px 14px;background:${hs.color};border-radius:6px;display:inline-block;">
+          <span style="font-size:18px;font-weight:900;color:white;">${hs.grade}</span>
+          <span style="font-size:10px;color:rgba(255,255,255,0.85);margin-left:6px;">${hs.label}</span>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Actual vs Ideal Comparison -->
-  <div style="margin-bottom:32px;">
-    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #6366F1;padding-left:12px;">3. Actual vs Ideal Performance (100% Benchmark)</h2>
-    <p style="font-size:13px;color:#475569;margin-bottom:14px;">Comparison of current operational performance against the ideal benchmark of 100% productivity and 100% efficiency. The gap column shows exactly how far you are from perfection.</p>
+  <div style="padding:32px 44px;">
+
+  <!-- ╔══ 1. EXECUTIVE DASHBOARD ══╗ -->
+  <div style="margin-bottom:36px;">
+    ${sectionHeader(1, 'Executive Dashboard', C.navy)}
+    
+    <!-- Health Score + KPI Gauges -->
+    <div style="display:flex;gap:16px;align-items:stretch;margin-bottom:20px;">
+      <!-- Health Score -->
+      <div style="flex:0 0 170px;padding:20px 16px;background:linear-gradient(135deg,${hs.color}08,${hs.color}15);border:1.5px solid ${hs.color}30;border-radius:10px;text-align:center;">
+        ${gaugeChart(hs.composite, 100, 'Health Score', hs.color, `/ 100`, 150)}
+        <div style="margin-top:6px;padding:4px 10px;background:${hs.color};border-radius:12px;display:inline-block;">
+          <span style="font-size:11px;font-weight:700;color:white;">${hs.grade} — ${hs.label}</span>
+        </div>
+      </div>
+      <!-- KPI Donuts -->
+      <div style="flex:1;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+        <div style="padding:14px 8px;background:${C.bg};border:1px solid #E2E8F0;border-radius:8px;">
+          ${donutChart(s.completionRate, 'Completion', s.completionRate >= 80 ? C.emerald : s.completionRate >= 50 ? C.amber : C.red)}
+          <div style="text-align:center;margin-top:4px;">${deltaArrow(trend.completionRateDelta)}</div>
+        </div>
+        <div style="padding:14px 8px;background:${C.bg};border:1px solid #E2E8F0;border-radius:8px;">
+          ${donutChart(s.onTimeRate, 'On-Time', s.onTimeRate >= 80 ? C.emerald : s.onTimeRate >= 50 ? C.amber : C.red)}
+          <div style="text-align:center;margin-top:4px;">${deltaArrow(trend.onTimeRateDelta)}</div>
+        </div>
+        <div style="padding:14px 8px;background:${C.bg};border:1px solid #E2E8F0;border-radius:8px;">
+          ${donutChart(s.productivity, 'Productivity', s.productivity >= 80 ? C.emerald : s.productivity >= 50 ? C.amber : C.red)}
+        </div>
+        <div style="padding:14px 8px;background:${C.bg};border:1px solid #E2E8F0;border-radius:8px;">
+          ${donutChart(s.efficiencyIndex || 0, 'Efficiency', (s.efficiencyIndex||0) >= 80 ? C.emerald : (s.efficiencyIndex||0) >= 50 ? C.amber : C.red)}
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Stats Row -->
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;">
+      ${metricCard(s.totalTasks, 'Total Tasks', C.blue, '#EFF6FF')}
+      ${metricCard(s.completedTasks, 'Completed', C.emerald, '#ECFDF5')}
+      ${metricCard(s.overdueTasks, 'Overdue', s.overdueTasks > 0 ? C.red : C.emerald, s.overdueTasks > 0 ? '#FEF2F2' : '#ECFDF5')}
+      ${metricCard(s.throughputPerDay, 'Tasks/Day', C.teal, '#F0FDFA')}
+      ${metricCard(s.avgCycleTimeDays + 'd', 'Avg Cycle', C.indigo, '#EEF2FF')}
+      ${metricCard(s.avgFlowCompletionDays + 'd', 'Avg Flow', C.violet, '#F5F3FF')}
+    </div>
+
+    <!-- Business Status Banner -->
+    <div style="margin-top:16px;padding:16px 20px;background:linear-gradient(135deg,${C.bg},#EEF2FF);border:1px solid #E2E8F0;border-radius:8px;display:flex;align-items:center;gap:16px;">
+      <span style="font-size:32px;">${s.businessEmoji}</span>
+      <div style="flex:1;">
+        <div style="font-size:18px;font-weight:800;color:${s.completionRate >= 80 && s.onTimeRate >= 80 ? C.emerald : s.completionRate >= 50 ? C.amber : C.red};letter-spacing:-0.3px;">${s.businessStatus}</div>
+        <div style="font-size:12px;color:${C.charcoal};margin-top:2px;">${s.actionPlan}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0;">
+        <div style="font-size:9px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:0.5px;">Process Maturity</div>
+        <div style="font-size:22px;font-weight:800;color:${C.indigo};">${pm.score}<span style="font-size:12px;color:${C.lightSlate};">/${pm.maxScore}</span></div>
+        <div style="font-size:10px;color:${C.slate};font-weight:600;">${pm.label}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ╔══ 2. EXECUTIVE SUMMARY ══╗ -->
+  <div style="margin-bottom:36px;">
+    ${sectionHeader(2, 'Executive Summary', C.blue)}
+    <div style="font-size:13px;color:${C.charcoal};line-height:1.75;column-count:2;column-gap:32px;">
+      <p style="margin:0 0 10px;">
+        Over the past <strong>${s.dataSpanDays} days</strong>, <strong>${r.organization.name}</strong> processed <strong>${s.totalTasks} tasks</strong> across <strong>${r.totalSystems} workflow systems</strong> with <strong>${r.totalFlowRules} configured flow rules</strong>.
+        Of these, <strong>${s.completedTasks} tasks were completed</strong> achieving a <strong>${s.completionRate}% completion rate</strong> with <strong>${s.onTimeRate}% on-time delivery</strong>.
+      </p>
+      <p style="margin:0 0 10px;">
+        The organization's Operations Health Score stands at <strong style="color:${hs.color};">${hs.composite}/100 (Grade ${hs.grade})</strong>, classified as <strong>${hs.label}</strong>.
+        ${trend.isImproving ? `Performance is <strong style="color:${C.emerald};">trending upward</strong> with completion rates improving by ${trend.completionRateDelta}% compared to the prior period.` : `Performance has <strong style="color:${C.red};">declined</strong> from the prior period — completion rate dropped by ${Math.abs(trend.completionRateDelta)}%.`}
+      </p>
+      <p style="margin:0 0 10px;">
+        ${s.overdueTasks > 0 ? `There are currently <strong style="color:${C.red};">${s.overdueTasks} overdue tasks</strong> requiring immediate attention, contributing to an estimated delay loss of <strong>&#8377;${r.lossCost.totalLossCost.toLocaleString('en-IN')}</strong>.` : 'All active tasks are within their deadlines — zero overdue items detected.'}
+        The team of <strong>${cap.totalTeamMembers} members</strong> maintains an average throughput of <strong>${s.throughputPerDay} tasks/day</strong> with a median cycle time of <strong>${s.medianCycleTimeHours || s.avgCycleTimeHours}h</strong> (P90: ${s.p90CycleTimeHours || '-'}h).
+      </p>
+      <p style="margin:0;">
+        Process maturity is rated at <strong>${pm.score}/${pm.maxScore}</strong> (${pm.label} level).
+        ${r.lossCost.projectedMonthlyLoss > 0 ? `At current delay rates, projected monthly loss is <strong style="color:${C.red};">&#8377;${r.lossCost.projectedMonthlyLoss.toLocaleString('en-IN')}</strong> and annual projected loss is <strong style="color:${C.red};">&#8377;${r.lossCost.projectedAnnualLoss.toLocaleString('en-IN')}</strong>.` : 'No significant delay losses detected.'}
+      </p>
+    </div>
+  </div>
+
+  <!-- ╔══ 3. TREND ANALYSIS ══╗ -->
+  <div style="margin-bottom:36px;">
+    ${sectionHeader(3, 'Trend Analysis — Period-over-Period', C.teal)}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+      <!-- Completion Trend -->
+      <div style="padding:18px;background:${C.bg};border:1px solid #E2E8F0;border-radius:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="font-size:12px;font-weight:700;color:${C.darkSlate};">Weekly Completions</div>
+          ${deltaArrow(trend.completionRateDelta)}
+        </div>
+        ${areaSparkline(weeklyTrendData, C.blue, 400, 60)}
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:10px;color:${C.lightSlate};">
+          ${(r.weeklyTrend || []).map((w: any) => `<span>${w.weekLabel}</span>`).join('')}
+        </div>
+      </div>
+      <!-- On-Time Rate Trend -->
+      <div style="padding:18px;background:${C.bg};border:1px solid #E2E8F0;border-radius:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="font-size:12px;font-weight:700;color:${C.darkSlate};">Weekly On-Time Rate</div>
+          ${deltaArrow(trend.onTimeRateDelta)}
+        </div>
+        ${areaSparkline(weeklyOnTimeData, C.emerald, 400, 60)}
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:10px;color:${C.lightSlate};">
+          ${(r.weeklyTrend || []).map((w: any) => `<span>${w.weekLabel}</span>`).join('')}
+        </div>
+      </div>
+    </div>
+    <!-- Trend Comparison Cards -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+      <div style="padding:14px;background:${C.bg};border:1px solid #E2E8F0;border-radius:8px;text-align:center;">
+        <div style="font-size:9px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:0.5px;">Prior Period Tasks</div>
+        <div style="font-size:20px;font-weight:700;color:${C.charcoal};">${trend.previousPeriod?.tasks || 0}</div>
+      </div>
+      <div style="padding:14px;background:${C.bg};border:1px solid #E2E8F0;border-radius:8px;text-align:center;">
+        <div style="font-size:9px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:0.5px;">Current Period Tasks</div>
+        <div style="font-size:20px;font-weight:700;color:${C.blue};">${trend.currentPeriod?.tasks || 0}</div>
+      </div>
+      <div style="padding:14px;background:${C.bg};border:1px solid #E2E8F0;border-radius:8px;text-align:center;">
+        <div style="font-size:9px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:0.5px;">Volume Change</div>
+        <div style="font-size:20px;font-weight:700;">${deltaArrow(trend.volumeDelta, '')}</div>
+      </div>
+      <div style="padding:14px;background:${trend.isImproving ? '#ECFDF5' : '#FEF2F2'};border:1px solid ${trend.isImproving ? C.emerald : C.red}20;border-radius:8px;text-align:center;">
+        <div style="font-size:9px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:0.5px;">Overall Trend</div>
+        <div style="font-size:16px;font-weight:800;color:${trend.isImproving ? C.emerald : C.red};">${trend.isImproving ? '&#9650; Improving' : '&#9660; Declining'}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ╔══ 4. RISK MATRIX ══╗ -->
+  <div style="margin-bottom:36px;">
+    ${sectionHeader(4, 'Risk Assessment Matrix', C.red)}
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead><tr style="background:#FFF7ED;">
+        <th style="${thStyle()}">Risk</th>
+        <th style="${thStyle('center')}width:80px;">Severity</th>
+        <th style="${thStyle()}">Impact</th>
+        <th style="${thStyle()}">Recommended Mitigation</th>
+      </tr></thead>
+      <tbody>${(r.riskMatrix || []).map((ri: any) => `
+        <tr>
+          <td style="${tdStyle()}font-weight:700;color:${ri.color};">${ri.risk}</td>
+          <td style="${tdStyle('center')}"><span style="display:inline-block;padding:2px 10px;border-radius:12px;background:${ri.color}15;color:${ri.color};font-weight:700;font-size:10px;">${ri.severity}</span></td>
+          <td style="${tdStyle()}color:${C.charcoal};">${ri.impact}</td>
+          <td style="${tdStyle()}color:${C.slate};font-style:italic;">${ri.mitigation}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ╔══ 5. TASK DISTRIBUTION & LOSS COST ══╗ -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:36px;">
+    <!-- Task Distribution -->
+    <div>
+      ${sectionHeader(5, 'Task Distribution', C.blue)}
+      ${pieChart([
+        {label: 'Completed', value: s.completedTasks, color: C.emerald},
+        {label: 'In Progress', value: s.inProgressTasks || 0, color: C.blue},
+        {label: 'Pending', value: s.pendingTasks - (s.inProgressTasks || 0), color: C.amber},
+        {label: 'Overdue', value: s.overdueTasks, color: C.red},
+        {label: 'Cancelled', value: s.cancelledTasks || 0, color: C.lightSlate},
+      ])}
+    </div>
+    <!-- Loss Cost -->
+    <div>
+      ${sectionHeader(6, 'Financial Impact Analysis', C.red)}
+      <div style="padding:18px;background:linear-gradient(135deg,#FEF2F2,#FFF7ED);border:1px solid #FECACA;border-radius:8px;margin-bottom:12px;">
+        <div style="font-size:10px;color:${C.red};text-transform:uppercase;letter-spacing:1px;font-weight:700;">Estimated Loss from Delays</div>
+        <div style="font-size:32px;font-weight:900;color:${C.red};margin:4px 0;">&#8377;${r.lossCost.totalLossCost.toLocaleString('en-IN')}</div>
+        <div style="font-size:11px;color:${C.charcoal};">${r.lossCost.totalWaitHours}h total delay &times; &#8377;${r.lossCost.costPerHour}/hr</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div style="padding:12px;background:${C.bg};border:1px solid #E2E8F0;border-radius:6px;text-align:center;">
+          <div style="font-size:18px;font-weight:800;color:${C.amber};">&#8377;${(r.lossCost.projectedMonthlyLoss || 0).toLocaleString('en-IN')}</div>
+          <div style="font-size:9px;color:${C.slate};text-transform:uppercase;">Monthly Projection</div>
+        </div>
+        <div style="padding:12px;background:${C.bg};border:1px solid #E2E8F0;border-radius:6px;text-align:center;">
+          <div style="font-size:18px;font-weight:800;color:${C.red};">&#8377;${(r.lossCost.projectedAnnualLoss || 0).toLocaleString('en-IN')}</div>
+          <div style="font-size:9px;color:${C.slate};text-transform:uppercase;">Annual Projection</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:${C.slate};padding:8px 10px;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;">
+        Reducing bottleneck cycle times by 20% could recover approx. <strong>&#8377;${Math.round(r.lossCost.totalLossCost * 0.2).toLocaleString('en-IN')}</strong> in productivity value.
+      </div>
+    </div>
+  </div>
+
+  <!-- ╔══ 7. ACTUAL vs IDEAL ══╗ -->
+  <div style="margin-bottom:36px;">
+    ${sectionHeader(7, 'Actual vs Ideal Performance (100% Benchmark)', C.indigo)}
     ${(() => {
       const ic = r.idealComparison || { actual: {}, ideal: {}, gap: {} };
       const a = ic.actual || {};
       const g = ic.gap || {};
       const rows = [
-        { metric: 'Completion Rate', actual: a.completionRate + '%', ideal: '100%', gap: g.completionRate + '%', gapColor: g.completionRate > 20 ? '#DC2626' : g.completionRate > 10 ? '#D97706' : '#059669' },
-        { metric: 'On-Time Rate', actual: a.onTimeRate + '%', ideal: '100%', gap: g.onTimeRate + '%', gapColor: g.onTimeRate > 20 ? '#DC2626' : g.onTimeRate > 10 ? '#D97706' : '#059669' },
-        { metric: 'Productivity', actual: a.productivity + '%', ideal: '100%', gap: g.productivity + '%', gapColor: g.productivity > 20 ? '#DC2626' : g.productivity > 10 ? '#D97706' : '#059669' },
-        { metric: 'Performance', actual: a.performance + '%', ideal: '100%', gap: g.performance + '%', gapColor: g.performance > 20 ? '#DC2626' : g.performance > 10 ? '#D97706' : '#059669' },
-        { metric: 'Throughput / Day', actual: a.throughputPerDay, ideal: ic.ideal?.throughputPerDay || 0, gap: '+' + (g.throughputPerDayGap || 0) + ' needed', gapColor: '#D97706' },
-        { metric: 'Completed Tasks', actual: a.completedTasks, ideal: ic.ideal?.completedTasks || 0, gap: '+' + (g.additionalTasksNeeded || 0) + ' needed', gapColor: g.additionalTasksNeeded > 0 ? '#DC2626' : '#059669' },
-        { metric: 'Overdue Tasks', actual: a.overdueTasks, ideal: '0', gap: g.overdueToResolve + ' to resolve', gapColor: g.overdueToResolve > 0 ? '#DC2626' : '#059669' },
-        { metric: 'Loss Cost', actual: '\u20B9' + (a.lossCost || 0).toLocaleString('en-IN'), ideal: '\u20B90', gap: '\u20B9' + (g.lossCostRecoverable || 0).toLocaleString('en-IN') + ' recoverable', gapColor: g.lossCostRecoverable > 0 ? '#DC2626' : '#059669' },
+        { metric: 'Completion Rate', actual: a.completionRate + '%', ideal: '100%', gap: g.completionRate + '%', gapColor: g.completionRate > 20 ? C.red : g.completionRate > 10 ? C.amber : C.emerald, bar: a.completionRate },
+        { metric: 'On-Time Rate', actual: a.onTimeRate + '%', ideal: '100%', gap: g.onTimeRate + '%', gapColor: g.onTimeRate > 20 ? C.red : g.onTimeRate > 10 ? C.amber : C.emerald, bar: a.onTimeRate },
+        { metric: 'Productivity', actual: a.productivity + '%', ideal: '100%', gap: g.productivity + '%', gapColor: g.productivity > 20 ? C.red : g.productivity > 10 ? C.amber : C.emerald, bar: a.productivity },
+        { metric: 'Performance', actual: a.performance + '%', ideal: '100%', gap: g.performance + '%', gapColor: g.performance > 20 ? C.red : g.performance > 10 ? C.amber : C.emerald, bar: a.performance },
+        { metric: 'Throughput / Day', actual: String(a.throughputPerDay), ideal: String(ic.ideal?.throughputPerDay || 0), gap: '+' + (g.throughputPerDayGap || 0) + ' needed', gapColor: C.amber, bar: 0 },
+        { metric: 'Overdue Tasks', actual: String(a.overdueTasks), ideal: '0', gap: g.overdueToResolve + ' to resolve', gapColor: g.overdueToResolve > 0 ? C.red : C.emerald, bar: 0 },
+        { metric: 'Loss Cost', actual: '\u20B9' + (a.lossCost || 0).toLocaleString('en-IN'), ideal: '\u20B90', gap: '\u20B9' + (g.lossCostRecoverable || 0).toLocaleString('en-IN') + ' recoverable', gapColor: g.lossCostRecoverable > 0 ? C.red : C.emerald, bar: 0 },
       ];
-      return '<table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:12px;">' +
-        '<thead><tr style="background:linear-gradient(135deg,#EEF2FF,#E0E7FF);">' +
-        '<th style="padding:10px 14px;text-align:left;color:#3730A3;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Metric</th>' +
-        '<th style="padding:10px 14px;text-align:center;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Actual</th>' +
-        '<th style="padding:10px 14px;text-align:center;color:#059669;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Ideal (100%)</th>' +
-        '<th style="padding:10px 14px;text-align:center;color:#DC2626;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Gap to Close</th>' +
-        '</tr></thead><tbody>' +
+      return '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+        `<thead><tr style="background:linear-gradient(135deg,#EEF2FF,#E0E7FF);">` +
+        `<th style="${thStyle()}">Metric</th>` +
+        `<th style="${thStyle('center')}">Actual</th>` +
+        `<th style="${thStyle('center')}width:120px;">Progress</th>` +
+        `<th style="${thStyle('center')}">Ideal</th>` +
+        `<th style="${thStyle('center')}">Gap</th>` +
+        `</tr></thead><tbody>` +
         rows.map(row =>
-          '<tr>' +
-          '<td style="padding:10px 14px;font-weight:600;color:#1E293B;border-bottom:1px solid #F1F5F9;">' + row.metric + '</td>' +
-          '<td style="padding:10px 14px;text-align:center;font-weight:700;color:#1E40AF;border-bottom:1px solid #F1F5F9;">' + row.actual + '</td>' +
-          '<td style="padding:10px 14px;text-align:center;font-weight:700;color:#059669;border-bottom:1px solid #F1F5F9;">' + row.ideal + '</td>' +
-          '<td style="padding:10px 14px;text-align:center;font-weight:700;color:' + row.gapColor + ';border-bottom:1px solid #F1F5F9;">' + row.gap + '</td>' +
-          '</tr>'
+          `<tr>` +
+          `<td style="${tdStyle()}font-weight:600;color:${C.darkSlate};">${row.metric}</td>` +
+          `<td style="${tdStyle('center')}font-weight:700;color:${C.blue};">${row.actual}</td>` +
+          `<td style="${tdStyle('center')}">${row.bar > 0 ? miniBar(row.bar, row.gapColor, 6) : ''}</td>` +
+          `<td style="${tdStyle('center')}font-weight:700;color:${C.emerald};">${row.ideal}</td>` +
+          `<td style="${tdStyle('center')}font-weight:700;color:${row.gapColor};">${row.gap}</td>` +
+          `</tr>`
         ).join('') +
         '</tbody></table>';
     })()}
     <div style="margin-top:14px;padding:12px 16px;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;">
-      <div style="font-size:11px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;font-family:Arial,sans-serif;">Potential Recovery at 100% Efficiency</div>
-      <div style="font-size:13px;color:#78350F;">If all overdue and pending tasks were completed on time, the organization could recover <strong>&#8377;${(r.idealComparison?.gap?.lossCostRecoverable || 0).toLocaleString('en-IN')}</strong> in loss costs, improve throughput by <strong>${r.idealComparison?.gap?.throughputPerDayGap || 0} tasks/day</strong>, and eliminate <strong>${r.idealComparison?.gap?.overdueToResolve || 0} overdue tasks</strong>.</div>
+      <div style="font-size:10px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Recovery Potential at 100% Efficiency</div>
+      <div style="font-size:12px;color:#78350F;">If all tasks were completed on time, the organization could recover <strong>&#8377;${(r.idealComparison?.gap?.lossCostRecoverable || 0).toLocaleString('en-IN')}</strong> in loss costs, improve throughput by <strong>${r.idealComparison?.gap?.throughputPerDayGap || 0} tasks/day</strong>, and eliminate <strong>${r.idealComparison?.gap?.overdueToResolve || 0} overdue tasks</strong>.</div>
     </div>
   </div>
 
-  <!-- Task Distribution Pie Chart -->
-  <div style="margin-bottom:32px;">
-    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #1E3A5F;padding-left:12px;">4. Task Distribution</h2>
-    ${pieChart([
-      {label: 'Completed', value: s.completedTasks, color: '#059669'},
-      {label: 'Pending', value: s.pendingTasks, color: '#D97706'},
-      {label: 'Overdue', value: s.overdueTasks, color: '#DC2626'},
-      {label: 'Cancelled', value: s.cancelledTasks || 0, color: '#94A3B8'},
-    ])}
+  <!-- ╔══ 8. BOTTLENECK ANALYSIS ══╗ -->
+  <div style="margin-bottom:36px;">
+    ${sectionHeader(8, 'Bottleneck Analysis', C.amber)}
+    <p style="font-size:12px;color:${C.charcoal};margin:0 0 12px;">Tasks ranked by average cycle time (hours). High cycle time indicates process bottlenecks requiring review. P90 cycle time across all tasks: <strong>${s.p90CycleTimeHours || '-'}h</strong>.</p>
+    ${vBarChart(bottleneckItems.map((b: any) => ({...b, value: b.value})), 160)}
+    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:12px;">
+      <thead><tr style="background:${C.bg};">
+        <th style="${thStyle()}">Task Type</th>
+        <th style="${thStyle('center')}">Instances</th>
+        <th style="${thStyle('center')}">Avg Cycle</th>
+        <th style="${thStyle('center')}">Overdue</th>
+        <th style="${thStyle('center')}">Pending</th>
+        <th style="${thStyle('center')}">Completion</th>
+      </tr></thead>
+      <tbody>${(r.bottlenecks || []).slice(0, 10).map((b: any) => `
+        <tr>
+          <td style="${tdStyle()}font-weight:600;color:${C.darkSlate};">${b.taskName}</td>
+          <td style="${tdStyle('center')}">${b.totalInstances}</td>
+          <td style="${tdStyle('center')}font-weight:700;color:${b.avgCycleHours > 48 ? C.red : b.avgCycleHours > 24 ? C.amber : C.emerald};">${b.avgCycleHours}h</td>
+          <td style="${tdStyle('center')}color:${b.overdueCount > 0 ? C.red : C.slate};">${b.overdueCount}</td>
+          <td style="${tdStyle('center')}">${b.pendingCount}</td>
+          <td style="${tdStyle('center')}font-weight:700;color:${b.completionRate >= 80 ? C.emerald : b.completionRate >= 50 ? C.amber : C.red};">${b.completionRate}%</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
   </div>
 
-  <!-- Loss Cost Analysis -->
-  <div style="margin-bottom:32px;">
-    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #DC2626;padding-left:12px;">5. Loss Cost Analysis</h2>
-    <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:14px;">
-      <div style="flex:1;min-width:200px;padding:20px;background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;">
-        <div style="font-size:11px;color:#991B1B;text-transform:uppercase;letter-spacing:1px;font-family:Arial,sans-serif;">Estimated Loss from Delays</div>
-        <div style="font-size:32px;font-weight:800;color:#DC2626;margin-top:4px;">&#8377;${r.lossCost.totalLossCost.toLocaleString('en-IN')}</div>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:12px;">
-        <div style="padding:16px 20px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;text-align:center;">
-          <div style="font-size:22px;font-weight:700;color:#0F172A;">${r.lossCost.totalWaitHours}h</div>
-          <div style="font-size:10px;color:#64748B;margin-top:2px;font-family:Arial,sans-serif;">DELAY HOURS</div>
-        </div>
-        <div style="padding:16px 20px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;text-align:center;">
-          <div style="font-size:22px;font-weight:700;color:#0F172A;">&#8377;${r.lossCost.costPerHour}</div>
-          <div style="font-size:10px;color:#64748B;margin-top:2px;font-family:Arial,sans-serif;">COST / HOUR</div>
-        </div>
-        <div style="padding:16px 20px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;text-align:center;">
-          <div style="font-size:22px;font-weight:700;color:#0F172A;">${s.throughputPerHour}</div>
-          <div style="font-size:10px;color:#64748B;margin-top:2px;font-family:Arial,sans-serif;">THROUGHPUT/HR</div>
-        </div>
-      </div>
-    </div>
-    <p style="font-size:13px;color:#475569;">
-      This figure represents the cumulative cost of overdue and delayed tasks, calculated by summing the total delay hours across all late tasks and multiplying by the hourly cost rate.
-      Reducing bottleneck cycle times by even 20% could recover approximately <strong>&#8377;${Math.round(r.lossCost.totalLossCost * 0.2).toLocaleString('en-IN')}</strong> in productivity value.
-    </p>
+  <!-- ╔══ 9. FLOW & SYSTEM PERFORMANCE ══╗ -->
+  <div style="margin-bottom:36px;">
+    ${sectionHeader(9, 'Workflow System Performance', C.blue)}
+    <div style="margin-bottom:16px;">${vBarChart(systemChartItems, 150)}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;">
+      <thead><tr style="background:${C.bg};">
+        <th style="${thStyle()}">System</th>
+        <th style="${thStyle('center')}">Total</th>
+        <th style="${thStyle('center')}">Done</th>
+        <th style="${thStyle('center')}">Pending</th>
+        <th style="${thStyle('center')}">Overdue</th>
+        <th style="${thStyle('center')}">Rate</th>
+        <th style="${thStyle('center')}">Avg Cycle</th>
+      </tr></thead>
+      <tbody>${systemRows || `<tr><td colspan="7" style="text-align:center;padding:20px;color:${C.lightSlate};">No data</td></tr>`}</tbody>
+    </table>
   </div>
 
-  <!-- Bottleneck Analysis -->
-  <div style="margin-bottom:32px;">
-    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #D97706;padding-left:12px;">6. Bottleneck Analysis</h2>
-    <p style="font-size:13px;color:#475569;margin-bottom:14px;">Tasks ranked by average cycle time in hours (slowest first). High cycle time indicates process bottlenecks requiring review.</p>
-    ${vBarChart(bottleneckItems, 180)}
-  </div>
-
-  <!-- Flow Average Completion Time -->
-  <div style="margin-bottom:32px;">
-    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #0D9488;padding-left:12px;">7. Flow Average Completion Time</h2>
-    <p style="font-size:13px;color:#475569;margin-bottom:6px;">Average completion time (in days) per workflow/system. Overall average: <strong>${s.avgFlowCompletionDays || 0} days</strong>.</p>
-    <div style="margin-bottom:14px;">${vBarChart(flowCompletionItems, 160)}</div>
-    <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:12px;">
-      <thead>
-        <tr style="background:#F0FDFA;">
-          <th style="padding:9px 14px;text-align:left;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Flow / System</th>
-          <th style="padding:9px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Avg Completion (days)</th>
-          <th style="padding:9px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">On-Time Rate</th>
-        </tr>
-      </thead>
+  <!-- ╔══ 10. FLOW COMPLETION TIME ══╗ -->
+  <div style="margin-bottom:36px;">
+    ${sectionHeader(10, 'Flow Average Completion Time', C.teal)}
+    <p style="font-size:12px;color:${C.charcoal};margin:0 0 10px;">Average completion time (days) per workflow. Overall average: <strong>${s.avgFlowCompletionDays || 0} days</strong>.</p>
+    ${vBarChart(flowCompletionItems, 140)}
+    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:12px;">
+      <thead><tr style="background:#F0FDFA;">
+        <th style="${thStyle()}">Flow / System</th>
+        <th style="${thStyle('center')}">Avg Completion (days)</th>
+        <th style="${thStyle('center')}">On-Time Rate</th>
+      </tr></thead>
       <tbody>${(r.flowPerformance || []).map((f: any) => `
         <tr>
-          <td style="padding:8px 14px;font-weight:600;color:#1E293B;border-bottom:1px solid #F1F5F9;">${f.system}</td>
-          <td style="padding:8px 14px;text-align:center;font-weight:700;color:#0F766E;border-bottom:1px solid #F1F5F9;">${Math.abs(f.avgCompletionTime || 0).toFixed(1)}</td>
-          <td style="padding:8px 14px;text-align:center;font-weight:700;color:${(f.onTimeRate || 0) >= 80 ? '#059669' : (f.onTimeRate || 0) >= 50 ? '#D97706' : '#DC2626'};border-bottom:1px solid #F1F5F9;">${f.onTimeRate || 0}%</td>
-        </tr>`).join('') || '<tr><td colspan="3" style="text-align:center;padding:20px;color:#94A3B8;">No flow data</td></tr>'}</tbody>
+          <td style="${tdStyle()}font-weight:600;color:${C.darkSlate};">${f.system}</td>
+          <td style="${tdStyle('center')}font-weight:700;color:${C.teal};">${Math.abs(f.avgCompletionTime || 0).toFixed(1)}</td>
+          <td style="${tdStyle('center')}"><div style="display:flex;align-items:center;gap:6px;justify-content:center;">
+            <span style="font-weight:700;color:${(f.onTimeRate||0) >= 80 ? C.emerald : (f.onTimeRate||0) >= 50 ? C.amber : C.red};">${f.onTimeRate || 0}%</span>
+            <div style="width:50px;">${miniBar(f.onTimeRate || 0, (f.onTimeRate||0) >= 80 ? C.emerald : (f.onTimeRate||0) >= 50 ? C.amber : C.red, 4)}</div>
+          </div></td>
+        </tr>`).join('') || `<tr><td colspan="3" style="text-align:center;padding:20px;color:${C.lightSlate};">No flow data</td></tr>`}</tbody>
     </table>
   </div>
 
-  <!-- System / Workflow Performance -->
-  <div style="margin-bottom:32px;">
-    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #3B82F6;padding-left:12px;">8. Workflow System Performance</h2>
-    <div style="margin-bottom:16px;">${vBarChart(systemChartItems, 160)}</div>
-    <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:12px;">
-      <thead>
-        <tr style="background:#F1F5F9;">
-          <th style="padding:10px 14px;text-align:left;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">System</th>
-          <th style="padding:10px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Total</th>
-          <th style="padding:10px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Done</th>
-          <th style="padding:10px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Overdue</th>
-          <th style="padding:10px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Rate</th>
-        </tr>
-      </thead>
-      <tbody>${systemRows || '<tr><td colspan="5" style="text-align:center;padding:20px;color:#94A3B8;">No system data</td></tr>'}</tbody>
-    </table>
-  </div>
-
-  <!-- Team Performance -->
-  <div style="margin-bottom:32px;">
-    <h2 style="font-size:18px;color:#0F172A;margin:0 0 14px;border-left:4px solid #8B5CF6;padding-left:12px;">9. Team Performance</h2>
-    <p style="font-size:13px;color:#475569;margin-bottom:14px;">On-time delivery rate by team member. Green indicates strong performance (≥80%), amber needs monitoring, red requires action.</p>
-    <div style="margin-bottom:16px;">${vBarChart(doerChartItems, 140)}</div>
-    <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:12px;">
-      <thead>
-        <tr style="background:#F1F5F9;">
-          <th style="padding:9px 14px;text-align:left;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Team Member</th>
-          <th style="padding:9px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Tasks</th>
-          <th style="padding:9px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Done</th>
-          <th style="padding:9px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">On-Time</th>
-          <th style="padding:9px 14px;text-align:center;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">Avg Time</th>
-        </tr>
-      </thead>
-      <tbody>${doerRows || '<tr><td colspan="5" style="text-align:center;padding:20px;color:#94A3B8;">No team data</td></tr>'}</tbody>
-    </table>
-  </div>
-
-  <!-- Top Performers & Needs Attention -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:32px;">
-    <div style="border:1px solid #D1FAE5;border-radius:8px;padding:18px;background:#F0FDF4;">
-      <h3 style="font-size:14px;color:#065F46;margin:0 0 10px;font-family:Arial,sans-serif;">Top Performers</h3>
-      ${(r.topPerformers || []).length > 0 ? (r.topPerformers || []).map((d: any) => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #D1FAE5;">
-          <span style="font-size:12px;color:#065F46;font-family:Arial,sans-serif;">${d.doerEmail}</span>
-          <span style="font-size:12px;font-weight:700;color:#059669;">${d.onTimeRate}%</span>
-        </div>`).join('') : '<div style="font-size:12px;color:#94A3B8;text-align:center;padding:10px;">No data</div>'}
+  <!-- ╔══ 11. TEAM PERFORMANCE ══╗ -->
+  <div style="margin-bottom:36px;">
+    ${sectionHeader(11, 'Team Performance Intelligence', C.violet)}
+    
+    <!-- Team Distribution -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
+      <div style="padding:12px;background:#ECFDF5;border:1px solid ${C.emerald}20;border-radius:8px;text-align:center;">
+        <div style="font-size:22px;font-weight:800;color:${C.emerald};">${pd.excellent}</div>
+        <div style="font-size:9px;color:${C.slate};text-transform:uppercase;">Excellent (≥80%)</div>
+      </div>
+      <div style="padding:12px;background:#FFFBEB;border:1px solid ${C.amber}20;border-radius:8px;text-align:center;">
+        <div style="font-size:22px;font-weight:800;color:${C.amber};">${pd.good}</div>
+        <div style="font-size:9px;color:${C.slate};text-transform:uppercase;">Good (60-79%)</div>
+      </div>
+      <div style="padding:12px;background:#FFF7ED;border:1px solid #FB923C20;border-radius:8px;text-align:center;">
+        <div style="font-size:22px;font-weight:800;color:#EA580C;">${pd.average}</div>
+        <div style="font-size:9px;color:${C.slate};text-transform:uppercase;">Average (40-59%)</div>
+      </div>
+      <div style="padding:12px;background:#FEF2F2;border:1px solid ${C.red}20;border-radius:8px;text-align:center;">
+        <div style="font-size:22px;font-weight:800;color:${C.red};">${pd.poor}</div>
+        <div style="font-size:9px;color:${C.slate};text-transform:uppercase;">Needs Attention (<40%)</div>
+      </div>
     </div>
-    <div style="border:1px solid #FECACA;border-radius:8px;padding:18px;background:#FEF2F2;">
-      <h3 style="font-size:14px;color:#991B1B;margin:0 0 10px;font-family:Arial,sans-serif;">Needs Attention</h3>
-      ${(r.needsAttention || []).length > 0 ? (r.needsAttention || []).map((d: any) => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #FECACA;">
-          <span style="font-size:12px;color:#991B1B;font-family:Arial,sans-serif;">${d.doerEmail}</span>
-          <span style="font-size:12px;font-weight:700;color:#DC2626;">${d.onTimeRate}%</span>
-        </div>`).join('') : '<div style="font-size:12px;color:#94A3B8;text-align:center;padding:10px;">No data</div>'}
+
+    <!-- Doer Chart -->
+    <div style="margin-bottom:16px;">${vBarChart(doerChartItems, 130)}</div>
+
+    <!-- Doer Table -->
+    <table style="width:100%;border-collapse:collapse;font-size:11px;">
+      <thead><tr style="background:${C.bg};">
+        <th style="${thStyle()}">Team Member</th>
+        <th style="${thStyle('center')}">Tasks</th>
+        <th style="${thStyle('center')}">Completed</th>
+        <th style="${thStyle('center')}">On-Time Rate</th>
+        <th style="${thStyle('center')}">Avg Time</th>
+      </tr></thead>
+      <tbody>${doerRows || `<tr><td colspan="5" style="text-align:center;padding:20px;color:${C.lightSlate};">No team data</td></tr>`}</tbody>
+    </table>
+  </div>
+
+  <!-- ╔══ 12. TOP & BOTTOM PERFORMERS ══╗ -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:36px;">
+    <div style="border:1.5px solid ${C.emerald}30;border-radius:10px;padding:18px;background:#F0FDF4;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <div style="width:24px;height:24px;border-radius:50%;background:${C.emerald};display:flex;align-items:center;justify-content:center;font-size:12px;color:white;">&#9733;</div>
+        <h3 style="font-size:13px;color:#065F46;margin:0;font-weight:700;">Top Performers</h3>
+      </div>
+      ${(r.topPerformers || []).length > 0 ? (r.topPerformers || []).map((d: any, i: number) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;${i > 0 ? 'border-top:1px solid #D1FAE5;' : ''}">
+          <span style="font-size:12px;color:#065F46;font-weight:500;">${i === 0 ? '&#127942; ' : ''}${d.doerEmail}</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div style="width:40px;">${miniBar(d.onTimeRate, C.emerald, 4)}</div>
+            <span style="font-size:12px;font-weight:700;color:${C.emerald};width:36px;text-align:right;">${d.onTimeRate}%</span>
+          </div>
+        </div>`).join('') : `<div style="font-size:12px;color:${C.lightSlate};text-align:center;padding:10px;">No data</div>`}
+    </div>
+    <div style="border:1.5px solid ${C.red}30;border-radius:10px;padding:18px;background:#FEF2F2;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <div style="width:24px;height:24px;border-radius:50%;background:${C.red};display:flex;align-items:center;justify-content:center;font-size:12px;color:white;">!</div>
+        <h3 style="font-size:13px;color:#991B1B;margin:0;font-weight:700;">Needs Attention</h3>
+      </div>
+      ${(r.needsAttention || []).length > 0 ? (r.needsAttention || []).map((d: any, i: number) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;${i > 0 ? 'border-top:1px solid #FECACA;' : ''}">
+          <span style="font-size:12px;color:#991B1B;font-weight:500;">${d.doerEmail}</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div style="width:40px;">${miniBar(d.onTimeRate, C.red, 4)}</div>
+            <span style="font-size:12px;font-weight:700;color:${C.red};width:36px;text-align:right;">${d.onTimeRate}%</span>
+          </div>
+        </div>`).join('') : `<div style="font-size:12px;color:${C.lightSlate};text-align:center;padding:10px;">No data</div>`}
+    </div>
+  </div>
+
+  <!-- ╔══ 13. CAPACITY & UTILIZATION ══╗ -->
+  <div style="margin-bottom:36px;">
+    ${sectionHeader(13, 'Capacity & Utilization', C.indigo)}
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+      ${metricCard(cap.totalTeamMembers, 'Team Members', C.indigo, '#EEF2FF', '&#128101;')}
+      ${metricCard(cap.tasksPerPerson, 'Tasks / Person', C.blue, '#EFF6FF', '&#128203;')}
+      ${metricCard(cap.completedPerPerson, 'Done / Person', C.emerald, '#ECFDF5', '&#9989;')}
+      <div style="padding:16px;background:${C.bg};border:1px solid ${C.indigo}20;border-radius:8px;text-align:center;">
+        <div style="font-size:18px;margin-bottom:4px;">&#9881;</div>
+        <div style="font-size:20px;font-weight:800;color:${C.indigo};">${cap.overallUtilization}%</div>
+        <div style="font-size:9px;color:${C.slate};text-transform:uppercase;letter-spacing:0.8px;margin-top:4px;">Utilization</div>
+        <div style="margin-top:6px;">${miniBar(cap.overallUtilization, C.indigo)}</div>
+      </div>
     </div>
   </div>
 
   ${r.aiAnalysis ? `
-  <!-- AI Strategic Analysis -->
-  <div style="margin-bottom:32px;border:1px solid #C7D2FE;border-radius:8px;overflow:hidden;">
-    <div style="background:linear-gradient(135deg,#EEF2FF,#E0E7FF);padding:14px 20px;border-bottom:1px solid #C7D2FE;">
-      <h2 style="font-size:16px;color:#3730A3;margin:0;font-family:Arial,sans-serif;">10. AI-Powered Strategic Analysis</h2>
-      <div style="font-size:11px;color:#6366F1;margin-top:2px;font-family:Arial,sans-serif;">Generated by artificial intelligence based on your workflow data</div>
+  <!-- ╔══ 14. AI STRATEGIC ANALYSIS ══╗ -->
+  <div style="margin-bottom:36px;border:1.5px solid ${C.accent}30;border-radius:10px;overflow:hidden;">
+    <div style="background:linear-gradient(135deg,#EEF2FF,#E0E7FF);padding:16px 22px;border-bottom:1px solid ${C.accent}20;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:28px;height:28px;border-radius:6px;background:${C.accent};display:flex;align-items:center;justify-content:center;font-size:14px;color:white;">&#9733;</div>
+        <div>
+          <h2 style="font-size:15px;color:${C.navy};margin:0;font-weight:700;">AI-Powered Strategic Analysis</h2>
+          <div style="font-size:10px;color:${C.accent};margin-top:1px;">Generated by artificial intelligence based on aggregated workflow data</div>
+        </div>
+      </div>
     </div>
-    <div style="padding:18px 22px;font-size:13px;color:#334155;line-height:1.7;">${formatAI(r.aiAnalysis)}</div>
+    <div style="padding:20px 24px;font-size:12px;color:${C.charcoal};line-height:1.75;">${formatAI(r.aiAnalysis)}</div>
   </div>` : ''}
 
-  <!-- Copyright & Patent Notice -->
-  <div style="margin-top:28px;padding:14px 18px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;">
-    <div style="font-size:10px;color:#64748B;font-family:Arial,sans-serif;line-height:1.6;">${copyrightFull}</div>
+  <!-- ╔══ HEALTH SCORE BREAKDOWN ══╗ -->
+  <div style="margin-bottom:28px;padding:16px 20px;background:linear-gradient(135deg,${C.bg},#EEF2FF);border:1px solid #E2E8F0;border-radius:8px;">
+    <div style="font-size:10px;font-weight:700;color:${C.slate};text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Health Score Composition (${hs.composite}/100)</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+      <span style="font-size:11px;color:${C.charcoal};">Completion: <strong>${hs.breakdown?.completionComponent || 0}</strong>/30</span>
+      <span style="font-size:11px;color:${C.charcoal};">On-Time: <strong>${hs.breakdown?.onTimeComponent || 0}</strong>/30</span>
+      <span style="font-size:11px;color:${C.charcoal};">Efficiency: <strong>+${hs.breakdown?.efficiencyBonus || 0}</strong></span>
+      <span style="font-size:11px;color:${C.charcoal};">Bottleneck Penalty: <strong style="color:${C.red};">-${hs.breakdown?.bottleneckPenalty || 0}</strong></span>
+      <span style="font-size:11px;color:${C.charcoal};">Trend: <strong style="color:${(hs.breakdown?.trendBonus || 0) >= 0 ? C.emerald : C.red};">${(hs.breakdown?.trendBonus || 0) >= 0 ? '+' : ''}${hs.breakdown?.trendBonus || 0}</strong></span>
+    </div>
   </div>
 
-  <!-- Footer -->
-  <div style="border-top:2px solid #1E3A5F;padding-top:16px;margin-top:16px;display:flex;justify-content:space-between;align-items:flex-end;">
+  <!-- ╔══ COPYRIGHT & PATENT ══╗ -->
+  <div style="padding:14px 18px;background:${C.bg};border:1px solid #E2E8F0;border-radius:6px;margin-bottom:16px;">
+    <div style="font-size:9px;color:${C.lightSlate};line-height:1.6;">${copyrightFull}</div>
+  </div>
+
+  <!-- ╔══ FOOTER ══╗ -->
+  <div style="border-top:2px solid ${C.navy};padding-top:14px;display:flex;justify-content:space-between;align-items:flex-end;">
     <div>
-      <div style="font-size:11px;color:#94A3B8;font-family:Arial,sans-serif;text-transform:uppercase;letter-spacing:1px;">Generated by Process Sutra &mdash; Voice of Business&trade;</div>
-      <div style="font-size:11px;color:#94A3B8;margin-top:2px;">${r.totalSystems} workflow systems &bull; ${r.totalFlowRules} flow rules &bull; TAT: ${r.tatConfig.officeHours} (${r.tatConfig.timezone})${r.tatConfig.skipWeekends ? ' &bull; Weekends excluded' : ''}</div>
+      <div style="font-size:10px;color:${C.lightSlate};text-transform:uppercase;letter-spacing:1px;font-weight:600;">Generated by Process Sutra &mdash; Voice of Business&trade; v3.0</div>
+      <div style="font-size:10px;color:${C.lightSlate};margin-top:3px;">${r.totalSystems} systems &bull; ${r.totalFlowRules} flow rules &bull; ${cap.totalTeamMembers} team members &bull; TAT: ${r.tatConfig.officeHours} (${r.tatConfig.timezone})${r.tatConfig.skipWeekends ? ' &bull; Weekends excluded' : ''}</div>
     </div>
-    <div style="font-size:10px;color:#94A3B8;font-style:italic;text-align:right;">${copyrightLine}</div>
+    <div style="font-size:9px;color:${C.lightSlate};font-style:italic;text-align:right;">${copyrightLine}</div>
+  </div>
+
   </div>
 </div>`;
   };
