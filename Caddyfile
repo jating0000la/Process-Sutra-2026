@@ -36,12 +36,12 @@ processsutra.com, www.processsutra.com {
             response_header_timeout 60s
         }
 
-        # Headers
+        # Pass real client info upstream
         header_up Host {host}
         header_up X-Real-IP {remote_ip}
         header_up X-Forwarded-For {remote_ip}
-        header_up X-Forwarded-Proto {scheme}
-        
+        # X-Forwarded-Proto is set automatically by Caddy
+
         # Health check
         health_uri /api/health
         health_interval 30s
