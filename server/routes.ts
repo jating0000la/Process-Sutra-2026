@@ -4271,20 +4271,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Strip sensitive user data — keep only structural info
-      const sanitizedRules = rules.map(r => ({
+      const sanitizedRules = rules.map((r, i) => ({
         currentTask: r.currentTask || "",
         status: r.status || "",
         nextTask: r.nextTask,
         tat: r.tat,
         tatType: r.tatType,
-        doer: r.doer, // role name only
+        doer: `Step ${i + 1} Assignee`, // strip actual user name for privacy
         formId: r.formId || undefined,
         transferable: r.transferable || false,
         mergeCondition: r.mergeCondition || "all",
       }));
 
       // Collect connected form templates (strip org info)
-      const formIds = [...new Set(rules.map(r => r.formId).filter(Boolean))] as string[];
+      const formIds = Array.from(new Set(rules.map(r => r.formId).filter(Boolean))) as string[];
       const formTemplates: any[] = [];
 
       if (formIds.length > 0) {

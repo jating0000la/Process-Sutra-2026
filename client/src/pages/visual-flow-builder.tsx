@@ -2287,7 +2287,7 @@ export default function VisualFlowBuilder() {
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
               <p className="text-xs text-amber-700">
                 This will publish your flow structure and connected forms as a public template. 
-                <strong> Your email, organization ID, and user data will NOT be shared.</strong> Only the flow structure, role names, and form fields are published.
+                <strong> Your email, user names, organization ID, and user data will NOT be shared.</strong> Only the flow structure, TAT settings, and form fields are published. Assignee names are replaced with generic labels.
               </p>
             </div>
             <div>

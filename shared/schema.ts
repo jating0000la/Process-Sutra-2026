@@ -102,6 +102,7 @@ export const users = pgTable(
     googleRefreshToken: text("google_refresh_token"),
     googleTokenExpiry: timestamp("google_token_expiry"),
     googleDriveEnabled: boolean("google_drive_enabled").default(false),
+    ndaAcceptedAt: timestamp("nda_accepted_at"),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
   },

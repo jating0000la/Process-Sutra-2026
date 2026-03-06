@@ -548,6 +548,7 @@ export async function setupAuth(app: Express) {
             role: dbUser.role,
             isSuperAdmin: dbUser.isSuperAdmin,
             organizationId: (dbUser as any).organizationId,
+            ndaAcceptedAt: (dbUser as any).ndaAcceptedAt,
           }
         });
       }
@@ -657,6 +658,7 @@ export async function setupAuth(app: Express) {
           role: dbUser.role,
           isSuperAdmin: dbUser.isSuperAdmin,
           organizationId: (dbUser as any).organizationId,
+          ndaAcceptedAt: (dbUser as any).ndaAcceptedAt,
         }
       });
 
@@ -707,6 +709,36 @@ export async function setupAuth(app: Express) {
     } catch (error) {
       console.error('Error fetching user:', error);
       res.status(500).json({ message: 'Failed to fetch user' });
+    }
+  });
+
+  // Accept NDA/Terms route
+  app.post('/api/auth/accept-nda', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.session as any)?.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: 'Not authenticated' });
+      }
+
+      const { db } = await import('./db.js');
+      const { users } = await import('../shared/schema.js');
+      const { eq } = await import('drizzle-orm');
+
+      const now = new Date();
+      const [updated] = await db.update(users)
+        .set({ ndaAcceptedAt: now, updatedAt: now })
+        .where(eq(users.id, userId))
+        .returning();
+
+      if (!updated) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      console.log(`[AUDIT] NDA accepted by ${updated.email} at ${now.toISOString()}`);
+      res.json({ success: true, ndaAcceptedAt: now });
+    } catch (error) {
+      console.error('Error accepting NDA:', error);
+      res.status(500).json({ message: 'Failed to accept NDA' });
     }
   });
 

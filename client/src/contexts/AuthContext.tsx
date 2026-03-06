@@ -24,6 +24,7 @@ interface DatabaseUser {
   isSuperAdmin?: boolean;
   profileImageUrl?: string;
   organizationId?: string;
+  ndaAcceptedAt?: string | null;
 }
 
 interface AuthContextType {
@@ -36,6 +37,7 @@ interface AuthContextType {
   login: () => void;
   logout: (redirect?: boolean) => Promise<void>;
   handleTokenExpired: () => void;
+  acceptNDA: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -357,6 +359,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const acceptNDA = async () => {
+    const res = await fetch('/api/auth/accept-nda', { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to accept NDA');
+    const data = await res.json();
+    if (dbUser) {
+      setDbUser({ ...dbUser, ndaAcceptedAt: data.ndaAcceptedAt });
+    }
+  };
+
   const value = {
     user,
     dbUser,
@@ -367,6 +378,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     login,
     logout,
     handleTokenExpired,
+    acceptNDA,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
