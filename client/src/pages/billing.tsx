@@ -29,6 +29,12 @@ import {
   ExternalLink,
   RefreshCw,
   Loader2,
+  Receipt,
+  Download,
+  Ban,
+  CalendarDays,
+  ListOrdered,
+  XCircle,
 } from "lucide-react";
 
 interface Plan {
@@ -60,6 +66,30 @@ interface Subscription {
   outstandingAmount: number;
 }
 
+interface UpcomingSub {
+  id: string;
+  planName: string;
+  status: string;
+  billingCycleStart: string;
+  billingCycleEnd: string;
+}
+
+interface SubscriptionHistoryItem {
+  id: string;
+  planName: string;
+  planKey: string;
+  priceMonthly: number;
+  status: string;
+  billingCycleStart: string;
+  billingCycleEnd: string;
+  trialEndsAt: string | null;
+  usedFlows: number;
+  usedFormSubmissions: number;
+  usedUsers: number;
+  outstandingAmount: number;
+  createdAt: string;
+}
+
 interface SubscriptionData {
   subscription: Subscription | null;
   plan: Plan | null;
@@ -70,6 +100,7 @@ interface SubscriptionData {
   isExpired: boolean;
   isTrialExpired: boolean;
   outstandingAmount: number;
+  upcomingSubscriptions?: UpcomingSub[];
 }
 
 interface PaymentTransaction {
@@ -82,6 +113,21 @@ interface PaymentTransaction {
   status: string;
   paymentType: string;
   paymentMode: string | null;
+  createdAt: string;
+}
+
+interface InvoiceData {
+  id: string;
+  invoiceNumber: string;
+  billingPeriodStart: string;
+  billingPeriodEnd: string;
+  planAmount: number;
+  extraUsageAmount: number;
+  totalAmount: number;
+  status: string;
+  paymentMethod: string | null;
+  fileUrl: string | null;
+  notes: string | null;
   createdAt: string;
 }
 
@@ -196,6 +242,24 @@ export default function Billing() {
     },
   });
 
+  // Fetch invoices
+  const { data: invoicesList = [] } = useQuery<InvoiceData[]>({
+    queryKey: ["/api/billing/invoices"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/billing/invoices");
+      return res.json();
+    },
+  });
+
+  // Fetch subscription history (all plans: active, scheduled, expired)
+  const { data: subscriptionHistory = [] } = useQuery<SubscriptionHistoryItem[]>({
+    queryKey: ["/api/billing/subscription-history"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/billing/subscription-history");
+      return res.json();
+    },
+  });
+
   // Start free trial
   const startTrialMutation = useMutation({
     mutationFn: async () => {
@@ -233,18 +297,34 @@ export default function Billing() {
     },
   });
 
+  // Cancel a scheduled subscription
+  const cancelScheduledMutation = useMutation({
+    mutationFn: async (subscriptionId: string) => {
+      const res = await apiRequest("POST", "/api/billing/cancel-upgrade", { subscriptionId });
+      return res.json();
+    },
+    onSuccess: (result) => {
+      toast({ title: "Cancelled", description: result.message || "Scheduled subscription cancelled." });
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/subscription"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/subscription-history"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/payment-history"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to cancel", variant: "destructive" });
+    },
+  });
+
   const handleUpgrade = useCallback((planName: string) => {
     if (!subscriptionData?.subscription) {
       // No subscription - check if free trial available
       if (planName === "free_trial") {
         startTrialMutation.mutate();
       } else {
+        // Always send "subscription" — backend auto-includes outstanding
         initiatePaymentMutation.mutate({ planName, paymentType: "subscription" });
       }
-    } else if (subscriptionData.outstandingAmount > 0) {
-      // Has outstanding balance
-      initiatePaymentMutation.mutate({ planName, paymentType: "combined" });
     } else {
+      // Existing subscription — backend auto-includes outstanding in subscription payment
       initiatePaymentMutation.mutate({ planName, paymentType: "subscription" });
     }
   }, [subscriptionData]);
@@ -336,11 +416,27 @@ export default function Billing() {
           </div>
         )}
 
+        {subscriptionData?.isExpired && !subscriptionData?.isTrialExpired && (
+          <div className="bg-red-50 border border-red-300 rounded-lg p-4 flex items-start gap-3">
+            <Ban className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <h3 className="font-semibold text-red-800">Subscription Expired</h3>
+              <p className="text-red-700 text-sm mt-1">
+                Your subscription plan has expired. Flow executions and form submissions are currently blocked.
+                Please complete the payment to continue using ProcessSutra.
+              </p>
+              <Button className="mt-3" size="sm" variant="destructive" onClick={() => document.getElementById("plans-section")?.scrollIntoView({ behavior: "smooth" })}>
+                <Crown className="w-4 h-4 mr-2" /> Renew Plan
+              </Button>
+            </div>
+          </div>
+        )}
+
         {(subscriptionData?.outstandingAmount ?? 0) > 0 && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
             <div>
-              <h3 className="font-semibold text-red-800">Outstanding Balance: ₹{subscriptionData?.outstandingAmount}</h3>
+              <h3 className="font-semibold text-red-800">Outstanding Balance: ₹{subscriptionData?.outstandingAmount} <span className="text-xs font-normal">(+ 18% GST at payment)</span></h3>
               <p className="text-red-700 text-sm mt-1">
                 You have extra usage charges. Please pay the outstanding amount to avoid service interruption.
               </p>
@@ -373,7 +469,7 @@ export default function Billing() {
                 <CardDescription>
                   {currentPlan.priceMonthly === 0
                     ? "Free Trial"
-                    : `₹${currentPlan.priceMonthly.toLocaleString()}/month`}
+                    : `₹${currentPlan.priceMonthly.toLocaleString()}/month + GST`}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3 text-sm text-gray-600">
@@ -486,8 +582,16 @@ export default function Billing() {
                       )}
                       <Separator className="my-1" />
                       <div className="flex justify-between font-semibold">
-                        <span>Total Extra</span>
+                        <span>Subtotal</span>
                         <span>₹{subscriptionData.extraUsage.totalExtra}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span>GST (18%)</span>
+                        <span>₹{Math.round(subscriptionData.extraUsage.totalExtra * 0.18).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between font-semibold">
+                        <span>Total Extra (incl. GST)</span>
+                        <span>₹{Math.round(subscriptionData.extraUsage.totalExtra * 1.18).toLocaleString()}</span>
                       </div>
                     </div>
                   </div>
@@ -544,6 +648,7 @@ export default function Billing() {
                         <div>
                           <span className="text-3xl font-bold">₹{plan.priceMonthly.toLocaleString()}</span>
                           <span className="text-gray-500 text-sm">/month</span>
+                          <p className="text-xs text-gray-400 mt-1">+ 18% GST</p>
                         </div>
                       )}
                     </div>
@@ -566,6 +671,9 @@ export default function Billing() {
                         <Separator />
                         <p className="text-xs text-gray-400">
                           Extra: ₹{plan.extraFlowCost}/flow · ₹{plan.extraSubmissionCost}/submission · ₹{plan.extraUserCost}/user
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          All prices exclusive of 18% GST
                         </p>
                       </>
                     )}
@@ -599,6 +707,124 @@ export default function Billing() {
             })}
           </div>
         </div>
+
+        {/* Upcoming Scheduled Subscriptions */}
+        {(subscriptionData?.upcomingSubscriptions?.length ?? 0) > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarDays className="w-5 h-5 text-blue-500" />
+                Upcoming Subscriptions
+              </CardTitle>
+              <CardDescription>Plans queued after your current subscription ends</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-gray-500">
+                      <th className="pb-3 pr-4">#</th>
+                      <th className="pb-3 pr-4">Plan</th>
+                      <th className="pb-3 pr-4">Starts</th>
+                      <th className="pb-3 pr-4">Ends</th>
+                      <th className="pb-3 pr-4">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {subscriptionData!.upcomingSubscriptions!.map((us, idx) => (
+                      <tr key={us.id} className="border-b last:border-0">
+                        <td className="py-3 pr-4 text-gray-500">{idx + 1}</td>
+                        <td className="py-3 pr-4 font-medium">{us.planName}</td>
+                        <td className="py-3 pr-4">{formatDate(us.billingCycleStart)}</td>
+                        <td className="py-3 pr-4">{formatDate(us.billingCycleEnd)}</td>
+                        <td className="py-3 pr-4">
+                          <Badge variant="secondary" className="bg-blue-50 text-blue-700">Scheduled</Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Subscription History — all plans with start/end dates */}
+        {subscriptionHistory.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ListOrdered className="w-5 h-5 text-indigo-500" />
+                Subscription History
+              </CardTitle>
+              <CardDescription>All plan subscriptions with their billing periods</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-gray-500">
+                      <th className="pb-3 pr-4">Plan</th>
+                      <th className="pb-3 pr-4">Price</th>
+                      <th className="pb-3 pr-4">Start Date</th>
+                      <th className="pb-3 pr-4">End Date</th>
+                      <th className="pb-3 pr-4">Status</th>
+                      <th className="pb-3 pr-4">Usage</th>
+                      <th className="pb-3">Outstanding</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {subscriptionHistory.map((sh) => (
+                      <tr key={sh.id} className="border-b last:border-0">
+                        <td className="py-3 pr-4 font-medium">{sh.planName}</td>
+                        <td className="py-3 pr-4">
+                          {sh.priceMonthly === 0 ? (
+                            <span className="text-green-600">Free</span>
+                          ) : (
+                            <span>₹{sh.priceMonthly.toLocaleString()}/mo</span>
+                          )}
+                        </td>
+                        <td className="py-3 pr-4">{formatDate(sh.billingCycleStart)}</td>
+                        <td className="py-3 pr-4">{formatDate(sh.billingCycleEnd)}</td>
+                        <td className="py-3 pr-4">
+                          <Badge
+                            variant={
+                              sh.status === "active" ? "default" :
+                              sh.status === "scheduled" ? "secondary" :
+                              "outline"
+                            }
+                            className={
+                              sh.status === "active" ? "bg-green-100 text-green-800" :
+                              sh.status === "scheduled" ? "bg-blue-50 text-blue-700" :
+                              sh.status === "expired" ? "bg-gray-100 text-gray-600" :
+                              ""
+                            }
+                          >
+                            {sh.status}
+                          </Badge>
+                        </td>
+                        <td className="py-3 pr-4 text-xs text-gray-500">
+                          {sh.status !== "scheduled" ? (
+                            <span>{sh.usedFlows}F · {sh.usedFormSubmissions}S · {sh.usedUsers}U</span>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="py-3">
+                          {sh.outstandingAmount > 0 ? (
+                            <span className="text-red-600 font-semibold">₹{sh.outstandingAmount.toLocaleString()}</span>
+                          ) : (
+                            <span className="text-green-600">₹0</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Payment History */}
         {paymentHistory.length > 0 && (
@@ -653,6 +879,67 @@ export default function Billing() {
                                 <><RefreshCw className="w-3 h-3 mr-1" /> Verify</>
                               )}
                             </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Invoices */}
+        {invoicesList.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-indigo-500" />
+                Invoices
+              </CardTitle>
+              <CardDescription>Invoices generated for your organization</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-gray-500">
+                      <th className="pb-3 pr-4">Invoice #</th>
+                      <th className="pb-3 pr-4">Period</th>
+                      <th className="pb-3 pr-4">Plan</th>
+                      <th className="pb-3 pr-4">Extra</th>
+                      <th className="pb-3 pr-4">Total</th>
+                      <th className="pb-3 pr-4">Status</th>
+                      <th className="pb-3">Download</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoicesList.map((inv) => (
+                      <tr key={inv.id} className="border-b last:border-0">
+                        <td className="py-3 pr-4 font-mono text-xs">{inv.invoiceNumber}</td>
+                        <td className="py-3 pr-4 text-xs">
+                          {formatDate(inv.billingPeriodStart)} — {formatDate(inv.billingPeriodEnd)}
+                        </td>
+                        <td className="py-3 pr-4">₹{(inv.planAmount || 0).toLocaleString()}</td>
+                        <td className="py-3 pr-4">₹{(inv.extraUsageAmount || 0).toLocaleString()}</td>
+                        <td className="py-3 pr-4 font-semibold">₹{inv.totalAmount.toLocaleString()}</td>
+                        <td className="py-3 pr-4">
+                          <Badge
+                            variant={inv.status === "paid" ? "default" : inv.status === "overdue" ? "destructive" : "secondary"}
+                          >
+                            {inv.status}
+                          </Badge>
+                        </td>
+                        <td className="py-3">
+                          {inv.fileUrl && /^https:\/\//i.test(inv.fileUrl) ? (
+                            <a href={inv.fileUrl} target="_blank" rel="noopener noreferrer">
+                              <Button size="sm" variant="outline" className="text-xs">
+                                <Download className="w-3 h-3 mr-1" /> View
+                              </Button>
+                            </a>
+                          ) : (
+                            <span className="text-gray-400 text-xs">—</span>
                           )}
                         </td>
                       </tr>

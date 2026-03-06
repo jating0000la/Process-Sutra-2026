@@ -828,6 +828,37 @@ export const usageLogs = pgTable(
   ]
 );
 
+// Invoices - tracks invoices uploaded by super admin for organizations
+export const invoices = pgTable(
+  "invoices",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    subscriptionId: varchar("subscription_id").references(() => organizationSubscriptions.id),
+    invoiceNumber: varchar("invoice_number").notNull().unique(),
+    billingPeriodStart: timestamp("billing_period_start").notNull(),
+    billingPeriodEnd: timestamp("billing_period_end").notNull(),
+    planAmount: integer("plan_amount").default(0),
+    extraUsageAmount: integer("extra_usage_amount").default(0),
+    totalAmount: integer("total_amount").notNull(),
+    status: varchar("status").notNull().default("pending"), // pending, paid, overdue
+    paymentMethod: varchar("payment_method"), // bank_transfer, upi, cash, cheque, payu
+    paymentVerifiedBy: varchar("payment_verified_by").references(() => users.id),
+    paymentVerifiedAt: timestamp("payment_verified_at"),
+    fileUrl: text("file_url"), // Google Drive or uploaded file URL
+    notes: text("notes"),
+    createdBy: varchar("created_by").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_invoices_org").on(table.organizationId),
+    index("idx_invoices_status").on(table.status),
+    index("idx_invoices_number").on(table.invoiceNumber),
+    index("idx_invoices_created").on(table.createdAt.desc()),
+  ]
+);
+
 // Relations for billing tables
 export const subscriptionPlansRelations = relations(subscriptionPlans, ({ many }) => ({
   subscriptions: many(organizationSubscriptions),
@@ -844,6 +875,7 @@ export const organizationSubscriptionsRelations = relations(organizationSubscrip
   }),
   payments: many(paymentTransactions),
   usageLogs: many(usageLogs),
+  invoices: many(invoices),
 }));
 
 export const paymentTransactionsRelations = relations(paymentTransactions, ({ one }) => ({
@@ -872,6 +904,25 @@ export const usageLogsRelations = relations(usageLogs, ({ one }) => ({
   }),
 }));
 
+export const invoicesRelations = relations(invoices, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [invoices.organizationId],
+    references: [organizations.id],
+  }),
+  subscription: one(organizationSubscriptions, {
+    fields: [invoices.subscriptionId],
+    references: [organizationSubscriptions.id],
+  }),
+  verifiedBy: one(users, {
+    fields: [invoices.paymentVerifiedBy],
+    references: [users.id],
+  }),
+  creator: one(users, {
+    fields: [invoices.createdBy],
+    references: [users.id],
+  }),
+}));
+
 // Insert schemas for billing
 export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans).omit({
   id: true,
@@ -896,6 +947,12 @@ export const insertUsageLogSchema = createInsertSchema(usageLogs).omit({
   createdAt: true,
 });
 
+export const insertInvoiceSchema = createInsertSchema(invoices).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Types for billing
 export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
 export type InsertSubscriptionPlan = z.infer<typeof insertSubscriptionPlanSchema>;
@@ -905,6 +962,8 @@ export type PaymentTransaction = typeof paymentTransactions.$inferSelect;
 export type InsertPaymentTransaction = z.infer<typeof insertPaymentTransactionSchema>;
 export type UsageLog = typeof usageLogs.$inferSelect;
 export type InsertUsageLog = z.infer<typeof insertUsageLogSchema>;
+export type Invoice = typeof invoices.$inferSelect;
+export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
 
 // ============================================
 // PUBLIC FLOW TEMPLATES

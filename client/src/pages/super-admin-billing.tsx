@@ -56,6 +56,10 @@ import {
   Workflow,
   Users,
   FileText,
+  Upload,
+  Receipt,
+  Download,
+  ExternalLink,
 } from "lucide-react";
 
 interface OrgListItem {
@@ -94,6 +98,8 @@ export default function SuperAdminBilling() {
   const [failPaymentDialog, setFailPaymentDialog] = useState(false);
   const [overrideStatusDialog, setOverrideStatusDialog] = useState(false);
   const [createManualPaymentDialog, setCreateManualPaymentDialog] = useState(false);
+  const [uploadInvoiceDialog, setUploadInvoiceDialog] = useState(false);
+  const [updateInvoiceDialog, setUpdateInvoiceDialog] = useState(false);
 
   // Form state
   const [selectedTxnId, setSelectedTxnId] = useState("");
@@ -119,6 +125,24 @@ export default function SuperAdminBilling() {
   const [manualPaymentRef, setManualPaymentRef] = useState("");
   const [manualPaymentNotes, setManualPaymentNotes] = useState("");
 
+  // Invoice form state
+  const [invoiceOrgId, setInvoiceOrgId] = useState("");
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  const [invoicePeriodStart, setInvoicePeriodStart] = useState("");
+  const [invoicePeriodEnd, setInvoicePeriodEnd] = useState("");
+  const [invoicePlanAmount, setInvoicePlanAmount] = useState(0);
+  const [invoiceExtraAmount, setInvoiceExtraAmount] = useState(0);
+  const [invoiceTotalAmount, setInvoiceTotalAmount] = useState(0);
+  const [invoiceNotes, setInvoiceNotes] = useState("");
+  const [invoiceFilterOrg, setInvoiceFilterOrg] = useState("");
+  const [invoiceFilterStatus, setInvoiceFilterStatus] = useState("");
+
+  // Invoice update state
+  const [updateInvoiceId, setUpdateInvoiceId] = useState("");
+  const [updateInvoiceStatus, setUpdateInvoiceStatus] = useState("");
+  const [updateInvoicePaymentMethod, setUpdateInvoicePaymentMethod] = useState("");
+  const [updateInvoiceNotes, setUpdateInvoiceNotes] = useState("");
+
   // Fetch organizations (hooks must be called unconditionally — before any guard/early return)
   const { data: organizations = [] } = useQuery<OrgListItem[]>({
     queryKey: ["/api/super-admin/organizations"],
@@ -138,6 +162,21 @@ export default function SuperAdminBilling() {
     },
     enabled: !!selectedOrgId && !!dbUser?.isSuperAdmin,
     retry: 1,
+  });
+
+  // Fetch invoices (global, not org-specific)
+  const invoiceQueryParams = new URLSearchParams();
+  if (invoiceFilterOrg && invoiceFilterOrg !== "all") invoiceQueryParams.set("organizationId", invoiceFilterOrg);
+  if (invoiceFilterStatus && invoiceFilterStatus !== "all") invoiceQueryParams.set("status", invoiceFilterStatus);
+  const invoiceQS = invoiceQueryParams.toString();
+
+  const { data: allInvoices = [], isLoading: invoicesLoading } = useQuery<any[]>({
+    queryKey: ["/api/super-admin/billing/invoices", invoiceQS],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/super-admin/billing/invoices${invoiceQS ? "?" + invoiceQS : ""}`);
+      return res.json();
+    },
+    enabled: !!dbUser?.isSuperAdmin,
   });
 
   const filteredOrgs = organizations.filter(
@@ -332,6 +371,64 @@ export default function SuperAdminBilling() {
     },
   });
 
+  // ─── Invoice Mutations ────────────────────────────────────────────────
+  const uploadInvoiceMutation = useMutation({
+    mutationFn: async () => {
+      const formData = new FormData();
+      formData.append("organizationId", invoiceOrgId);
+      formData.append("billingPeriodStart", invoicePeriodStart);
+      formData.append("billingPeriodEnd", invoicePeriodEnd);
+      formData.append("planAmount", String(invoicePlanAmount));
+      formData.append("extraUsageAmount", String(invoiceExtraAmount));
+      formData.append("totalAmount", String(invoiceTotalAmount));
+      if (invoiceNotes) formData.append("notes", invoiceNotes);
+      if (invoiceFile) formData.append("file", invoiceFile);
+
+      const res = await fetch("/api/super-admin/billing/invoices/upload", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Upload failed" }));
+        throw new Error(err.message || "Upload failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Invoice Uploaded", description: "Invoice created and file uploaded to Google Drive" });
+      setUploadInvoiceDialog(false);
+      resetInvoiceForm();
+      queryClient.invalidateQueries({ queryKey: ["/api/super-admin/billing/invoices"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const updateInvoiceMutation = useMutation({
+    mutationFn: async () => {
+      const body: any = {};
+      if (updateInvoiceStatus) body.status = updateInvoiceStatus;
+      if (updateInvoicePaymentMethod) body.paymentMethod = updateInvoicePaymentMethod;
+      if (updateInvoiceNotes) body.notes = updateInvoiceNotes;
+      const res = await apiRequest("PATCH", `/api/super-admin/billing/invoices/${updateInvoiceId}`, body);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Invoice Updated" });
+      setUpdateInvoiceDialog(false);
+      setUpdateInvoiceId("");
+      setUpdateInvoiceStatus("");
+      setUpdateInvoicePaymentMethod("");
+      setUpdateInvoiceNotes("");
+      queryClient.invalidateQueries({ queryKey: ["/api/super-admin/billing/invoices"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
   // Guard — AFTER all hooks to comply with React Rules of Hooks
   if (!dbUser?.isSuperAdmin) {
     return (
@@ -366,6 +463,17 @@ export default function SuperAdminBilling() {
     setManualPaymentMode("BANK_TRANSFER");
     setManualPaymentRef("");
     setManualPaymentNotes("");
+  }
+
+  function resetInvoiceForm() {
+    setInvoiceOrgId("");
+    setInvoiceFile(null);
+    setInvoicePeriodStart("");
+    setInvoicePeriodEnd("");
+    setInvoicePlanAmount(0);
+    setInvoiceExtraAmount(0);
+    setInvoiceTotalAmount(0);
+    setInvoiceNotes("");
   }
 
   const formatDate = (d: string) =>
@@ -796,6 +904,127 @@ export default function SuperAdminBilling() {
           </>
         )}
 
+        {/* ═══ INVOICE MANAGEMENT (always visible) ═══════════════════════ */}
+        <Separator />
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Receipt className="w-4 h-4 text-indigo-500" />
+                  Invoice Management
+                </CardTitle>
+                <CardDescription>Upload invoices and assign to organizations — stored in your Google Drive</CardDescription>
+              </div>
+              <Button size="sm" onClick={() => setUploadInvoiceDialog(true)}>
+                <Upload className="w-3.5 h-3.5 mr-1.5" /> Upload Invoice
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {/* Filters */}
+            <div className="flex flex-wrap gap-3 mb-4">
+              <Select value={invoiceFilterOrg} onValueChange={setInvoiceFilterOrg}>
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="All Organizations" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Organizations</SelectItem>
+                  {organizations.map((org) => (
+                    <SelectItem key={org.id} value={org.id}>{org.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={invoiceFilterStatus} onValueChange={setInvoiceFilterStatus}>
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="All Statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="paid">Paid</SelectItem>
+                  <SelectItem value="overdue">Overdue</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {invoicesLoading ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+              </div>
+            ) : allInvoices.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">No invoices found</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Invoice #</TableHead>
+                      <TableHead>Organization</TableHead>
+                      <TableHead>Period</TableHead>
+                      <TableHead>Plan</TableHead>
+                      <TableHead>Extra</TableHead>
+                      <TableHead>Total</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>File</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {allInvoices.map((inv: any) => (
+                      <TableRow key={inv.id}>
+                        <TableCell className="font-mono text-xs">{inv.invoiceNumber}</TableCell>
+                        <TableCell className="text-xs">{inv.organizationName || inv.organizationId?.slice(0, 8)}</TableCell>
+                        <TableCell className="text-xs">
+                          {formatDate(inv.billingPeriodStart)} — {formatDate(inv.billingPeriodEnd)}
+                        </TableCell>
+                        <TableCell>₹{(inv.planAmount || 0).toLocaleString()}</TableCell>
+                        <TableCell>₹{(inv.extraUsageAmount || 0).toLocaleString()}</TableCell>
+                        <TableCell className="font-semibold">₹{(inv.totalAmount || 0).toLocaleString()}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={inv.status === "paid" ? "default" : inv.status === "overdue" ? "destructive" : "secondary"}
+                            className="text-xs"
+                          >
+                            {inv.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {inv.fileUrl && /^https:\/\//i.test(inv.fileUrl) ? (
+                            <a href={inv.fileUrl} target="_blank" rel="noopener noreferrer">
+                              <Button size="sm" variant="ghost" className="h-7 text-xs">
+                                <ExternalLink className="w-3 h-3 mr-1" /> View
+                              </Button>
+                            </a>
+                          ) : (
+                            <span className="text-gray-400 text-xs">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={() => {
+                              setUpdateInvoiceId(inv.id);
+                              setUpdateInvoiceStatus(inv.status);
+                              setUpdateInvoicePaymentMethod(inv.paymentMethod || "");
+                              setUpdateInvoiceNotes(inv.notes || "");
+                              setUpdateInvoiceDialog(true);
+                            }}
+                          >
+                            Update
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {!selectedOrgId && (
           <div className="text-center py-12 text-gray-400">
             <Building2 className="w-12 h-12 mx-auto mb-3 opacity-30" />
@@ -1193,6 +1422,167 @@ export default function SuperAdminBilling() {
             >
               {createManualPaymentMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CreditCard className="w-4 h-4 mr-1" />}
               Record Payment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Upload Invoice Dialog */}
+      <Dialog open={uploadInvoiceDialog} onOpenChange={setUploadInvoiceDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Upload Invoice</DialogTitle>
+            <DialogDescription>
+              Upload an invoice file and assign it to an organization. The file will be stored in your Google Drive.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto">
+            <div>
+              <Label>Organization <span className="text-red-500">*</span></Label>
+              <Select value={invoiceOrgId} onValueChange={setInvoiceOrgId}>
+                <SelectTrigger><SelectValue placeholder="Select organization" /></SelectTrigger>
+                <SelectContent>
+                  {organizations.map((org) => (
+                    <SelectItem key={org.id} value={org.id}>{org.name} ({org.domain})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Invoice File (PDF, Image, or Document)</Label>
+              <Input
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+                onChange={(e) => setInvoiceFile(e.target.files?.[0] || null)}
+                className="mt-1"
+              />
+              {invoiceFile && (
+                <p className="text-xs text-gray-500 mt-1">{invoiceFile.name} ({(invoiceFile.size / 1024).toFixed(1)} KB)</p>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Billing Period Start <span className="text-red-500">*</span></Label>
+                <Input
+                  type="date"
+                  value={invoicePeriodStart}
+                  onChange={(e) => setInvoicePeriodStart(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Billing Period End <span className="text-red-500">*</span></Label>
+                <Input
+                  type="date"
+                  value={invoicePeriodEnd}
+                  onChange={(e) => setInvoicePeriodEnd(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label>Plan Amount (₹)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={invoicePlanAmount || ""}
+                  onChange={(e) => setInvoicePlanAmount(Number(e.target.value))}
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <Label>Extra Usage (₹)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={invoiceExtraAmount || ""}
+                  onChange={(e) => setInvoiceExtraAmount(Number(e.target.value))}
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <Label>Total Amount (₹) <span className="text-red-500">*</span></Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={invoiceTotalAmount || ""}
+                  onChange={(e) => setInvoiceTotalAmount(Number(e.target.value))}
+                  placeholder="Total"
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea
+                value={invoiceNotes}
+                onChange={(e) => setInvoiceNotes(e.target.value)}
+                placeholder="Optional notes for this invoice…"
+                rows={2}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setUploadInvoiceDialog(false); resetInvoiceForm(); }}>Cancel</Button>
+            <Button
+              onClick={() => uploadInvoiceMutation.mutate()}
+              disabled={uploadInvoiceMutation.isPending || !invoiceOrgId || !invoicePeriodStart || !invoicePeriodEnd || !invoiceTotalAmount}
+            >
+              {uploadInvoiceMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Upload className="w-4 h-4 mr-1" />}
+              Upload Invoice
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Update Invoice Status Dialog */}
+      <Dialog open={updateInvoiceDialog} onOpenChange={setUpdateInvoiceDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Update Invoice</DialogTitle>
+            <DialogDescription>Change the status, payment method, or notes for this invoice.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Status</Label>
+              <Select value={updateInvoiceStatus} onValueChange={setUpdateInvoiceStatus}>
+                <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="paid">Paid</SelectItem>
+                  <SelectItem value="overdue">Overdue</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Payment Method</Label>
+              <Select value={updateInvoicePaymentMethod} onValueChange={setUpdateInvoicePaymentMethod}>
+                <SelectTrigger><SelectValue placeholder="Select payment method" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                  <SelectItem value="upi">UPI</SelectItem>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="cheque">Cheque</SelectItem>
+                  <SelectItem value="payu">PayU</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea
+                value={updateInvoiceNotes}
+                onChange={(e) => setUpdateInvoiceNotes(e.target.value)}
+                placeholder="Update notes…"
+                rows={2}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUpdateInvoiceDialog(false)}>Cancel</Button>
+            <Button
+              onClick={() => updateInvoiceMutation.mutate()}
+              disabled={updateInvoiceMutation.isPending}
+            >
+              {updateInvoiceMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />}
+              Update Invoice
             </Button>
           </DialogFooter>
         </DialogContent>

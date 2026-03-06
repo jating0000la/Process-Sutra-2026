@@ -11,6 +11,7 @@ import {
   organizationSubscriptions,
   paymentTransactions,
   usageLogs,
+  invoices,
   organizations,
   users,
 } from "@shared/schema";
@@ -27,6 +28,9 @@ const rawPayuUrl = process.env.PAYU_BASE_URL || "https://test.payu.in";
 const PAYU_BASE_URL = rawPayuUrl.replace(/\/_payment\/?$/, "") + "/_payment";
 
 const PAYU_CALLBACK_BASE = process.env.BASE_URL || "";
+
+// GST rate applied during payment
+const GST_RATE = 0.18;
 
 if (!PAYU_MERCHANT_KEY || !PAYU_MERCHANT_SALT) {
   console.warn("[Billing] ⚠️  PAYU_MERCHANT_KEY or PAYU_MERCHANT_SALT not set in .env — payments will fail");
@@ -262,6 +266,12 @@ async function processSuccessfulPayment(transaction: any, payuDetails: {
   amount?: string;
   raw?: any;
 }): Promise<void> {
+  // Idempotency guard: if already processed as success, skip all logic
+  if (transaction.status === "success") {
+    console.log(`[Billing] Transaction ${transaction.txnId} already processed — skipping`);
+    return;
+  }
+
   // Update transaction to success
   await db
     .update(paymentTransactions)
@@ -273,7 +283,12 @@ async function processSuccessfulPayment(transaction: any, payuDetails: {
       payuResponse: payuDetails.raw || {},
       updatedAt: new Date(),
     })
-    .where(eq(paymentTransactions.id, transaction.id));
+    .where(
+      and(
+        eq(paymentTransactions.id, transaction.id),
+        sql`${paymentTransactions.status} != 'success'`
+      )
+    );
 
   // Process subscription activation / scheduled upgrade
   if (
@@ -299,55 +314,63 @@ async function processSuccessfulPayment(transaction: any, payuDetails: {
       if (plan) {
         const now = new Date();
 
-        // Check for an existing active subscription
-        const [existingSub] = await db
+        // Find the latest subscription end date (active or scheduled) to chain from
+        const allSubs = await db
           .select()
           .from(organizationSubscriptions)
           .where(
             and(
               eq(organizationSubscriptions.organizationId, transaction.organizationId),
-              eq(organizationSubscriptions.status, "active")
+              sql`${organizationSubscriptions.status} IN ('active', 'scheduled')`
             )
           )
-          .orderBy(desc(organizationSubscriptions.createdAt))
-          .limit(1);
+          .orderBy(desc(organizationSubscriptions.billingCycleEnd));
 
-        if (existingSub && new Date(existingSub.billingCycleEnd) > now) {
-          // ─── DEFERRED UPGRADE ─────────────────────────────────────
-          // Current plan stays active until billingCycleEnd.
-          // Schedule the new plan to activate after cycle ends.
-          await db
-            .update(organizationSubscriptions)
-            .set({
-              scheduledPlanId: plan.id,
-              scheduledPaymentId: transaction.txnId,
-              scheduledAt: now,
-              updatedAt: now,
+        const latestSub = allSubs[0] || null;
+        const latestEndDate = latestSub ? new Date(latestSub.billingCycleEnd) : null;
+
+        if (latestEndDate && latestEndDate > now) {
+          // ─── CHAINED SUBSCRIPTION ─────────────────────────────────
+          // New plan starts when the latest existing sub ends.
+          const newCycleStart = latestEndDate;
+          const newCycleEnd = new Date(newCycleStart);
+          newCycleEnd.setMonth(newCycleEnd.getMonth() + 1);
+
+          const [scheduledSub] = await db
+            .insert(organizationSubscriptions)
+            .values({
+              organizationId: transaction.organizationId,
+              planId: plan.id,
+              status: "scheduled",
+              billingCycleStart: newCycleStart,
+              billingCycleEnd: newCycleEnd,
+              usedUsers: 0,
+              outstandingAmount: 0,
             })
-            .where(eq(organizationSubscriptions.id, existingSub.id));
+            .returning();
 
-          // Link payment to current subscription
+          // Link payment to the scheduled subscription
           await db
             .update(paymentTransactions)
-            .set({ subscriptionId: existingSub.id })
+            .set({ subscriptionId: scheduledSub.id })
             .where(eq(paymentTransactions.id, transaction.id));
 
           console.log(
-            `[Billing] Upgrade scheduled: org=${transaction.organizationId} ` +
-            `from current plan to ${targetPlanName}, activates after ${existingSub.billingCycleEnd}`
+            `[Billing] Subscription chained: org=${transaction.organizationId} ` +
+            `plan=${targetPlanName}, starts=${newCycleStart.toISOString()} ends=${newCycleEnd.toISOString()}`
           );
         } else {
           // ─── IMMEDIATE ACTIVATION ─────────────────────────────────
-          // No active subscription or cycle already ended → activate now.
+          // No active/scheduled subscription or all expired → activate now.
           const billingEnd = new Date(now);
           billingEnd.setMonth(billingEnd.getMonth() + 1);
 
           // Expire old subscription if exists
-          if (existingSub) {
+          if (latestSub) {
             await db
               .update(organizationSubscriptions)
               .set({ status: "expired", updatedAt: now })
-              .where(eq(organizationSubscriptions.id, existingSub.id));
+              .where(eq(organizationSubscriptions.id, latestSub.id));
           }
 
           // Count current users
@@ -394,9 +417,11 @@ async function processSuccessfulPayment(transaction: any, payuDetails: {
   }
 
   // Clear outstanding if included in payment
+  // "subscription" type now auto-includes outstanding, so check the stored outstandingAmount
   if (
     transaction.paymentType === "outstanding" ||
-    transaction.paymentType === "combined"
+    transaction.paymentType === "combined" ||
+    (transaction.paymentType === "subscription" && (transaction.outstandingAmount || 0) > 0)
   ) {
     await db
       .update(organizationSubscriptions)
@@ -450,7 +475,10 @@ async function processBillingCycleTransition(organizationId: string): Promise<an
     .orderBy(desc(organizationSubscriptions.createdAt))
     .limit(1);
 
-  if (!subscription) return null;
+  if (!subscription) {
+    // No active sub — check if there's a scheduled sub that should be activated
+    return await activateNextScheduledSub(organizationId, now);
+  }
 
   const cycleEnd = new Date(subscription.billingCycleEnd);
   if (cycleEnd > now) {
@@ -460,15 +488,14 @@ async function processBillingCycleTransition(organizationId: string): Promise<an
 
   // ─── Billing cycle has ended ──────────────────────────────────────────
 
+  // Backward compat: handle legacy scheduledPlanId on the active sub
   if (subscription.scheduledPlanId) {
-    // ─── ACTIVATE SCHEDULED UPGRADE ─────────────────────────────────
     const [newPlan] = await db
       .select()
       .from(subscriptionPlans)
       .where(eq(subscriptionPlans.id, subscription.scheduledPlanId));
 
     if (newPlan) {
-      // Expire current subscription (keeping its usage history intact)
       await db
         .update(organizationSubscriptions)
         .set({
@@ -480,17 +507,14 @@ async function processBillingCycleTransition(organizationId: string): Promise<an
         })
         .where(eq(organizationSubscriptions.id, subscription.id));
 
-      // New billing cycle: starts now, ends in 1 month
       const newCycleEnd = new Date(now);
       newCycleEnd.setMonth(newCycleEnd.getMonth() + 1);
 
-      // Count current users
       const orgUsers = await db
         .select({ count: count() })
         .from(users)
         .where(eq(users.organizationId, organizationId));
 
-      // Create new subscription with upgraded plan
       const [newSub] = await db
         .insert(organizationSubscriptions)
         .values({
@@ -504,7 +528,6 @@ async function processBillingCycleTransition(organizationId: string): Promise<an
         })
         .returning();
 
-      // Update org planType
       await db
         .update(organizations)
         .set({
@@ -516,7 +539,7 @@ async function processBillingCycleTransition(organizationId: string): Promise<an
         .where(eq(organizations.id, organizationId));
 
       console.log(
-        `[Billing] Scheduled upgrade activated: org=${organizationId} plan=${newPlan.name} ` +
+        `[Billing] Legacy scheduled upgrade activated: org=${organizationId} plan=${newPlan.name} ` +
         `newCycle=${now.toISOString()} → ${newCycleEnd.toISOString()}`
       );
 
@@ -524,14 +547,75 @@ async function processBillingCycleTransition(organizationId: string): Promise<an
     }
   }
 
-  // No scheduled upgrade — mark current subscription as expired
+  // Expire the current subscription
   await db
     .update(organizationSubscriptions)
     .set({ status: "expired", updatedAt: now })
     .where(eq(organizationSubscriptions.id, subscription.id));
 
   console.log(`[Billing] Subscription expired: org=${organizationId} sub=${subscription.id}`);
-  return null;
+
+  // Check for next scheduled subscription in the chain
+  return await activateNextScheduledSub(organizationId, now);
+}
+
+/** Activate the next scheduled subscription whose start date has arrived */
+async function activateNextScheduledSub(organizationId: string, now: Date): Promise<any | null> {
+  const [nextSub] = await db
+    .select()
+    .from(organizationSubscriptions)
+    .where(
+      and(
+        eq(organizationSubscriptions.organizationId, organizationId),
+        eq(organizationSubscriptions.status, "scheduled"),
+        sql`${organizationSubscriptions.billingCycleStart} <= ${now}`
+      )
+    )
+    .orderBy(organizationSubscriptions.billingCycleStart)
+    .limit(1);
+
+  if (!nextSub) return null;
+
+  const [plan] = await db
+    .select()
+    .from(subscriptionPlans)
+    .where(eq(subscriptionPlans.id, nextSub.planId));
+
+  // Count current users
+  const orgUsers = await db
+    .select({ count: count() })
+    .from(users)
+    .where(eq(users.organizationId, organizationId));
+
+  // Activate the scheduled subscription
+  await db
+    .update(organizationSubscriptions)
+    .set({
+      status: "active",
+      usedUsers: orgUsers[0]?.count || 0,
+      updatedAt: now,
+    })
+    .where(eq(organizationSubscriptions.id, nextSub.id));
+
+  // Update org planType
+  if (plan) {
+    await db
+      .update(organizations)
+      .set({
+        planType: plan.name,
+        maxUsers: plan.maxUsers,
+        maxFlows: plan.maxFlows,
+        updatedAt: now,
+      })
+      .where(eq(organizations.id, organizationId));
+  }
+
+  console.log(
+    `[Billing] Scheduled subscription activated: org=${organizationId} plan=${plan?.name || nextSub.planId} ` +
+    `cycle=${nextSub.billingCycleStart} → ${nextSub.billingCycleEnd}`
+  );
+
+  return { ...nextSub, status: "active" };
 }
 
 export function registerBillingRoutes(
@@ -638,7 +722,7 @@ export function registerBillingRoutes(
           users: plan ? (subscription.usedUsers || 0) >= plan.maxUsers : false,
         };
 
-        // Fetch scheduled upgrade plan info (if any)
+        // Fetch scheduled upgrade plan info (if any — backward compat for legacy scheduledPlanId)
         let scheduledUpgrade = null;
         if (subscription.scheduledPlanId) {
           const [scheduledPlan] = await db
@@ -649,9 +733,41 @@ export function registerBillingRoutes(
             scheduledUpgrade = {
               plan: scheduledPlan,
               scheduledAt: subscription.scheduledAt,
-              activatesAt: subscription.billingCycleEnd, // new plan starts after current cycle
+              activatesAt: subscription.billingCycleEnd,
             };
           }
+        }
+
+        // Fetch upcoming scheduled subscriptions (new chaining model)
+        const scheduledSubsRaw = await db
+          .select({
+            id: organizationSubscriptions.id,
+            planId: organizationSubscriptions.planId,
+            status: organizationSubscriptions.status,
+            billingCycleStart: organizationSubscriptions.billingCycleStart,
+            billingCycleEnd: organizationSubscriptions.billingCycleEnd,
+            createdAt: organizationSubscriptions.createdAt,
+          })
+          .from(organizationSubscriptions)
+          .where(
+            and(
+              eq(organizationSubscriptions.organizationId, user.organizationId),
+              eq(organizationSubscriptions.status, "scheduled")
+            )
+          )
+          .orderBy(organizationSubscriptions.billingCycleStart);
+
+        // Enrich with plan names
+        const upcomingSubscriptions = [];
+        for (const ss of scheduledSubsRaw) {
+          const [sPlan] = await db
+            .select()
+            .from(subscriptionPlans)
+            .where(eq(subscriptionPlans.id, ss.planId));
+          upcomingSubscriptions.push({
+            ...ss,
+            planName: sPlan?.displayName || "Unknown",
+          });
         }
 
         res.json({
@@ -674,11 +790,65 @@ export function registerBillingRoutes(
           isExpired,
           isTrialExpired,
           outstandingAmount: subscription.outstandingAmount || 0,
+          gstRate: GST_RATE,
           scheduledUpgrade,
+          upcomingSubscriptions,
         });
       } catch (error) {
         console.error("[Billing] Error fetching subscription:", error);
         res.status(500).json({ message: "Failed to fetch subscription" });
+      }
+    }
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  GET /api/billing/subscription-history - Get all subscriptions (active, scheduled, expired)
+  // ═══════════════════════════════════════════════════════════════════════
+  app.get(
+    "/api/billing/subscription-history",
+    isAuthenticated,
+    addUserToRequest,
+    async (req: any, res: Response) => {
+      try {
+        const user = req.currentUser;
+        if (!user?.organizationId) {
+          return res.status(400).json({ message: "No organization found" });
+        }
+
+        const allSubs = await db
+          .select()
+          .from(organizationSubscriptions)
+          .where(eq(organizationSubscriptions.organizationId, user.organizationId))
+          .orderBy(desc(organizationSubscriptions.billingCycleStart));
+
+        // Enrich with plan names
+        const enriched = [];
+        for (const s of allSubs) {
+          const [plan] = await db
+            .select()
+            .from(subscriptionPlans)
+            .where(eq(subscriptionPlans.id, s.planId));
+          enriched.push({
+            id: s.id,
+            planName: plan?.displayName || "Unknown",
+            planKey: plan?.name || "",
+            priceMonthly: plan?.priceMonthly || 0,
+            status: s.status,
+            billingCycleStart: s.billingCycleStart,
+            billingCycleEnd: s.billingCycleEnd,
+            trialEndsAt: s.trialEndsAt,
+            usedFlows: s.usedFlows || 0,
+            usedFormSubmissions: s.usedFormSubmissions || 0,
+            usedUsers: s.usedUsers || 0,
+            outstandingAmount: s.outstandingAmount || 0,
+            createdAt: s.createdAt,
+          });
+        }
+
+        res.json(enriched);
+      } catch (error) {
+        console.error("[Billing] Error fetching subscription history:", error);
+        res.status(500).json({ message: "Failed to fetch subscription history" });
       }
     }
   );
@@ -778,7 +948,7 @@ export function registerBillingRoutes(
           return res.json({ subscription, message: "Free trial activated!" });
         }
 
-        // For paid plans - calculate outstanding (included in combined payment, does not block upgrade)
+        // For paid plans - calculate outstanding (included in payment, does not block upgrade)
         let outstandingAmount = 0;
         if (existing) {
           const [currentPlan] = await db
@@ -790,27 +960,40 @@ export function registerBillingRoutes(
             const { totalExtra } = calculateExtraUsage(existing, currentPlan);
             outstandingAmount = (existing.outstandingAmount || 0) + totalExtra;
           }
-
-          // Check if there's already a scheduled upgrade
-          if (existing.scheduledPlanId) {
-            return res.status(400).json({
-              message: "You already have a scheduled upgrade. Cancel it first to choose a different plan.",
-            });
-          }
         }
 
+        // Find the latest subscription end date (active or scheduled) to show when the new plan starts
+        const allOrgSubs = await db
+          .select()
+          .from(organizationSubscriptions)
+          .where(
+            and(
+              eq(organizationSubscriptions.organizationId, user.organizationId),
+              sql`${organizationSubscriptions.status} IN ('active', 'scheduled')`
+            )
+          )
+          .orderBy(desc(organizationSubscriptions.billingCycleEnd))
+          .limit(1);
+
+        const latestEnd = allOrgSubs[0] ? new Date(allOrgSubs[0].billingCycleEnd) : null;
+        const activatesAt = latestEnd && latestEnd > new Date() ? latestEnd : null;
+
         // For paid plans, return payment initiation data
-        // Current plan stays active → new plan starts after current cycle ends
-        // Payment will happen through /api/billing/initiate-payment
+        // New plan chains after the latest existing subscription
+        const subtotal = plan.priceMonthly + outstandingAmount;
+        const gstAmount = Math.round(subtotal * GST_RATE);
         res.json({
           plan,
           requiresPayment: true,
-          paymentType: existing && outstandingAmount > 0 ? "combined" : existing ? "subscription" : "subscription",
-          amount: plan.priceMonthly + outstandingAmount,
+          paymentType: "subscription",
+          amount: subtotal + gstAmount,
+          subtotal,
           planAmount: plan.priceMonthly,
           outstandingAmount,
+          gstRate: GST_RATE,
+          gstAmount,
           isUpgrade: !!existing,
-          activatesAt: existing ? existing.billingCycleEnd : null, // deferred activation date
+          activatesAt, // when the new plan will start (null = immediate)
         });
       } catch (error) {
         console.error("[Billing] Error subscribing:", error);
@@ -837,11 +1020,16 @@ export function registerBillingRoutes(
         const { planName, paymentType } = req.body;
         // paymentType: "subscription" | "outstanding" | "combined"
 
-        // Get current subscription
+        // Get current ACTIVE subscription (not scheduled — we calculate outstanding from active only)
         const [currentSub] = await db
           .select()
           .from(organizationSubscriptions)
-          .where(eq(organizationSubscriptions.organizationId, user.organizationId))
+          .where(
+            and(
+              eq(organizationSubscriptions.organizationId, user.organizationId),
+              eq(organizationSubscriptions.status, "active")
+            )
+          )
           .orderBy(desc(organizationSubscriptions.createdAt))
           .limit(1);
 
@@ -885,17 +1073,9 @@ export function registerBillingRoutes(
             return res.status(400).json({ message: "No outstanding amount" });
           }
           amount = outstandingToPay;
-        } else if (paymentType === "subscription") {
-          // Must pay outstanding first
-          if (outstandingToPay > 0) {
-            return res.status(402).json({
-              message: "Please pay outstanding amount first",
-              outstandingAmount: outstandingToPay,
-            });
-          }
-          amount = planAmount;
-        } else if (paymentType === "combined") {
-          amount = outstandingToPay + planAmount;
+        } else if (paymentType === "subscription" || paymentType === "combined") {
+          // Always include outstanding in subscription payments
+          amount = planAmount + outstandingToPay;
         } else {
           return res.status(400).json({ message: "Invalid payment type" });
         }
@@ -903,6 +1083,10 @@ export function registerBillingRoutes(
         if (amount <= 0) {
           return res.status(400).json({ message: "Invalid payment amount" });
         }
+
+        // Add 18% GST to the total amount
+        const gstAmount = Math.round(amount * GST_RATE);
+        const totalWithGst = amount + gstAmount;
 
         // Create transaction record
         const txnId = `PS_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
@@ -913,7 +1097,7 @@ export function registerBillingRoutes(
             organizationId: user.organizationId,
             subscriptionId: currentSub?.id || null,
             txnId,
-            amount,
+            amount: totalWithGst,
             planAmount,
             outstandingAmount: outstandingToPay,
             extraUsageAmount,
@@ -944,10 +1128,10 @@ export function registerBillingRoutes(
           return res.status(400).json({ message: "User email is required for payment" });
         }
 
-        // Generate PayU hash
+        // Generate PayU hash (amount includes GST)
         const hash = generatePayUHash({
           txnid: txnId,
-          amount: amount.toFixed(2),
+          amount: totalWithGst.toFixed(2),
           productinfo: productInfo,
           firstname,
           email,
@@ -962,7 +1146,7 @@ export function registerBillingRoutes(
         const payuData = {
           key: PAYU_MERCHANT_KEY,
           txnid: txnId,
-          amount: amount.toFixed(2),
+          amount: totalWithGst.toFixed(2),
           productinfo: productInfo,
           firstname,
           email,
@@ -978,13 +1162,17 @@ export function registerBillingRoutes(
           udf5: "",
         };
 
-        console.log(`[Billing] Payment initiated: txn=${txnId} amount=₹${amount} plan=${targetPlan?.name || "outstanding"} payuUrl=${PAYU_BASE_URL} surl=${payuData.surl}`);
+        console.log(`[Billing] Payment initiated: txn=${txnId} subtotal=₹${amount} gst=₹${gstAmount} total=₹${totalWithGst} plan=${targetPlan?.name || "outstanding"} payuUrl=${PAYU_BASE_URL} surl=${payuData.surl}`);
 
         res.json({
           transaction,
           payuData,
           payuUrl: PAYU_BASE_URL,
           planName: targetPlan?.name,
+          subtotal: amount,
+          gstRate: GST_RATE,
+          gstAmount,
+          totalWithGst,
         });
       } catch (error) {
         console.error("[Billing] Error initiating payment:", error);
@@ -1437,7 +1625,7 @@ export function registerBillingRoutes(
   );
 
   // ═══════════════════════════════════════════════════════════════════════
-  //  POST /api/billing/cancel-upgrade - Cancel a scheduled (deferred) upgrade
+  //  POST /api/billing/cancel-upgrade - Cancel a scheduled subscription
   // ═══════════════════════════════════════════════════════════════════════
   app.post(
     "/api/billing/cancel-upgrade",
@@ -1451,6 +1639,83 @@ export function registerBillingRoutes(
           return res.status(400).json({ message: "No organization found" });
         }
 
+        const { subscriptionId } = req.body;
+
+        // ── New model: cancel a specific scheduled subscription by ID ──
+        if (subscriptionId) {
+          const [scheduledSub] = await db
+            .select()
+            .from(organizationSubscriptions)
+            .where(
+              and(
+                eq(organizationSubscriptions.id, subscriptionId),
+                eq(organizationSubscriptions.organizationId, user.organizationId),
+                eq(organizationSubscriptions.status, "scheduled")
+              )
+            );
+
+          if (!scheduledSub) {
+            return res.status(400).json({ message: "Scheduled subscription not found" });
+          }
+
+          // Delete the scheduled subscription
+          await db
+            .delete(organizationSubscriptions)
+            .where(eq(organizationSubscriptions.id, scheduledSub.id));
+
+          // Mark linked payment for refund
+          const linkedPayments = await db
+            .select()
+            .from(paymentTransactions)
+            .where(eq(paymentTransactions.subscriptionId, scheduledSub.id));
+
+          for (const p of linkedPayments) {
+            await db
+              .update(paymentTransactions)
+              .set({
+                status: "refund_pending",
+                errorMessage: "Scheduled subscription cancelled by admin",
+                updatedAt: new Date(),
+              })
+              .where(eq(paymentTransactions.id, p.id));
+          }
+
+          // Recalculate chained dates: any scheduled subs starting after the cancelled one
+          // need to shift earlier
+          const laterSubs = await db
+            .select()
+            .from(organizationSubscriptions)
+            .where(
+              and(
+                eq(organizationSubscriptions.organizationId, user.organizationId),
+                eq(organizationSubscriptions.status, "scheduled"),
+                sql`${organizationSubscriptions.billingCycleStart} >= ${scheduledSub.billingCycleStart}`
+              )
+            )
+            .orderBy(organizationSubscriptions.billingCycleStart);
+
+          // Find what end date the cancelled sub was chaining from
+          let chainFrom = new Date(scheduledSub.billingCycleStart);
+          for (const laterSub of laterSubs) {
+            const newStart = chainFrom;
+            const newEnd = new Date(newStart);
+            newEnd.setMonth(newEnd.getMonth() + 1);
+            await db
+              .update(organizationSubscriptions)
+              .set({
+                billingCycleStart: newStart,
+                billingCycleEnd: newEnd,
+                updatedAt: new Date(),
+              })
+              .where(eq(organizationSubscriptions.id, laterSub.id));
+            chainFrom = newEnd;
+          }
+
+          console.log(`[Billing] Scheduled subscription cancelled: org=${user.organizationId} sub=${subscriptionId}`);
+          return res.json({ message: "Scheduled subscription cancelled. Refund will be processed." });
+        }
+
+        // ── Backward compat: legacy scheduledPlanId on active sub ──
         const [subscription] = await db
           .select()
           .from(organizationSubscriptions)
@@ -1467,7 +1732,6 @@ export function registerBillingRoutes(
           return res.status(400).json({ message: "No scheduled upgrade to cancel" });
         }
 
-        // Clear the scheduled upgrade
         await db
           .update(organizationSubscriptions)
           .set({
@@ -1478,9 +1742,6 @@ export function registerBillingRoutes(
           })
           .where(eq(organizationSubscriptions.id, subscription.id));
 
-        // Note: The payment was already collected. A refund would need to be
-        // handled separately (manual or via PayU refund API). We mark the
-        // transaction for refund review.
         if (subscription.scheduledPaymentId) {
           await db
             .update(paymentTransactions)
@@ -1497,6 +1758,34 @@ export function registerBillingRoutes(
       } catch (error) {
         console.error("[Billing] Error cancelling upgrade:", error);
         res.status(500).json({ message: "Failed to cancel scheduled upgrade" });
+      }
+    }
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  GET /api/billing/invoices - Get invoices for current org
+  // ═══════════════════════════════════════════════════════════════════════
+  app.get(
+    "/api/billing/invoices",
+    isAuthenticated,
+    addUserToRequest,
+    async (req: any, res: Response) => {
+      try {
+        const user = req.currentUser;
+        if (!user?.organizationId) {
+          return res.status(400).json({ message: "No organization found" });
+        }
+
+        const orgInvoices = await db
+          .select()
+          .from(invoices)
+          .where(eq(invoices.organizationId, user.organizationId))
+          .orderBy(desc(invoices.createdAt));
+
+        res.json(orgInvoices);
+      } catch (error) {
+        console.error("[Billing] Error fetching invoices:", error);
+        res.status(500).json({ message: "Failed to fetch invoices" });
       }
     }
   );
@@ -1540,18 +1829,35 @@ export function registerBillingRoutes(
             )
           );
 
+        // Also find orgs with scheduled subs whose start date has arrived but no active sub
+        const scheduledReady = await db
+          .select({ organizationId: organizationSubscriptions.organizationId })
+          .from(organizationSubscriptions)
+          .where(
+            and(
+              eq(organizationSubscriptions.status, "scheduled"),
+              sql`${organizationSubscriptions.billingCycleStart} <= ${now}`
+            )
+          );
+
+        // Deduplicate org IDs
+        const orgIdSet = new Set<string>();
+        for (const s of expiredSubs) orgIdSet.add(s.organizationId);
+        for (const s of scheduledReady) orgIdSet.add(s.organizationId);
+        const orgIds = Array.from(orgIdSet);
+
         let processed = 0;
-        for (const sub of expiredSubs) {
+        for (const orgId of orgIds) {
           try {
-            await processBillingCycleTransition(sub.organizationId);
+            await processBillingCycleTransition(orgId);
             processed++;
           } catch (err) {
-            console.error(`[Billing] Transition error for org=${sub.organizationId}:`, err);
+            console.error(`[Billing] Transition error for org=${orgId}:`, err);
           }
         }
 
-        console.log(`[Billing] Processed ${processed}/${expiredSubs.length} billing cycle transitions`);
-        res.json({ processed, total: expiredSubs.length });
+        console.log(`[Billing] Processed ${processed}/${orgIds.length} billing cycle transitions`);
+        res.json({ processed, total: orgIds.length });
       } catch (error) {
         console.error("[Billing] Error processing transitions:", error);
         res.status(500).json({ message: "Failed to process transitions" });
@@ -1590,17 +1896,25 @@ export async function trackUsage(
       .limit(1);
 
     if (!subscription) {
-      // No subscription - allow but mark as no subscription
-      return { allowed: true, withinLimit: true, message: "No active subscription" };
+      // No subscription - block usage
+      return { allowed: false, withinLimit: false, message: "No active subscription. Please subscribe to a plan to use ProcessSutra." };
     }
 
-    // Check if expired
+    // Check if expired (trial or paid)
     const now = new Date();
     if (subscription.trialEndsAt && new Date(subscription.trialEndsAt) < now) {
       return {
         allowed: false,
         withinLimit: false,
         message: "Free trial has expired. Please upgrade your plan to continue.",
+      };
+    }
+
+    if (subscription.status === "expired" || new Date(subscription.billingCycleEnd) < now) {
+      return {
+        allowed: false,
+        withinLimit: false,
+        message: "Your subscription plan has expired. Please complete the payment to continue using ProcessSutra.",
       };
     }
 
@@ -1683,7 +1997,7 @@ export async function trackUsage(
     return { allowed: true, withinLimit };
   } catch (error) {
     console.error("[Billing] Error tracking usage:", error);
-    return { allowed: true, withinLimit: true }; // Fail open
+    return { allowed: false, withinLimit: false, message: "Billing system error. Please try again or contact support." };
   }
 }
 
@@ -1716,10 +2030,10 @@ export async function checkLimit(
       .limit(1);
 
     if (!subscription) {
-      return { allowed: true, withinLimit: true, used: 0, limit: 0, planName: null };
+      return { allowed: false, withinLimit: false, used: 0, limit: 0, planName: null, message: "No active subscription. Please subscribe to a plan to use ProcessSutra." };
     }
 
-    // Check if expired
+    // Check if expired (trial or paid)
     const now = new Date();
     if (subscription.trialEndsAt && new Date(subscription.trialEndsAt) < now) {
       return {
@@ -1729,6 +2043,17 @@ export async function checkLimit(
         limit: 0,
         planName: "free_trial",
         message: "Free trial has expired. Please upgrade your plan.",
+      };
+    }
+
+    if (subscription.status === "expired" || new Date(subscription.billingCycleEnd) < now) {
+      return {
+        allowed: false,
+        withinLimit: false,
+        used: 0,
+        limit: 0,
+        planName: null,
+        message: "Your subscription plan has expired. Please complete the payment to continue using ProcessSutra.",
       };
     }
 
@@ -1770,6 +2095,6 @@ export async function checkLimit(
     };
   } catch (error) {
     console.error("[Billing] Error checking limit:", error);
-    return { allowed: true, withinLimit: true, used: 0, limit: 0, planName: null };
+    return { allowed: false, withinLimit: false, used: 0, limit: 0, planName: null, message: "Billing system error. Please try again or contact support." };
   }
 }

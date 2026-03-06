@@ -1,12 +1,17 @@
 import { Express } from "express";
+import multer from "multer";
 import { storage } from "./storage";
 import { getQuickFormTemplatesByOrg, getQuickFormResponsesCollection } from "./mongo/quickFormClient";
 import { db } from "./db.js";
 import {
   organizations, users, tasks, flowRules, auditLogs, userLoginLogs,
   subscriptionPlans, organizationSubscriptions, paymentTransactions, usageLogs,
+  invoices,
 } from "@shared/schema";
 import { eq, desc, sql, and, gte, lte, count } from "drizzle-orm";
+import { uploadFileToDrive } from "./services/googleDriveService";
+import { getOAuth2Client } from "./services/googleOAuth";
+import { ensureValidToken } from "./utils/tokenRefresh";
 
 /**
  * Super Admin Organization Management Routes
@@ -1460,6 +1465,482 @@ export function registerSuperAdminRoutes(
     } catch (error) {
       console.error("[SuperAdmin] Error creating manual payment:", error);
       res.status(500).json({ message: "Failed to create manual payment" });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  SUPER ADMIN — INVOICE MANAGEMENT
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── Create invoice for an organization ────────────────────────────────
+  app.post("/api/super-admin/billing/invoices", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const { organizationId, billingPeriodStart, billingPeriodEnd, planAmount, extraUsageAmount, totalAmount, notes, fileUrl } = req.body;
+
+      if (!organizationId || !billingPeriodStart || !billingPeriodEnd || !totalAmount) {
+        return res.status(400).json({ message: "Organization ID, billing period, and total amount are required" });
+      }
+
+      const parsedTotal = Number(totalAmount);
+      if (!Number.isFinite(parsedTotal) || parsedTotal <= 0 || parsedTotal > 10000000) {
+        return res.status(400).json({ message: "Total amount must be between 1 and 10,000,000" });
+      }
+
+      // Validate dates
+      const parsedStart = new Date(billingPeriodStart);
+      const parsedEnd = new Date(billingPeriodEnd);
+      if (isNaN(parsedStart.getTime()) || isNaN(parsedEnd.getTime())) {
+        return res.status(400).json({ message: "Invalid billing period dates" });
+      }
+      if (parsedEnd <= parsedStart) {
+        return res.status(400).json({ message: "Billing period end must be after start" });
+      }
+
+      // Validate sub-amounts are non-negative
+      const parsedPlanAmount = Number(planAmount) || 0;
+      const parsedExtraAmount = Number(extraUsageAmount) || 0;
+      if (parsedPlanAmount < 0 || parsedExtraAmount < 0) {
+        return res.status(400).json({ message: "Plan amount and extra usage amount must not be negative" });
+      }
+
+      // Verify org exists
+      const [org] = await db.select().from(organizations).where(eq(organizations.id, organizationId));
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+
+      // Get active subscription
+      const [subscription] = await db
+        .select()
+        .from(organizationSubscriptions)
+        .where(and(
+          eq(organizationSubscriptions.organizationId, organizationId),
+          eq(organizationSubscriptions.status, "active")
+        ))
+        .orderBy(desc(organizationSubscriptions.createdAt))
+        .limit(1);
+
+      // Generate invoice number: INV-YYYYMMDD-XXXXX
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
+      const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
+      const invoiceNumber = `INV-${dateStr}-${randomSuffix}`;
+
+      const sanitizedNotes = typeof notes === "string" ? notes.trim().slice(0, 1000) : null;
+      // Validate fileUrl: only allow https URLs
+      let sanitizedFileUrl: string | null = null;
+      if (typeof fileUrl === "string" && fileUrl.trim()) {
+        const trimmedUrl = fileUrl.trim().slice(0, 2000);
+        if (/^https:\/\//i.test(trimmedUrl)) {
+          sanitizedFileUrl = trimmedUrl;
+        } else {
+          return res.status(400).json({ message: "File URL must be a valid HTTPS URL" });
+        }
+      }
+
+      let newInvoice;
+      try {
+        [newInvoice] = await db.insert(invoices).values({
+          organizationId,
+          subscriptionId: subscription?.id || null,
+          invoiceNumber,
+          billingPeriodStart: parsedStart,
+          billingPeriodEnd: parsedEnd,
+          planAmount: parsedPlanAmount,
+          extraUsageAmount: parsedExtraAmount,
+          totalAmount: Math.round(parsedTotal),
+        status: "pending",
+        notes: sanitizedNotes,
+        fileUrl: sanitizedFileUrl,
+        createdBy: req.currentUser.id,
+      }).returning();
+      } catch (dbErr: any) {
+        // Handle unique constraint violation (invoice number collision)
+        if (dbErr?.code === "23505" || dbErr?.message?.includes("unique")) {
+          return res.status(409).json({ message: "Invoice number collision. Please try again." });
+        }
+        throw dbErr;
+      }
+
+      await storage.createAuditLog({
+        actorId: req.currentUser.id,
+        actorEmail: req.currentUser.email,
+        action: "CREATE_INVOICE",
+        targetType: "invoice",
+        targetId: newInvoice.id,
+        newValue: JSON.stringify({ invoiceNumber, totalAmount: Math.round(parsedTotal), organizationId }),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId,
+      });
+
+      console.log(`[SuperAdmin] Invoice created: ${invoiceNumber} amount=₹${parsedTotal} org=${organizationId}`);
+      res.json(newInvoice);
+    } catch (error) {
+      console.error("[SuperAdmin] Error creating invoice:", error);
+      res.status(500).json({ message: "Failed to create invoice" });
+    }
+  });
+
+  // ── Get all invoices (with optional org filter) ───────────────────────
+  app.get("/api/super-admin/billing/invoices", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const { organizationId, status } = req.query;
+      const conditions = [];
+
+      if (organizationId && typeof organizationId === "string") {
+        conditions.push(eq(invoices.organizationId, organizationId));
+      }
+      if (status && typeof status === "string" && ["pending", "paid", "overdue"].includes(status)) {
+        conditions.push(eq(invoices.status, status));
+      }
+
+      const allInvoices = await db
+        .select({
+          invoice: invoices,
+          orgName: organizations.name,
+        })
+        .from(invoices)
+        .leftJoin(organizations, eq(invoices.organizationId, organizations.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(invoices.createdAt));
+
+      res.json(allInvoices.map(r => ({ ...r.invoice, organizationName: r.orgName })));
+    } catch (error) {
+      console.error("[SuperAdmin] Error fetching invoices:", error);
+      res.status(500).json({ message: "Failed to fetch invoices" });
+    }
+  });
+
+  // ── Update invoice status (mark as paid / overdue) ────────────────────
+  app.patch("/api/super-admin/billing/invoices/:invoiceId", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const { invoiceId } = req.params;
+      const { status, paymentMethod, notes, fileUrl } = req.body;
+
+      const VALID_STATUSES = ["pending", "paid", "overdue"];
+      if (status && !VALID_STATUSES.includes(status)) {
+        return res.status(400).json({ message: `Status must be one of: ${VALID_STATUSES.join(", ")}` });
+      }
+
+      const [existing] = await db.select().from(invoices).where(eq(invoices.id, invoiceId));
+      if (!existing) return res.status(404).json({ message: "Invoice not found" });
+
+      const updates: Record<string, any> = { updatedAt: new Date() };
+      if (status) updates.status = status;
+      if (paymentMethod) updates.paymentMethod = typeof paymentMethod === "string" ? paymentMethod.trim().slice(0, 50) : existing.paymentMethod;
+      if (notes !== undefined) updates.notes = typeof notes === "string" ? notes.trim().slice(0, 1000) : existing.notes;
+      if (fileUrl !== undefined) {
+        if (typeof fileUrl === "string" && fileUrl.trim()) {
+          if (!/^https:\/\//i.test(fileUrl.trim())) {
+            return res.status(400).json({ message: "File URL must be a valid HTTPS URL" });
+          }
+          updates.fileUrl = fileUrl.trim().slice(0, 2000);
+        } else {
+          updates.fileUrl = null;
+        }
+      }
+
+      if (status === "paid") {
+        updates.paymentVerifiedBy = req.currentUser.id;
+        updates.paymentVerifiedAt = new Date();
+      }
+
+      const [updated] = await db.update(invoices).set(updates).where(eq(invoices.id, invoiceId)).returning();
+
+      await storage.createAuditLog({
+        actorId: req.currentUser.id,
+        actorEmail: req.currentUser.email,
+        action: "UPDATE_INVOICE",
+        targetType: "invoice",
+        targetId: invoiceId,
+        oldValue: JSON.stringify({ status: existing.status }),
+        newValue: JSON.stringify({ status: updated.status, paymentMethod: updated.paymentMethod }),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId: existing.organizationId,
+      });
+
+      console.log(`[SuperAdmin] Invoice updated: ${existing.invoiceNumber} status=${updated.status}`);
+      res.json(updated);
+    } catch (error) {
+      console.error("[SuperAdmin] Error updating invoice:", error);
+      res.status(500).json({ message: "Failed to update invoice" });
+    }
+  });
+
+  // ── Upload invoice with file → Google Drive ──────────────────────────
+  const invoiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+  app.post("/api/super-admin/billing/invoices/upload", isAuthenticated, requireSuperAdmin, superAdminLimiter, invoiceUpload.single("file"), async (req: any, res) => {
+    try {
+      const { organizationId, billingPeriodStart, billingPeriodEnd, planAmount, extraUsageAmount, totalAmount, notes } = req.body;
+
+      if (!organizationId || !billingPeriodStart || !billingPeriodEnd || !totalAmount) {
+        return res.status(400).json({ message: "Organization ID, billing period, and total amount are required" });
+      }
+      const parsedTotal = Number(totalAmount);
+      if (!Number.isFinite(parsedTotal) || parsedTotal <= 0 || parsedTotal > 10000000) {
+        return res.status(400).json({ message: "Total amount must be between 1 and 10,000,000" });
+      }
+      const parsedStart = new Date(billingPeriodStart);
+      const parsedEnd = new Date(billingPeriodEnd);
+      if (isNaN(parsedStart.getTime()) || isNaN(parsedEnd.getTime())) {
+        return res.status(400).json({ message: "Invalid billing period dates" });
+      }
+      if (parsedEnd <= parsedStart) {
+        return res.status(400).json({ message: "Billing period end must be after start" });
+      }
+      const parsedPlanAmount = Number(planAmount) || 0;
+      const parsedExtraAmount = Number(extraUsageAmount) || 0;
+      if (parsedPlanAmount < 0 || parsedExtraAmount < 0) {
+        return res.status(400).json({ message: "Plan amount and extra usage amount must not be negative" });
+      }
+
+      // Verify org exists
+      const [org] = await db.select().from(organizations).where(eq(organizations.id, organizationId));
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+
+      // Upload file to super admin's Google Drive if provided
+      let fileUrl: string | null = null;
+      if (req.file) {
+        const ALLOWED_INVOICE_TYPES = [
+          "application/pdf",
+          "image/jpeg", "image/jpg", "image/png",
+          "application/msword",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "application/vnd.ms-excel",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ];
+        if (!ALLOWED_INVOICE_TYPES.includes(req.file.mimetype)) {
+          return res.status(400).json({ message: "Only PDF, images, and Office documents are allowed for invoices" });
+        }
+
+        // Get super admin's Google Drive tokens
+        const adminUser = await ensureValidToken(req.currentUser.id);
+        if (!adminUser || !adminUser.googleDriveEnabled || !adminUser.googleAccessToken) {
+          return res.status(400).json({ message: "Super Admin Google Drive is not connected. Please enable Google Drive in your settings first." });
+        }
+
+        const oauth2Client = getOAuth2Client();
+        oauth2Client.setCredentials({
+          access_token: adminUser.googleAccessToken,
+          refresh_token: adminUser.googleRefreshToken,
+          expiry_date: adminUser.googleTokenExpiry?.getTime(),
+        });
+
+        const sanitizedName = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_").substring(0, 255);
+        const driveFile = await uploadFileToDrive(
+          oauth2Client,
+          req.file.buffer,
+          `Invoice_${organizationId}_${sanitizedName}`,
+          req.file.mimetype,
+          { orgId: organizationId, formId: "invoice", fieldId: "invoice-file" }
+        );
+        fileUrl = driveFile.webViewLink || null;
+      }
+
+      // Get active subscription
+      const [subscription] = await db
+        .select()
+        .from(organizationSubscriptions)
+        .where(and(
+          eq(organizationSubscriptions.organizationId, organizationId),
+          eq(organizationSubscriptions.status, "active")
+        ))
+        .orderBy(desc(organizationSubscriptions.createdAt))
+        .limit(1);
+
+      // Generate invoice number
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
+      const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
+      const invoiceNumber = `INV-${dateStr}-${randomSuffix}`;
+
+      const sanitizedNotes = typeof notes === "string" ? notes.trim().slice(0, 1000) : null;
+
+      let newInvoice;
+      try {
+        [newInvoice] = await db.insert(invoices).values({
+          organizationId,
+          subscriptionId: subscription?.id || null,
+          invoiceNumber,
+          billingPeriodStart: parsedStart,
+          billingPeriodEnd: parsedEnd,
+          planAmount: parsedPlanAmount,
+          extraUsageAmount: parsedExtraAmount,
+          totalAmount: Math.round(parsedTotal),
+          status: "pending",
+          notes: sanitizedNotes,
+          fileUrl,
+          createdBy: req.currentUser.id,
+        }).returning();
+      } catch (dbErr: any) {
+        if (dbErr?.code === "23505" || dbErr?.message?.includes("unique")) {
+          return res.status(409).json({ message: "Invoice number collision. Please try again." });
+        }
+        throw dbErr;
+      }
+
+      await storage.createAuditLog({
+        actorId: req.currentUser.id,
+        actorEmail: req.currentUser.email,
+        action: "CREATE_INVOICE",
+        targetType: "invoice",
+        targetId: newInvoice.id,
+        newValue: JSON.stringify({ invoiceNumber, totalAmount: Math.round(parsedTotal), organizationId, hasFile: !!fileUrl }),
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.headers["user-agent"],
+        organizationId,
+      });
+
+      console.log(`[SuperAdmin] Invoice uploaded: ${invoiceNumber} amount=₹${parsedTotal} org=${organizationId} file=${!!fileUrl}`);
+      res.json(newInvoice);
+    } catch (error: any) {
+      console.error("[SuperAdmin] Error uploading invoice:", error);
+      if (error.message?.includes("invalid_grant") || error.code === 401) {
+        return res.status(401).json({ message: "Google Drive authorization expired. Please re-authorize in settings." });
+      }
+      res.status(500).json({ message: "Failed to upload invoice" });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  SUPER ADMIN — USAGE MONITORING & EXPORT
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── Get usage monitoring data (with filters) ──────────────────────────
+  app.get("/api/super-admin/billing/usage-monitoring", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const { organizationId, actionType, startDate, endDate, page, limit: pageLimit } = req.query;
+      const conditions = [];
+
+      if (organizationId && typeof organizationId === "string") {
+        conditions.push(eq(usageLogs.organizationId, organizationId));
+      }
+      if (actionType && typeof actionType === "string" && ["flow_execution", "form_submission", "user_added"].includes(actionType)) {
+        conditions.push(eq(usageLogs.actionType, actionType));
+      }
+      if (startDate && typeof startDate === "string") {
+        const start = new Date(startDate);
+        if (!isNaN(start.getTime())) {
+          conditions.push(gte(usageLogs.createdAt, start));
+        }
+      }
+      if (endDate && typeof endDate === "string") {
+        const end = new Date(endDate);
+        if (!isNaN(end.getTime())) {
+          conditions.push(lte(usageLogs.createdAt, end));
+        }
+      }
+
+      const pageNum = Math.max(1, Number(page) || 1);
+      const limitNum = Math.min(100, Math.max(1, Number(pageLimit) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [logs, totalResult] = await Promise.all([
+        db
+          .select({
+            log: usageLogs,
+            orgName: organizations.name,
+          })
+          .from(usageLogs)
+          .leftJoin(organizations, eq(usageLogs.organizationId, organizations.id))
+          .where(whereClause)
+          .orderBy(desc(usageLogs.createdAt))
+          .limit(limitNum)
+          .offset(offset),
+        db
+          .select({ count: count() })
+          .from(usageLogs)
+          .where(whereClause),
+      ]);
+
+      // Aggregate summary
+      const summary = await db
+        .select({
+          actionType: usageLogs.actionType,
+          total: count(),
+        })
+        .from(usageLogs)
+        .where(whereClause)
+        .groupBy(usageLogs.actionType);
+
+      res.json({
+        logs: logs.map(r => ({ ...r.log, organizationName: r.orgName })),
+        total: totalResult[0]?.count || 0,
+        page: pageNum,
+        limit: limitNum,
+        summary: summary.reduce((acc, s) => { acc[s.actionType] = s.total; return acc; }, {} as Record<string, number>),
+      });
+    } catch (error) {
+      console.error("[SuperAdmin] Error fetching usage monitoring:", error);
+      res.status(500).json({ message: "Failed to fetch usage data" });
+    }
+  });
+
+  // ── Export usage data as CSV ──────────────────────────────────────────
+  app.get("/api/super-admin/billing/usage-export", isAuthenticated, requireSuperAdmin, superAdminLimiter, async (req: any, res) => {
+    try {
+      const { organizationId, actionType, startDate, endDate } = req.query;
+      const conditions = [];
+
+      if (organizationId && typeof organizationId === "string") {
+        conditions.push(eq(usageLogs.organizationId, organizationId));
+      }
+      if (actionType && typeof actionType === "string" && ["flow_execution", "form_submission", "user_added"].includes(actionType)) {
+        conditions.push(eq(usageLogs.actionType, actionType));
+      }
+      if (startDate && typeof startDate === "string") {
+        const start = new Date(startDate);
+        if (!isNaN(start.getTime())) {
+          conditions.push(gte(usageLogs.createdAt, start));
+        }
+      }
+      if (endDate && typeof endDate === "string") {
+        const end = new Date(endDate);
+        if (!isNaN(end.getTime())) {
+          conditions.push(lte(usageLogs.createdAt, end));
+        }
+      }
+
+      const logs = await db
+        .select({
+          log: usageLogs,
+          orgName: organizations.name,
+        })
+        .from(usageLogs)
+        .leftJoin(organizations, eq(usageLogs.organizationId, organizations.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(usageLogs.createdAt))
+        .limit(10000);
+
+      // Build CSV — escape values to prevent formula injection
+      const escapeCSV = (val: string): string => {
+        // Prevent CSV injection: prefix formula-triggering chars with a single-quote
+        if (/^[=+\-@\t\r]/.test(val)) val = "'" + val;
+        // Wrap in quotes if contains comma, quote, or newline
+        if (/[",\n\r]/.test(val)) return '"' + val.replace(/"/g, '""') + '"';
+        return val;
+      };
+      const headers = ["Date", "Organization", "Organization ID", "Action Type", "Action ID", "Within Limit"];
+      const rows = logs.map(r => [
+        escapeCSV(r.log.createdAt ? new Date(r.log.createdAt).toISOString() : ""),
+        escapeCSV((r.orgName || "").replace(/,/g, " ")),
+        escapeCSV(r.log.organizationId),
+        escapeCSV(r.log.actionType),
+        escapeCSV(r.log.actionId || ""),
+        r.log.isWithinLimit ? "Yes" : "No",
+      ]);
+
+      const csvContent = [headers.join(","), ...rows.map(row => row.join(","))].join("\n");
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename=usage-export-${new Date().toISOString().slice(0, 10)}.csv`);
+      res.send(csvContent);
+    } catch (error) {
+      console.error("[SuperAdmin] Error exporting usage:", error);
+      res.status(500).json({ message: "Failed to export usage data" });
     }
   });
 }
