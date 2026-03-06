@@ -878,6 +878,10 @@ export default function VisualFlowBuilder() {
       toast({ title: "Fill all required fields", variant: "destructive" });
       return;
     }
+    if (newRule.tatType === "minutetat" && newRule.tat < 15) {
+      toast({ title: "Minute TAT cannot be less than 15 minutes", variant: "destructive" });
+      return;
+    }
     createRuleMutation.mutate(newRule);
   };
 
@@ -886,6 +890,10 @@ export default function VisualFlowBuilder() {
     const isFirst = !editingRule.currentTask;
     if (!editingRule.nextTask || !editingRule.doer || !editingRule.email || (!isFirst && !editingRule.status)) {
       toast({ title: "Fill all required fields", variant: "destructive" });
+      return;
+    }
+    if (editingRule.tatType === "minutetat" && editingRule.tat < 15) {
+      toast({ title: "Minute TAT cannot be less than 15 minutes", variant: "destructive" });
       return;
     }
     pushUndo({ type: "update", ruleId: editingRule.id, before: flowRules.find((r) => r.id === editingRule.id), after: editingRule });
@@ -1745,17 +1753,28 @@ export default function VisualFlowBuilder() {
                 <Input
                   type="number"
                   value={newRule.tat}
-                  onChange={(e) => setNewRule({ ...newRule, tat: parseInt(e.target.value) || 1 })}
-                  min={1}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value) || 1;
+                    setNewRule({ ...newRule, tat: val });
+                  }}
+                  min={newRule.tatType === "minutetat" ? 15 : 1}
                   className={`h-9 ${availableTasks.includes(newRule.nextTask) ? "bg-gray-50" : ""}`}
                   disabled={availableTasks.includes(newRule.nextTask)}
                 />
+                {newRule.tatType === "minutetat" && newRule.tat < 15 && (
+                  <p className="text-[10px] text-red-600 mt-1">Minimum 15 minutes required</p>
+                )}
               </div>
               <div>
                 <Label className="text-xs">TAT Type *</Label>
-                <Select value={newRule.tatType} onValueChange={(v: any) => setNewRule({ ...newRule, tatType: v })} disabled={availableTasks.includes(newRule.nextTask)}>
+                <Select value={newRule.tatType} onValueChange={(v: any) => {
+                  const updated: any = { ...newRule, tatType: v };
+                  if (v === "minutetat" && updated.tat < 15) updated.tat = 15;
+                  setNewRule(updated);
+                }} disabled={availableTasks.includes(newRule.nextTask)}>
                   <SelectTrigger className={`h-9 ${availableTasks.includes(newRule.nextTask) ? "bg-gray-50" : ""}`}><SelectValue /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="minutetat">Minute TAT</SelectItem>
                     <SelectItem value="daytat">Day TAT</SelectItem>
                     <SelectItem value="hourtat">Hour TAT</SelectItem>
                     <SelectItem value="beforetat">Before TAT</SelectItem>
@@ -1999,16 +2018,27 @@ export default function VisualFlowBuilder() {
                   <Input
                     type="number"
                     value={editingRule.tat}
-                    onChange={(e) => setEditingRule({ ...editingRule, tat: parseInt(e.target.value) || 1 })}
-                    min={1}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value) || 1;
+                      setEditingRule({ ...editingRule, tat: val });
+                    }}
+                    min={editingRule.tatType === "minutetat" ? 15 : 1}
                     className="h-9"
                   />
+                  {editingRule.tatType === "minutetat" && editingRule.tat < 15 && (
+                    <p className="text-[10px] text-red-600 mt-1">Minimum 15 minutes required</p>
+                  )}
                 </div>
                 <div>
                   <Label className="text-xs">TAT Type *</Label>
-                  <Select value={editingRule.tatType} onValueChange={(v: any) => setEditingRule({ ...editingRule, tatType: v })}>
+                  <Select value={editingRule.tatType} onValueChange={(v: any) => {
+                    const updated: any = { ...editingRule, tatType: v };
+                    if (v === "minutetat" && updated.tat < 15) updated.tat = 15;
+                    setEditingRule(updated);
+                  }}>
                     <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="minutetat">Minute TAT</SelectItem>
                       <SelectItem value="daytat">Day TAT</SelectItem>
                       <SelectItem value="hourtat">Hour TAT</SelectItem>
                       <SelectItem value="beforetat">Before TAT</SelectItem>

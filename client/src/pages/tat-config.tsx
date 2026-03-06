@@ -67,7 +67,7 @@ export default function TATConfig() {
     resolver: zodResolver(tatConfigSchema),
     defaultValues: {
       officeStartHour: 9,
-      officeEndHour: 18,
+      officeEndHour: 17,
       timezone: "Asia/Kolkata",
       skipWeekends: true,
       weekendDays: "0,6", // Sunday and Saturday by default
@@ -79,7 +79,7 @@ export default function TATConfig() {
     if (config) {
       form.reset({
         officeStartHour: config.officeStartHour || 9,
-        officeEndHour: config.officeEndHour || 18,
+        officeEndHour: config.officeEndHour || 17,
         timezone: config.timezone || "Asia/Kolkata",
         skipWeekends: config.skipWeekends !== undefined ? config.skipWeekends : true,
         weekendDays: config.weekendDays || "0,6",
@@ -331,6 +331,14 @@ export default function TATConfig() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-3">
+                  <div className="border-l-4 border-cyan-500 pl-4">
+                    <h4 className="font-semibold">Minute TAT</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Adds minutes considering office hours. If calculation goes beyond office hours,
+                      it moves to next working day. Minimum 15 minutes.
+                    </p>
+                  </div>
+
                   <div className="border-l-4 border-blue-500 pl-4">
                     <h4 className="font-semibold">Hour TAT</h4>
                     <p className="text-sm text-muted-foreground">

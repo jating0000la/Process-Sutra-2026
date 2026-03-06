@@ -24,6 +24,67 @@ function isWeekendDay(day: number, weekendDays: string = "0,6"): boolean {
   return weekends.includes(day);
 }
 
+export function minuteTAT(
+  timestamp: Date,
+  tat: number,
+  config: TATConfig = defaultConfig
+): Date {
+  if (tat < 15) {
+    throw new Error('Minute TAT cannot be less than 15 minutes');
+  }
+  const { officeStartHour, officeEndHour, skipWeekends, weekendDays } = config;
+  let currentTime = new Date(timestamp);
+  let remainingMinutes = tat;
+
+  while (remainingMinutes > 0) {
+    const currentHour = currentTime.getHours();
+    const currentMinute = currentTime.getMinutes();
+    const currentDay = currentTime.getDay();
+
+    // Skip weekends if configured
+    if (skipWeekends && isWeekendDay(currentDay, weekendDays)) {
+      let daysToAdd = 1;
+      let nextDay = (currentDay + daysToAdd) % 7;
+      while (isWeekendDay(nextDay, weekendDays)) {
+        daysToAdd++;
+        nextDay = (currentDay + daysToAdd) % 7;
+      }
+      currentTime.setDate(currentTime.getDate() + daysToAdd);
+      currentTime.setHours(officeStartHour, 0, 0, 0);
+      continue;
+    }
+
+    // Before office hours - jump to office start
+    if (currentHour < officeStartHour) {
+      currentTime.setHours(officeStartHour, 0, 0, 0);
+      continue;
+    }
+
+    // After office hours - jump to next day
+    if (currentHour >= officeEndHour) {
+      currentTime.setDate(currentTime.getDate() + 1);
+      currentTime.setHours(officeStartHour, 0, 0, 0);
+      continue;
+    }
+
+    // Within office hours - calculate remaining minutes today
+    const minutesLeftToday = (officeEndHour * 60) - (currentHour * 60 + currentMinute);
+
+    if (remainingMinutes <= minutesLeftToday) {
+      // Can finish today
+      currentTime.setMinutes(currentTime.getMinutes() + remainingMinutes);
+      remainingMinutes = 0;
+    } else {
+      // Need to continue tomorrow
+      remainingMinutes -= minutesLeftToday;
+      currentTime.setDate(currentTime.getDate() + 1);
+      currentTime.setHours(officeStartHour, 0, 0, 0);
+    }
+  }
+
+  return currentTime;
+}
+
 export function hourTAT(
   timestamp: Date, 
   tat: number, 
@@ -208,6 +269,10 @@ export function calculateTAT(
   let result: Date;
   
   switch (tatType.toLowerCase()) {
+    case "minute":
+    case "minutetat":
+      result = minuteTAT(timestamp, tat, config);
+      break;
     case "hour":
     case "hourtat":
       result = hourTAT(timestamp, tat, config);

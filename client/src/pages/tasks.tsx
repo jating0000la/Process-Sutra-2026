@@ -36,7 +36,7 @@ const startFlowSchema = z.object({
 export default function Tasks() {
   const { toast } = useToast();
   const { user, loading, handleTokenExpired } = useAuth();
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("pending");
   const [systemFilter, setSystemFilter] = useState<string>("all");
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
@@ -1155,6 +1155,8 @@ export default function Tasks() {
         return <AlertTriangle className="w-4 h-4 text-red-600" />;
       case "cancelled":
         return <XCircle className="w-4 h-4 text-gray-600" />;
+      case "on_hold":
+        return <Clock className="w-4 h-4 text-orange-600" />;
       default:
         return <Clock className="w-4 h-4 text-yellow-600" />;
     }
@@ -1387,11 +1389,11 @@ export default function Tasks() {
                     <Clock className="w-3 h-3 text-white" />
                   </div>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Filters</h3>
-                  {(statusFilter !== "all" || systemFilter !== "all" || assigneeFilter !== "all" || priorityFilter !== "all" || dateFilter !== "all" || searchQuery) && (
+                  {(statusFilter !== "pending" || systemFilter !== "all" || assigneeFilter !== "all" || priorityFilter !== "all" || dateFilter !== "all" || searchQuery) && (
                     <div className="flex items-center space-x-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 rounded-md">
                       <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
                       <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
-                        {[statusFilter, systemFilter, assigneeFilter, priorityFilter, dateFilter].filter(f => f !== "all").length + (searchQuery ? 1 : 0)}
+                        {[statusFilter === "pending" ? "all" : statusFilter, systemFilter, assigneeFilter, priorityFilter, dateFilter].filter(f => f !== "all").length + (searchQuery ? 1 : 0)}
                       </span>
                     </div>
                   )}
@@ -1401,7 +1403,7 @@ export default function Tasks() {
                   variant="ghost" 
                   size="sm"
                   onClick={() => {
-                    setStatusFilter("all");
+                    setStatusFilter("pending");
                     setSystemFilter("all");
                     setAssigneeFilter("all");
                     setPriorityFilter("all");
@@ -1432,6 +1434,7 @@ export default function Tasks() {
                       <SelectItem value="pending">🟡 Pending</SelectItem>
                       <SelectItem value="in_progress">🔵 In Progress</SelectItem>
                       <SelectItem value="completed">🟢 Completed</SelectItem>
+                      <SelectItem value="on_hold">🟠 On Hold</SelectItem>
                       <SelectItem value="overdue">🔴 Overdue</SelectItem>
                       <SelectItem value="cancelled">⚫ Cancelled</SelectItem>
                     </SelectContent>
@@ -1585,6 +1588,9 @@ export default function Tasks() {
                       <span className="text-green-500" title="Completed tasks">
                         🟢 {filteredTasks.filter(t => t.status === 'completed').length}
                       </span>
+                      <span className="text-orange-500" title="On Hold tasks">
+                        🟠 {filteredTasks.filter(t => t.status === 'on_hold').length}
+                      </span>
                       <span className="text-gray-500" title="Cancelled tasks">
                         ⚫ {filteredTasks.filter(t => t.status === 'cancelled').length}
                       </span>
@@ -1669,8 +1675,8 @@ export default function Tasks() {
                         No tasks match your search for <strong>"{searchQuery}"</strong>.<br />
                         Try different keywords or check your spelling.
                       </>
-                    ) : statusFilter === "all" && systemFilter === "all" && assigneeFilter === "all" && priorityFilter === "all" && dateFilter === "all" ? (
-                      "You don't have any tasks assigned yet. Create a new flow to get started!"
+                    ) : statusFilter === "pending" && systemFilter === "all" && assigneeFilter === "all" && priorityFilter === "all" && dateFilter === "all" ? (
+                      "You don't have any pending tasks right now. Use filters to view completed or on hold tasks."
                     ) : (
                       "No tasks match your current filters. Try adjusting your filter criteria."
                     )}
@@ -1702,7 +1708,7 @@ export default function Tasks() {
                         <Button 
                           onClick={() => {
                             setSearchQuery("");
-                            setStatusFilter("all");
+                            setStatusFilter("pending");
                             setSystemFilter("all");
                             setAssigneeFilter("all");
                             setPriorityFilter("all");
@@ -1718,7 +1724,7 @@ export default function Tasks() {
                       <>
                         <Button 
                           onClick={() => {
-                            setStatusFilter("all");
+                            setStatusFilter("pending");
                             setSystemFilter("all");
                             setAssigneeFilter("all");
                             setPriorityFilter("all");

@@ -2959,7 +2959,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/tat-config", isAuthenticated, requireAdmin, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.id);
-      const { officeStartHour, officeEndHour, timezone, skipWeekends } = req.body;
+      const { officeStartHour, officeEndHour, timezone, skipWeekends, weekendDays } = req.body;
       
       // Validate inputs
       if (typeof officeStartHour !== 'number' || officeStartHour < 0 || officeStartHour > 23) {
@@ -2985,12 +2985,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (typeof skipWeekends !== 'boolean') {
         return res.status(400).json({ message: "skipWeekends must be a boolean" });
       }
+
+      // Validate weekendDays if provided
+      if (weekendDays !== undefined && weekendDays !== null) {
+        if (typeof weekendDays !== 'string') {
+          return res.status(400).json({ message: "weekendDays must be a comma-separated string of day numbers (0-6)" });
+        }
+        const days = weekendDays.split(',').map((d: string) => parseInt(d.trim()));
+        if (days.some((d: number) => isNaN(d) || d < 0 || d > 6)) {
+          return res.status(400).json({ message: "weekendDays must contain valid day numbers (0=Sun, 6=Sat)" });
+        }
+      }
       
       const config = await storage.upsertTATConfig(currentUser?.organizationId || "", {
         officeStartHour,
         officeEndHour,
         timezone,
-        skipWeekends
+        skipWeekends,
+        weekendDays: weekendDays || "0,6",
       });
       
       console.log(`[TAT Config] Updated for organization ${currentUser?.organizationId}:`, config);

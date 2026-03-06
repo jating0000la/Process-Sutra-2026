@@ -12,11 +12,11 @@ export interface TATConfig {
 
 const defaultConfig: TATConfig = {
   officeStartHour: 9,  // 9 AM
-  officeEndHour: 18,   // 6 PM
+  officeEndHour: 17,   // 5 PM
   timezone: "Asia/Kolkata",
   skipWeekends: true,
   workStart: "09:00",
-  workEnd: "18:00"
+  workEnd: "17:00"
 };
 
 // Parse HH:mm to { hours, minutes }
@@ -24,6 +24,57 @@ const parseTime = (time: string): { hours: number; minutes: number } => {
   const [h, m] = time.split(":").map(Number);
   return { hours: h || 0, minutes: m || 0 };
 };
+
+export function minuteTAT(
+  timestamp: Date,
+  tat: number,
+  config: TATConfig = defaultConfig
+): Date {
+  const { officeStartHour, officeEndHour, skipWeekends } = config;
+  let currentTime = new Date(timestamp);
+  let remainingMinutes = tat;
+
+  while (remainingMinutes > 0) {
+    const currentHour = currentTime.getHours();
+    const currentMinute = currentTime.getMinutes();
+    const currentDay = currentTime.getDay();
+
+    // Skip weekends if configured
+    if (skipWeekends && (currentDay === 0 || currentDay === 6)) {
+      const daysToAdd = currentDay === 0 ? 1 : 2;
+      currentTime.setDate(currentTime.getDate() + daysToAdd);
+      currentTime.setHours(officeStartHour, 0, 0, 0);
+      continue;
+    }
+
+    // Before office hours - jump to office start
+    if (currentHour < officeStartHour) {
+      currentTime.setHours(officeStartHour, 0, 0, 0);
+      continue;
+    }
+
+    // After office hours - jump to next day
+    if (currentHour >= officeEndHour) {
+      currentTime.setDate(currentTime.getDate() + 1);
+      currentTime.setHours(officeStartHour, 0, 0, 0);
+      continue;
+    }
+
+    // Within office hours - calculate remaining minutes today
+    const minutesLeftToday = (officeEndHour * 60) - (currentHour * 60 + currentMinute);
+
+    if (remainingMinutes <= minutesLeftToday) {
+      currentTime.setMinutes(currentTime.getMinutes() + remainingMinutes);
+      remainingMinutes = 0;
+    } else {
+      remainingMinutes -= minutesLeftToday;
+      currentTime.setDate(currentTime.getDate() + 1);
+      currentTime.setHours(officeStartHour, 0, 0, 0);
+    }
+  }
+
+  return currentTime;
+}
 
 export function hourTAT(
   timestamp: Date, 
@@ -133,6 +184,8 @@ export function calculateTAT(
   const normalizedType = (tatType || "hourtat").toLowerCase();
   
   switch (normalizedType) {
+    case "minutetat":
+      return minuteTAT(timestamp, tat, fullConfig);
     case "hourtat":
       return hourTAT(timestamp, tat, fullConfig);
     case "daytat":
