@@ -196,6 +196,7 @@ export default function VisualFlowBuilder() {
     nextTask: "",
     tat: 1,
     tatType: "daytat" as
+      | "minutetat"
       | "daytat"
       | "hourtat"
       | "beforetat"
