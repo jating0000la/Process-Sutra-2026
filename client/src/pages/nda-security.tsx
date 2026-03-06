@@ -98,9 +98,9 @@ export default function NDASecurityPage() {
   const handleDownloadNDA = () => {
     // Create NDA content
     const ndaContent = `
-NON-DISCLOSURE AGREEMENT (NDA)
+CONFIDENTIALITY & DATA AGREEMENT
 
-This Non-Disclosure Agreement ("Agreement") is made between:
+This Confidentiality and Data Agreement ("Agreement") is made between:
 
 1. Muxro Technologies, operating ProcessSutra ("Service Provider"),
 and
@@ -112,137 +112,130 @@ Effective Date: ${organizationCreatedAt || new Date().toLocaleDateString()}
 
 ================================================================================
 
-1. PURPOSE
+SECTION 1: INTRODUCTION / AGREEMENT OVERVIEW
 
-The Client may share certain information with the Service Provider while using ProcessSutra, such as:
+1.1 Purpose of the Agreement
+This Agreement establishes the terms and conditions governing the confidentiality, 
+data handling, security, and usage policies between the Service Provider and the 
+Client in connection with the Client's use of ProcessSutra, a workflow and process 
+automation platform.
 
-• Workflow designs
-• Forms and form responses
-• Organization information (GST, PAN, address, business data)
-• Employee data (name, email, phone, designation, etc.)
-• Documents and files uploaded
-• Any dynamic data provided voluntarily or optionally
+1.2 Parties to the Agreement
+• "Service Provider" refers to Muxro Technologies, the company operating ProcessSutra.
+• "Client" refers to ${organizationName} and its authorized users who access and 
+  use the ProcessSutra platform.
 
-This Agreement ensures that all such information remains confidential.
+1.3 Definitions
+• "Confidential Information" — Any non-public information shared by either Party.
+• "Platform" — The ProcessSutra application, APIs, and related services.
+• "Client Data" — All data, files, and content created, uploaded, or managed by the 
+  Client through the Platform.
+• "Aggregated Data" — Pre-computed, anonymized statistical summaries derived from 
+  Client Data containing no identifiable records.
+• "AI Provider" — Third-party AI services (e.g., Google Gemini, OpenAI) accessed 
+  using the Client's own API keys.
 
 ================================================================================
 
-2. DEFINITION OF CONFIDENTIAL INFORMATION
+SECTION 2: CONFIDENTIAL INFORMATION
 
-"Confidential Information" includes, but is not limited to:
+2.1 Definition of Confidential Information
+"Confidential Information" includes any and all non-public information disclosed by 
+either Party to the other, whether orally, in writing, electronically, or through use 
+of the Platform.
 
-• Organization data
-• Employee or personal data
-• Business workflows, processes, or operational details
-• Files/documents uploaded by the Client
-• Any form data submitted by users
+2.2 Scope of Confidential Information
+Confidential Information includes, but is not limited to:
+• Organization data (company name, GST, PAN, address, business details)
+• Employee or personal data (names, emails, phone numbers, designations)
+• Business workflows, processes, and operational details
+• Files and documents uploaded by the Client
+• Form templates and form submission data
+• Task records and completion history
 • Any information not publicly available and provided through ProcessSutra
 
+2.3 Information Covered Under the Agreement
 Even if the Client provides only partial, optional, or dynamic data, it is still 
-protected under this NDA.
+protected under this Agreement. All data entered into ProcessSutra — regardless of 
+format or completeness — is treated as Confidential Information.
 
 ================================================================================
 
-3. OBLIGATIONS OF THE SERVICE PROVIDER
+SECTION 3: OBLIGATIONS OF THE SERVICE PROVIDER
 
-The Service Provider agrees to:
+3.1 Confidentiality Commitment
+The Service Provider shall not disclose, share, sell, lease, or make available the 
+Client's Confidential Information to any third party without the Client's prior 
+written consent.
 
-a. Maintain confidentiality
-   Not disclose, share, sell, lease, or make available the Client's data to any third party.
+3.2 Permitted Use of Data
+Client Data may only be used for the purpose of delivering the Platform's services, 
+including workflow execution, task management, form processing, reporting, and 
+technical support. No data may be used for marketing, promotion, training, or 
+external analysis without explicit written consent.
 
-b. Use data only for service functionality
-   Data may only be used to operate features such as workflow execution, task creation, 
-   or technical support.
+3.3 Internal Access Restrictions
+Only authorized Service Provider personnel who require access for system operation, 
+maintenance, or troubleshooting may access Client Data. All such personnel are bound 
+by confidentiality obligations.
 
-c. Restrict access internally
-   Only authorized personnel who require access for system operation or troubleshooting 
-   may access the data—and they are bound by confidentiality.
-
-d. Prevent unauthorized access
-   Implement reasonable technical and administrative safeguards to protect all Client data.
-
-e. Not use data for marketing or external purposes
-   No data may be used for promotion, training, or external analysis without explicit 
-   written consent from the Client.
-
-================================================================================
-
-4. AI & LLM DATA ACCESS POLICY
-
-ProcessSutra integrates optional AI-powered features (e.g., "Voice of Business" 
-reporting, AI assistant). The following rules apply:
-
-a. Organization-Owned API Keys
-   All AI API keys (Google Gemini, OpenAI) are provided and owned by the Client's 
-   organization. ProcessSutra does NOT provide, share, or manage any AI API keys.
-
-b. Data NEVER Shared with AI/LLM
-   The following data is NEVER sent to any AI or LLM provider:
-   • Flow rules and workflow definitions
-   • Individual task records and task details
-   • Form templates and form submission data
-   • Employee/doer personal information (emails, names, phone numbers)
-   • Uploaded files and documents
-   • Customer or third-party personal data
-   • Organization credentials, API keys, or secrets
-   • Database records, IDs, or raw operational data
-
-c. What AI Receives (Reporting Only)
-   When the Client explicitly enables AI analysis in the Voice of Business report, 
-   ONLY pre-computed, aggregated statistical summaries are shared:
-   • Total task counts and completion percentages
-   • Average cycle times and throughput rates
-   • System-level aggregate performance (no individual records)
-   • Anonymous team size counts (no emails or names)
-   These are reporting parameters derived from data the Client fully owns.
-
-d. Why Reporting Parameters Can Be Shared
-   Since all form data, task data, and workflow data are the sole property of the 
-   Client organization, the aggregated performance metrics derived from this data 
-   also belong to the Client. The Client's own AI API key is used, meaning the data 
-   flows from the Client's system through the Client's own AI account.
-
-e. No AI Training
-   No Client data is used to train, fine-tune, or improve any AI model. Both Google 
-   and OpenAI confirm that API data is not used for model training.
+3.4 Data Protection Measures
+The Service Provider shall implement reasonable technical and administrative 
+safeguards to protect all Client Data against unauthorized access, disclosure, 
+alteration, or destruction.
 
 ================================================================================
 
-5. FILE STORAGE & GOOGLE DRIVE POLICY
+SECTION 4: AI & LLM DATA ACCESS POLICY
 
-a. All files uploaded through ProcessSutra are stored directly in the Client's own 
-   Google Drive account, inside a designated "ProcessSutra" folder.
+4.1 Organization-Owned API Keys
+All AI API keys (such as Google Gemini or OpenAI) are provided, owned, and managed 
+by the Client's organization. ProcessSutra does not provide, generate, store, or 
+manage any AI API keys.
 
-b. ProcessSutra does NOT store, copy, cache, or retain any uploaded files on its 
-   own servers.
+4.2 AI Data Access Restrictions
+The following data is NEVER transmitted to any AI or LLM provider under any 
+circumstance:
+• Workflow definitions and flow rules
+• Individual task records and task-level data
+• Form templates and form submission data
+• Employee or user personal information (emails, names, phone numbers)
+• Uploaded documents or files
+• Customer or third-party personal data
+• Organization credentials, API keys, or secrets
+• Raw database records or operational data
 
-c. The Service Provider has no access to files stored in the Client's Google Drive 
-   unless explicitly granted by the Client.
+4.3 Aggregated Data for AI Analysis
+AI services may only receive aggregated and pre-computed reporting metrics, and only 
+when the Client explicitly enables AI-powered analysis. These metrics may include:
+• Total task counts
+• Completion percentages
+• Average process cycle times
+• Throughput rates
+• Aggregate performance indicators
+• Anonymous team size counts
+These values contain no identifiable records, no personal data, and no raw 
+operational data.
 
-d. File ownership, access control, and retention are fully governed by the Client's 
-   Google Workspace policies.
+4.4 AI Processing Transparency
+ProcessSutra acts only as a technical interface between the Client and their chosen 
+AI provider. All AI processing occurs using the Client's own API account and under 
+the policies of that AI provider. Since all workflow data, form data, and operational 
+data belong entirely to the Client, aggregated reporting metrics derived from this 
+data also belong to the Client.
 
-e. If the Client revokes Google Drive access, ProcessSutra immediately loses the 
-   ability to read or write any files.
+4.5 No AI Training on Client Data
+Client data is never used to train, fine-tune, or improve any AI models. AI requests 
+are processed only for real-time responses, and ProcessSutra does not retain AI input 
+or output beyond the immediate request unless the Client explicitly saves it.
 
 ================================================================================
 
-6. EXCLUSIONS
+SECTION 5: DATA OWNERSHIP
 
-Confidential Information does not include data that:
-
-• Becomes publicly available through no fault of the Service Provider
-• Is legally required to be disclosed (only after notifying the Client)
-• The Client has already made publicly available
-
-================================================================================
-
-7. DATA OWNERSHIP
-
-All data provided through ProcessSutra will always remain the sole property of the Client.
-The Service Provider holds no ownership rights over this data.
-
-This includes but is not limited to:
+5.1 Client Data Ownership
+All data provided through ProcessSutra will always remain the sole property of the 
+Client. The Service Provider holds no ownership rights over this data. This includes:
 • Workflow rules and flow definitions
 • Task records and completion history
 • Form templates and all form submission responses
@@ -250,69 +243,264 @@ This includes but is not limited to:
 • Organization settings and configurations
 • Employee and team member data
 
-Because the Client owns all data, the Client has full authority to decide whether to 
-enable AI-powered features using their own API keys.
+5.2 Platform Processing Rights
+The Platform is granted only a limited, revocable right to process Client Data as 
+necessary to deliver its services. This right terminates upon the Client's cessation 
+of use or termination of this Agreement.
+
+5.3 Intellectual Property Rights
+All intellectual property created by the Client's organization within the Platform 
+(including workflow designs, form templates, and process configurations) remains the 
+exclusive property of the Client.
 
 ================================================================================
 
-8. DATA DELETION & REMOVAL
+SECTION 6: FILE STORAGE & EXTERNAL INTEGRATIONS
 
-ProcessSutra provides comprehensive self-service data deletion capabilities:
+6.1 Google Drive Storage Policy
+a. All files uploaded through ProcessSutra are stored directly in the Client's own 
+   Google Drive account, inside a designated "ProcessSutra" folder.
+b. ProcessSutra does NOT store, copy, cache, or retain any uploaded files on its 
+   own servers.
+c. The Service Provider has no access to files stored in the Client's Google Drive 
+   unless explicitly granted by the Client.
+d. File ownership, access control, and retention are fully governed by the Client's 
+   Google Workspace policies.
 
-a. User-Initiated Deletion
-   • Administrators can delete individual tasks, forms, and workflows from the platform
-   • Users can remove their own data through the application interface
+6.2 Third-Party Service Integrations
+Third-party integrations (including Google Drive, email services, and AI providers) 
+operate under their respective provider terms and privacy policies. ProcessSutra 
+is not responsible for the data handling practices of third-party services.
 
-b. Organization-Wide Data Removal
-   • Administrators can request complete deletion of all organization data
-   • This includes: all tasks, flow rules, form templates, form responses, 
-     employee records, organization settings, and AI API key configurations
-
-c. Upon request, the Service Provider will:
-   • Permanently delete all workflow and task data
-   • Delete all forms and submitted form responses
-   • Remove all user and employee information
-   • Clear all organization configuration and settings
-   • Remove all AI API keys stored for the organization
-   • Provide a written confirmation of complete deletion
-
-d. Files stored in the Client's Google Drive remain under the Client's control 
-   and are not affected by ProcessSutra data deletion.
-
-e. Data deletion is irreversible. The Service Provider is not responsible for 
-   any data loss resulting from Client-initiated deletions.
+6.3 API Access & Permissions
+ProcessSutra integrates with Google Drive using OAuth 2.0 authentication. Access 
+permissions are granted by the Client and can be revoked at any time through Google 
+Account settings. If the Client revokes Google Drive access, ProcessSutra immediately 
+loses the ability to read or write any files.
 
 ================================================================================
 
-9. DURATION
+SECTION 7: USER RESPONSIBILITIES
 
-This Agreement:
+7.1 Account Security
+The Client is responsible for maintaining the security of all account credentials 
+and ensuring that login information is not shared with unauthorized individuals.
 
-• Begins from the date the Client uses ProcessSutra
-• Remains in effect for as long as the Client uses the service
-• Continues for 3 years after account deletion, unless otherwise requested in writing
+7.2 Role & Permission Management
+ProcessSutra provides role-based access controls. The organization administrator is 
+responsible for assigning appropriate roles and permissions to users within the 
+organization.
 
-================================================================================
-
-10. REMEDIES
-
-Unauthorized disclosure of Client data may result in:
-
-• Legal action
-• Compensation for damages
-• Immediate termination of access to the system
+7.3 Responsible Use of the Platform
+The Client agrees to use the Platform in a responsible manner consistent with its 
+intended purpose as a workflow and process automation tool.
 
 ================================================================================
 
-11. GOVERNING LAW
+SECTION 8: DATA SECURITY & PROTECTION
 
-This Agreement is governed by the laws of India.
+8.1 Security Safeguards
+ProcessSutra implements appropriate security safeguards including:
+• HTTPS/TLS encryption for all data in transit
+• Google OAuth 2.0 authentication with ID token validation
+• Cryptographic CSRF protection
+• Secure session management with HttpOnly, SameSite=strict cookies
+• Content Security Policy (CSP) and security headers
+
+8.2 Access Control Measures
+• Multi-layer rate limiting (login, API, and admin endpoints)
+• Role-based access control with strict middleware enforcement
+• Organization-level data isolation (every query scoped by organizationId)
+• Field-level whitelisting to prevent privilege escalation
+• Database port isolation (PostgreSQL, MongoDB, Redis bound to localhost)
+
+8.3 Data Breach Handling
+In the event of a data breach affecting Client Data, the Service Provider will:
+• Notify affected Clients promptly in accordance with applicable laws
+• Investigate the breach and take corrective measures
+• Provide a summary of findings and remediation steps taken
 
 ================================================================================
 
-12. ACCEPTANCE
+SECTION 9: DATA DELETION & DATA RETENTION
 
-By using ProcessSutra, the Client agrees to the terms of this NDA automatically.
+9.1 User-Initiated Deletion
+Administrators can delete individual tasks, forms, workflows, and flow rules 
+directly from the platform. Users can remove their own data through the application 
+interface.
+
+9.2 Organization-Wide Data Removal
+Administrators may request complete deletion of all organization data, including:
+• All tasks, flow rules, form templates, and form responses
+• All employee records and user information
+• All organization configuration and settings
+• All AI API key configurations stored for the organization
+
+Upon request, the Service Provider will provide written confirmation of complete 
+deletion.
+
+9.3 Permanent Data Deletion Policy
+• Data deletion is irreversible. The Service Provider is not responsible for any 
+  data loss resulting from Client-initiated deletions.
+• Files stored in the Client's Google Drive remain under the Client's control and 
+  are not affected by ProcessSutra data deletion.
+• ProcessSutra does not create backups of Client files on its own servers.
+
+================================================================================
+
+SECTION 10: SERVICE AVAILABILITY
+
+10.1 Platform Availability
+ProcessSutra is provided "as is" without warranties of any kind, express or implied. 
+While the Service Provider strives for 99.9% uptime, uninterrupted or error-free 
+service is not guaranteed.
+
+10.2 Maintenance & Updates
+The Platform may undergo scheduled maintenance, updates, and improvements. The Service 
+Provider will provide reasonable advance notice for planned maintenance windows.
+
+10.3 Service Interruptions
+ProcessSutra reserves the right to modify, suspend, or discontinue the service at 
+any time with reasonable notice. The Service Provider is not liable for any damages 
+resulting from service interruptions.
+
+================================================================================
+
+SECTION 11: LIMITATION OF LIABILITY
+
+11.1 No Liability for Data Loss
+ProcessSutra assumes no liability for any data loss, unauthorized access to the 
+Client's Google Drive, or any damages arising from the use of the Platform. All data 
+management responsibilities rest with the Client and their organization.
+
+11.2 No Liability for User Actions
+The Service Provider is not liable for any consequences arising from the Client's 
+configuration of workflows, assignment of roles, or use of automated features. 
+Automated communications (task assignments, reminders, etc.) are initiated by the 
+Client's workflow configuration.
+
+11.3 Limitation of Financial Responsibility
+ProcessSutra's total aggregate financial liability shall not exceed the fees paid by 
+the Client in the twelve (12) months preceding the claim.
+
+================================================================================
+
+SECTION 12: EXCLUSIONS
+
+12.1 Publicly Available Information
+Confidential Information does not include data that:
+• Is or becomes publicly available through no fault of the Service Provider
+• Was already known to the receiving Party prior to disclosure
+• Is independently developed without use of Confidential Information
+
+12.2 Legal Disclosure Requirements
+The Service Provider may disclose Confidential Information if required by law, 
+regulation, or court order, provided that the Service Provider gives the Client 
+prompt written notice (where legally permissible) to allow the Client to seek 
+protective measures.
+
+================================================================================
+
+SECTION 13: TERM & DURATION
+
+13.1 Effective Date
+This Agreement becomes effective on the date the Client first uses ProcessSutra 
+or accepts this Agreement, whichever occurs first.
+
+13.2 Duration of Agreement
+This Agreement remains in effect for as long as the Client uses the Platform and 
+maintains an active account.
+
+13.3 Post-Term Confidentiality
+Confidentiality obligations under this Agreement shall survive termination and 
+continue for a period of three (3) years after account deletion or termination, 
+unless otherwise agreed in writing.
+
+================================================================================
+
+SECTION 14: TERMINATION
+
+14.1 Termination by Client
+The Client may terminate this Agreement at any time by discontinuing use of the 
+Platform and requesting account deletion.
+
+14.2 Termination by Service Provider
+The Service Provider may terminate this Agreement with reasonable written notice if 
+the Client materially breaches any terms, engages in prohibited use, or fails to 
+maintain an active subscription (where applicable).
+
+14.3 Effects of Termination
+Upon termination:
+• The Client's access to the Platform will be suspended
+• Client Data will be retained for a reasonable period to allow data export
+• Upon request, all Client Data will be permanently deleted
+• Files in the Client's Google Drive are not affected by termination
+
+================================================================================
+
+SECTION 15: GOVERNING LAW
+
+15.1 Applicable Jurisdiction
+This Agreement is governed by and construed in accordance with the laws of India.
+
+15.2 Legal Compliance
+Both Parties agree to comply with all applicable local, state, national, and 
+international laws and regulations in connection with their performance under 
+this Agreement.
+
+================================================================================
+
+SECTION 16: DISPUTE RESOLUTION
+
+16.1 Negotiation Process
+In the event of any dispute arising out of or relating to this Agreement, the Parties 
+shall first attempt to resolve the matter through good-faith negotiation within 
+thirty (30) days.
+
+16.2 Arbitration / Legal Proceedings
+If negotiation fails, the dispute shall be submitted to binding arbitration under the 
+Arbitration and Conciliation Act, 1996 (India), or resolved through the competent 
+courts of the applicable jurisdiction.
+
+================================================================================
+
+SECTION 17: MODIFICATIONS TO THE AGREEMENT
+
+17.1 Right to Update Terms
+ProcessSutra reserves the right to modify, amend, or update the terms of this 
+Agreement at any time.
+
+17.2 Notification of Changes
+The Service Provider will provide reasonable notice of material changes through the 
+Platform or via email. Continued use of the Platform after changes constitutes 
+acceptance of the updated terms.
+
+================================================================================
+
+SECTION 18: ACCEPTANCE OF TERMS
+
+18.1 Agreement by Use of Service
+By accessing or using ProcessSutra, the Client acknowledges that they have read, 
+understood, and agree to be bound by the terms of this Agreement.
+
+18.2 Digital Acceptance
+Acceptance of this Agreement via the Platform's digital acceptance mechanism (checkbox 
+and confirmation) constitutes a valid and binding acceptance equivalent to a written 
+signature.
+
+================================================================================
+
+SECTION 19: CONTACT INFORMATION
+
+19.1 Security Contact
+For security-related inquiries, vulnerability reports, or data breach notifications:
+Email: security@muxrotechnologies.com
+Response Time: Within 24 hours for critical issues
+
+19.2 Support Contact
+For general support, account inquiries, or data deletion requests:
+Email: support@muxrotechnologies.com
+Availability: Business hours (Monday–Friday)
 
 ================================================================================
 
@@ -337,7 +525,7 @@ Date: ${organizationCreatedAt || new Date().toLocaleDateString()}
 CONFIDENTIAL AND PROPRIETARY INFORMATION
 © ${new Date().getFullYear()} Muxro Technologies. All Rights Reserved.
 
-This NDA protects all Client data and ensures complete confidentiality.
+This Agreement protects all Client data and ensures complete confidentiality.
 For questions: security@muxrotechnologies.com
 `;
 
@@ -346,7 +534,7 @@ For questions: security@muxrotechnologies.com
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `NDA_ProcessSutra_${dbUser?.email}_${new Date().toISOString().split('T')[0]}.txt`;
+    a.download = `Confidentiality_Data_Agreement_ProcessSutra_${dbUser?.email}_${new Date().toISOString().split('T')[0]}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -467,14 +655,14 @@ For questions: security@muxrotechnologies.com
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2 text-lg">
                         <FileSignature className="w-5 h-5 text-blue-600" />
-                        Non-Disclosure Agreement
+                        Confidentiality & Data Agreement
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <p className="text-sm text-muted-foreground">
-                        Official NDA protecting your organization's confidential data. This agreement ensures 
-                        all workflow designs, forms, employee data, documents, and business information remain 
-                        strictly confidential and are owned solely by your organization.
+                        Official 19-section agreement protecting your organization's confidential data. Covers 
+                        confidentiality, data ownership, AI policy, file storage, security, data deletion, 
+                        liability, compliance, and legal provisions.
                       </p>
                       <div className="flex items-center gap-2 text-sm">
                         <CheckCircle className="w-4 h-4 text-green-600" />
@@ -482,7 +670,7 @@ For questions: security@muxrotechnologies.com
                       </div>
                       <div className="flex items-center gap-2 text-sm">
                         <CheckCircle className="w-4 h-4 text-green-600" />
-                        <span>No third-party data sharing</span>
+                        <span>Comprehensive AI & LLM data policy</span>
                       </div>
                       <div className="flex items-center gap-2 text-sm">
                         <CheckCircle className="w-4 h-4 text-green-600" />
@@ -490,15 +678,15 @@ For questions: security@muxrotechnologies.com
                       </div>
                       <div className="flex items-center gap-2 text-sm">
                         <CheckCircle className="w-4 h-4 text-green-600" />
-                        <span>3-year validity period</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <CheckCircle className="w-4 h-4 text-green-600" />
-                        <span>AI data never shared without consent</span>
+                        <span>3-year post-term confidentiality</span>
                       </div>
                       <div className="flex items-center gap-2 text-sm">
                         <CheckCircle className="w-4 h-4 text-green-600" />
                         <span>Files stored on your Google Drive only</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                        <span>Governing law & dispute resolution</span>
                       </div>
                       <Button onClick={handleDownloadNDA} className="w-full">
                         <Download className="w-4 h-4 mr-2" />
@@ -589,17 +777,17 @@ For questions: security@muxrotechnologies.com
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Scroll className="w-5 h-5" />
-                  Non-Disclosure Agreement (NDA)
+                  Confidentiality & Data Agreement
                 </CardTitle>
                 <CardDescription>
-                  Detailed NDA terms and conditions
+                  Full 19-section agreement — simplified preview below
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* NDA Content Preview */}
                 <div className="rounded-lg border bg-muted/50 p-6 space-y-4 max-h-96 overflow-y-auto">
                   <div>
-                    <h3 className="font-bold text-lg mb-2">NON-DISCLOSURE AGREEMENT (NDA)</h3>
+                    <h3 className="font-bold text-lg mb-2">CONFIDENTIALITY & DATA AGREEMENT</h3>
                     <p className="text-sm text-muted-foreground">
                       This Agreement is made between Muxro Technologies (ProcessSutra) and {organizationName}
                     </p>
@@ -608,128 +796,105 @@ For questions: security@muxrotechnologies.com
                   <Separator />
 
                   <div>
-                    <h4 className="font-semibold mb-2">1. PURPOSE</h4>
+                    <h4 className="font-semibold mb-2">1. Confidentiality</h4>
                     <p className="text-sm mb-2">
-                      The Client may share certain information with the Service Provider while using ProcessSutra, such as:
+                      All information exchanged during your use of ProcessSutra is treated as Confidential Information. This includes:
                     </p>
                     <ul className="list-disc list-inside text-sm space-y-1 ml-4">
-                      <li>Workflow designs</li>
-                      <li>Forms and form responses</li>
+                      <li>Workflow designs and process configurations</li>
+                      <li>Forms, form responses, and task records</li>
                       <li>Organization information (GST, PAN, address, business data)</li>
-                      <li>Employee data (name, email, phone, designation, etc.)</li>
+                      <li>Employee data (name, email, phone, designation)</li>
                       <li>Documents and files uploaded</li>
                       <li>Any dynamic data provided voluntarily or optionally</li>
                     </ul>
                     <p className="text-sm mt-2">
-                      This Agreement ensures that all such information remains confidential.
+                      The Service Provider commits to protecting this information with appropriate safeguards, restricting internal access on a need-to-know basis, and using it solely for delivering the Platform's services. Confidentiality obligations survive termination.
                     </p>
                   </div>
 
                   <div>
-                    <h4 className="font-semibold mb-2">2. DEFINITION OF CONFIDENTIAL INFORMATION</h4>
-                    <p className="text-sm mb-2">
-                      "Confidential Information" includes, but is not limited to:
-                    </p>
-                    <ul className="list-disc list-inside text-sm space-y-1 ml-4">
-                      <li>Organization data</li>
-                      <li>Employee or personal data</li>
-                      <li>Business workflows, processes, or operational details</li>
-                      <li>Files/documents uploaded by the Client</li>
-                      <li>Any form data submitted by users</li>
-                      <li>Any information not publicly available and provided through ProcessSutra</li>
-                    </ul>
-                    <p className="text-sm text-muted-foreground mt-2 italic">
-                      Even if the Client provides only partial, optional, or dynamic data, it is still protected under this NDA.
+                    <h4 className="font-semibold mb-2">2. Data Ownership</h4>
+                    <p className="text-sm">
+                      All workflow data, form data, task records, and operational data generated in ProcessSutra belongs <strong>entirely to your organization</strong>. ProcessSutra retains no ownership rights. The Platform is granted only a limited, revocable right to process your data as necessary to deliver services. All intellectual property created within the Platform remains your property.
                     </p>
                   </div>
 
                   <div>
-                    <h4 className="font-semibold mb-2">3. OBLIGATIONS OF THE SERVICE PROVIDER</h4>
-                    <p className="text-sm mb-2">The Service Provider agrees to:</p>
-                    <ul className="list-disc list-inside text-sm space-y-1 ml-4">
-                      <li><strong>Maintain confidentiality:</strong> Not disclose, share, sell, lease, or make available the Client's data to any third party</li>
-                      <li><strong>Use data only for service functionality:</strong> Data may only be used to operate features such as workflow execution, task creation, or technical support</li>
-                      <li><strong>Restrict access internally:</strong> Only authorized personnel who require access for system operation or troubleshooting may access the data</li>
-                      <li><strong>Prevent unauthorized access:</strong> Implement reasonable technical and administrative safeguards to protect all Client data</li>
-                      <li><strong>Not use data for marketing or external purposes:</strong> No data may be used for promotion, training, or external analysis without explicit written consent</li>
-                    </ul>
+                    <h4 className="font-semibold mb-2">3. Google Drive Storage Policy</h4>
+                    <p className="text-sm">
+                      All uploaded files are stored in <strong>your own Google Drive</strong> (ProcessSutra folder). ProcessSutra does NOT store, copy, or retain any files on its servers. Integration uses OAuth 2.0 — access can be revoked at any time. File ownership is governed by your Google Workspace policies.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold mb-2">4. User Responsibilities</h4>
+                    <p className="text-sm">
+                      You are responsible for maintaining the security of your account credentials and managing user access. ProcessSutra provides role-based access controls, but the <strong>organization administrator</strong> is responsible for assigning appropriate roles and permissions.
+                    </p>
                   </div>
 
                   <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded p-4">
-                    <h4 className="font-semibold mb-2 flex items-center gap-2"><Brain className="w-4 h-4 text-blue-600" /> 4. AI & LLM DATA ACCESS POLICY</h4>
+                    <h4 className="font-semibold mb-2 flex items-center gap-2"><Brain className="w-4 h-4 text-blue-600" /> 5. AI & LLM Data Policy</h4>
                     <ul className="list-disc list-inside text-sm space-y-1 ml-4">
-                      <li><strong>Organization-owned API keys:</strong> All AI keys (Gemini, OpenAI) are provided by the Client. ProcessSutra does NOT provide or manage AI keys</li>
-                      <li><strong>Flow rules, task data, and form data are NEVER shared with any AI/LLM</strong></li>
-                      <li><strong>Only aggregated reporting parameters</strong> (total counts, percentages, averages) may be sent when Client explicitly enables AI analysis</li>
-                      <li><strong>Form data belongs entirely to the organization</strong> — this is why aggregated metrics can be derived and shared with Client's own AI</li>
-                      <li><strong>No AI training:</strong> No Client data is used to train or improve any AI model</li>
-                    </ul>
-                  </div>
-
-                  <div className="bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded p-4">
-                    <h4 className="font-semibold mb-2 flex items-center gap-2"><HardDrive className="w-4 h-4 text-purple-600" /> 5. FILE STORAGE & GOOGLE DRIVE</h4>
-                    <ul className="list-disc list-inside text-sm space-y-1 ml-4">
-                      <li>All uploaded files are stored in the <strong>Client's own Google Drive</strong> (ProcessSutra folder)</li>
-                      <li><strong>ProcessSutra does NOT store, copy, or retain any files</strong> on its servers</li>
-                      <li>File ownership and access control are governed by Client's Google Workspace policies</li>
-                      <li>Revoking Google Drive access immediately stops ProcessSutra from reading/writing files</li>
+                      <li><strong>Organization-owned API keys:</strong> All AI keys (Gemini, OpenAI) are provided by your organization. ProcessSutra does NOT provide or manage AI keys</li>
+                      <li><strong>Data NEVER shared:</strong> Workflow definitions, task records, form data, personal information, uploaded files, credentials, and raw database records are never sent to any AI provider</li>
+                      <li><strong>Aggregated data only:</strong> Only pre-computed reporting metrics (counts, percentages, averages) may be sent when you explicitly enable AI analysis</li>
+                      <li><strong>No AI training:</strong> Your data is never used to train, fine-tune, or improve any AI model</li>
+                      <li><strong>Technical interface only:</strong> ProcessSutra acts only as a technical interface between you and your chosen AI provider using your own API account</li>
                     </ul>
                   </div>
 
                   <div>
-                    <h4 className="font-semibold mb-2">7. DATA OWNERSHIP</h4>
+                    <h4 className="font-semibold mb-2">6. Data Security</h4>
                     <p className="text-sm">
-                      All data provided through ProcessSutra will always remain the <strong>sole property of the Client</strong>.
-                      The Service Provider holds no ownership rights over this data. This includes flow rules, task records,
-                      form templates, form responses, uploaded files, and all organization configurations.
+                      ProcessSutra implements HTTPS/TLS encryption, OAuth 2.0 authentication, CSRF protection, secure session management, Content Security Policy, multi-layer rate limiting, organization-level data isolation, and field-level whitelisting. In the event of a data breach, affected users will be notified promptly.
                     </p>
                   </div>
 
                   <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded p-4">
-                    <h4 className="font-semibold mb-2 flex items-center gap-2"><Trash2 className="w-4 h-4 text-red-600" /> 8. DATA DELETION & REMOVAL</h4>
+                    <h4 className="font-semibold mb-2 flex items-center gap-2"><Trash2 className="w-4 h-4 text-red-600" /> 7. Data Deletion</h4>
                     <ul className="list-disc list-inside text-sm space-y-1 ml-4">
                       <li><strong>Self-service deletion:</strong> Admins can delete individual tasks, forms, and workflows directly</li>
                       <li><strong>Organization-wide removal:</strong> Complete deletion of all organization data on request</li>
                       <li>Includes: all tasks, flow rules, form templates, form responses, employee records, settings, and AI API keys</li>
                       <li>Written confirmation of complete deletion provided</li>
-                      <li>Google Drive files remain under Client's control independently</li>
+                      <li>Google Drive files remain under your control independently</li>
+                      <li>Data deletion is irreversible</li>
                     </ul>
                   </div>
 
                   <div>
-                    <h4 className="font-semibold mb-2">9. DURATION</h4>
+                    <h4 className="font-semibold mb-2">8. Service Availability</h4>
                     <p className="text-sm">
-                      This Agreement begins from the date the Client uses ProcessSutra, remains in effect for as long 
-                      as the Client uses the service, and continues for <strong>3 years</strong> after account deletion, 
-                      unless otherwise requested in writing.
+                      ProcessSutra is provided <strong>"as is"</strong> without warranties of any kind. The Platform may undergo scheduled maintenance with advance notice. ProcessSutra reserves the right to modify, suspend, or discontinue the service at any time with reasonable notice.
                     </p>
                   </div>
 
                   <div>
-                    <h4 className="font-semibold mb-2">11. GOVERNING LAW</h4>
+                    <h4 className="font-semibold mb-2">9. Limitation of Liability</h4>
                     <p className="text-sm">
-                      This Agreement is governed by the <strong>laws of India</strong>.
+                      ProcessSutra assumes <strong>no liability</strong> for data loss, unauthorized access, or damages arising from platform use. Automated communications are initiated by your workflow configuration. Total financial liability is limited to fees paid in the preceding 12 months.
                     </p>
                   </div>
 
                   <div>
-                    <h4 className="font-semibold mb-2">12. ACCEPTANCE</h4>
+                    <h4 className="font-semibold mb-2">10. Acceptance of Terms</h4>
                     <p className="text-sm">
-                      By using ProcessSutra, the Client agrees to the terms of this NDA automatically.
+                      This Agreement is effective from the date of first use and remains in force during active use. Confidentiality obligations survive for <strong>3 years</strong> after termination. Either party may terminate with written notice. This Agreement is governed by the <strong>laws of India</strong>. Disputes are resolved through negotiation, then arbitration. Continued use after changes constitutes acceptance.
                     </p>
                   </div>
 
                   <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded p-3">
                     <p className="text-xs text-muted-foreground">
-                      <strong>Note:</strong> This is a preview. Download the complete NDA document using the button below
-                      for the full agreement including all terms, conditions, and legal provisions.
+                      <strong>Note:</strong> This is a simplified 10-section preview. The downloadable document contains the full 19-section Confidentiality & Data Agreement including detailed provisions for exclusions, termination, governing law, dispute resolution, modifications, and contact information.
                     </p>
                   </div>
                 </div>
 
                 <Button onClick={handleDownloadNDA} className="w-full">
                   <Download className="w-4 h-4 mr-2" />
-                  Download Complete NDA
+                  Download Complete Agreement (19 Sections)
                 </Button>
               </CardContent>
             </Card>

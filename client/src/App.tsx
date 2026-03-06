@@ -43,8 +43,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Shield, FileText, AlertTriangle } from "lucide-react";
+import { Shield, FileText, Lock, Database, HardDrive, Users, ShieldCheck, Trash2, Server, Scale, Eye } from "lucide-react";
 
 // Component to handle /api/login redirect
 function ApiLoginRedirect() {
@@ -81,80 +80,122 @@ function NDAAcceptanceDialog() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-xl">
               <Shield className="h-6 w-6 text-blue-600" />
-              Terms of Service & Data Agreement
+              Confidentiality & Data Agreement
             </DialogTitle>
             <DialogDescription>
               Please review and accept the following terms before using ProcessSutra.
             </DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 max-h-[50vh] border rounded-lg p-4 bg-gray-50">
-            <div className="space-y-4 text-sm text-gray-700 pr-4">
+          <div className="flex-1 max-h-[50vh] overflow-y-auto border rounded-lg p-4 bg-gray-50">
+            <div className="space-y-5 text-sm text-gray-700 pr-4">
+
+              {/* 1. Confidentiality */}
               <div className="flex items-start gap-2">
-                <FileText className="h-4 w-4 mt-0.5 text-blue-600 shrink-0" />
+                <Eye className="h-4 w-4 mt-0.5 text-purple-600 shrink-0" />
                 <div>
-                  <p className="font-semibold text-gray-900">1. Data Ownership & Storage</p>
-                  <p>All files uploaded through ProcessSutra are stored directly in <strong>your Google Drive account</strong>. ProcessSutra does not store, host, or retain any of your uploaded files on its own servers. You maintain full ownership and control over all your data at all times.</p>
+                  <p className="font-semibold text-gray-900">1. Confidentiality</p>
+                  <p>This agreement is entered between <strong>ProcessSutra</strong> ("Service Provider") and <strong>your organization</strong> ("Client"). All information exchanged during your use of ProcessSutra — including workflow configurations, form data, uploaded documents, task records, and any operational data — is treated as <strong>Confidential Information</strong>. The Service Provider commits to protecting this information with appropriate safeguards, restricting internal access on a need-to-know basis, and using it solely for the purpose of delivering the platform's services. This obligation of confidentiality survives termination of this agreement.</p>
                 </div>
               </div>
 
+              {/* 2. Data Ownership */}
               <div className="flex items-start gap-2">
-                <FileText className="h-4 w-4 mt-0.5 text-blue-600 shrink-0" />
+                <Database className="h-4 w-4 mt-0.5 text-blue-600 shrink-0" />
                 <div>
-                  <p className="font-semibold text-gray-900">2. User Control & Data Deletion</p>
-                  <p>You have <strong>complete control</strong> over your data. You can delete any files from your Google Drive at any time. ProcessSutra does not create backups of your files. Once deleted from your Drive, the data is permanently removed and cannot be recovered by ProcessSutra.</p>
+                  <p className="font-semibold text-gray-900">2. Data Ownership</p>
+                  <p>All workflow data, form data, task records, and operational data generated in ProcessSutra belongs <strong>entirely to your organization</strong>. ProcessSutra retains no ownership rights over your content. The platform is granted only a limited, revocable right to process your data as necessary to deliver its services. All intellectual property created by your organization within the platform remains your property.</p>
                 </div>
               </div>
 
+              {/* 3. Google Drive Storage Policy */}
               <div className="flex items-start gap-2">
-                <FileText className="h-4 w-4 mt-0.5 text-blue-600 shrink-0" />
+                <HardDrive className="h-4 w-4 mt-0.5 text-blue-600 shrink-0" />
                 <div>
-                  <p className="font-semibold text-gray-900">3. No Liability</p>
-                  <p>ProcessSutra is a workflow management tool that facilitates process automation. <strong>ProcessSutra assumes no liability</strong> for any data loss, unauthorized access to your Google Drive, or any damages arising from the use of this platform. All data management responsibilities rest with the user and their organization.</p>
+                  <p className="font-semibold text-gray-900">3. Google Drive Storage Policy</p>
+                  <p>All files uploaded through ProcessSutra are stored directly in <strong>your Google Drive account</strong>. ProcessSutra does not store, host, or retain any of your uploaded files on its own servers. Integration uses OAuth 2.0 authentication — access permissions are granted by you and can be <strong>revoked at any time</strong> through your Google Account settings. ProcessSutra only accesses files within its designated application folder. Third-party integrations operate under their respective provider terms and privacy policies.</p>
                 </div>
               </div>
 
+              {/* 4. User Responsibilities */}
               <div className="flex items-start gap-2">
-                <FileText className="h-4 w-4 mt-0.5 text-blue-600 shrink-0" />
+                <Users className="h-4 w-4 mt-0.5 text-blue-600 shrink-0" />
                 <div>
-                  <p className="font-semibold text-gray-900">4. Google Drive Integration</p>
-                  <p>ProcessSutra integrates with Google Drive using OAuth 2.0 authentication. Access permissions are granted by you and can be <strong>revoked at any time</strong> through your Google Account settings. ProcessSutra only accesses files within its designated application folder.</p>
+                  <p className="font-semibold text-gray-900">4. User Responsibilities</p>
+                  <p>You are responsible for maintaining the <strong>security of your account credentials</strong> and managing user access within your organization. ProcessSutra provides role-based access controls, but the organization administrator is responsible for assigning appropriate roles and permissions. You agree to use the platform in a responsible manner consistent with its intended purpose.</p>
                 </div>
               </div>
 
-              <div className="flex items-start gap-2">
-                <FileText className="h-4 w-4 mt-0.5 text-blue-600 shrink-0" />
-                <div>
-                  <p className="font-semibold text-gray-900">5. AI Features & Third-Party Services</p>
-                  <p>If you use AI-powered features, your data may be processed by third-party AI providers (e.g., Google Gemini, OpenAI) according to their respective privacy policies. ProcessSutra does not store AI-processed data beyond immediate request handling. Use of AI features is <strong>optional and user-initiated</strong>.</p>
+              {/* 5. AI & LLM Data Policy */}
+              <div className="border rounded-lg p-3 bg-green-50/50 border-green-200 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Lock className="h-4 w-4 text-green-600 shrink-0" />
+                  <p className="font-semibold text-gray-900">5. AI & LLM Data Policy</p>
+                </div>
+                <div className="space-y-2 ml-6">
+                  <p><strong>Organization-Owned API Keys:</strong> All AI API keys (Google Gemini, OpenAI, etc.) are provided, owned, and managed by <strong>your organization</strong>. ProcessSutra does not provide, generate, store, or manage any AI API keys.</p>
+                  <p><strong>Data Never Shared With AI/LLM:</strong> The following is <strong>never</strong> transmitted to any AI provider:</p>
+                  <ul className="list-disc list-inside space-y-0.5 text-gray-600 ml-2">
+                    <li>Workflow definitions, task records, and form data</li>
+                    <li>Employee/user personal information and uploaded files</li>
+                    <li>Organization credentials, API keys, or secrets</li>
+                    <li>Raw database records or operational data</li>
+                  </ul>
+                  <p><strong>Aggregated Data Only:</strong> AI services may only receive <strong>aggregated reporting metrics</strong> (task counts, completion percentages, cycle times, throughput rates) when you explicitly enable AI analysis. These contain no identifiable records or personal data.</p>
+                  <p><strong>No AI Training:</strong> Your data is <strong>never used to train, fine-tune, or improve any AI models</strong>. AI requests are processed only for real-time responses and are not retained beyond the immediate request.</p>
+                  <div className="mt-2 p-2 bg-green-100 border border-green-300 rounded text-green-800 text-xs font-medium">
+                    ProcessSutra acts only as a technical interface between you and your chosen AI provider. All AI processing occurs using your own API account and under the policies of that AI provider.
+                  </div>
                 </div>
               </div>
 
+              {/* 6. Data Security */}
               <div className="flex items-start gap-2">
-                <FileText className="h-4 w-4 mt-0.5 text-blue-600 shrink-0" />
+                <ShieldCheck className="h-4 w-4 mt-0.5 text-blue-600 shrink-0" />
                 <div>
-                  <p className="font-semibold text-gray-900">6. Account & Organization Security</p>
-                  <p>You are responsible for maintaining the security of your account credentials and managing user access within your organization. ProcessSutra provides role-based access controls, but the <strong>organization administrator</strong> is responsible for assigning appropriate roles and permissions.</p>
+                  <p className="font-semibold text-gray-900">6. Data Security</p>
+                  <p>ProcessSutra implements appropriate <strong>security safeguards</strong> including encrypted data transmission, access control measures, and secure authentication protocols. In the event of a data breach, affected users and organizations will be notified promptly in accordance with applicable laws.</p>
                 </div>
               </div>
 
+              {/* 7. Data Deletion */}
               <div className="flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 mt-0.5 text-amber-600 shrink-0" />
+                <Trash2 className="h-4 w-4 mt-0.5 text-red-500 shrink-0" />
                 <div>
-                  <p className="font-semibold text-gray-900">7. Service Availability</p>
-                  <p>ProcessSutra is provided <strong>"as is"</strong> without warranties of any kind. We do not guarantee uninterrupted or error-free service. ProcessSutra reserves the right to modify, suspend, or discontinue the service at any time.</p>
+                  <p className="font-semibold text-gray-900">7. Data Deletion</p>
+                  <p>You have <strong>complete control</strong> over your data. You can delete any files from your Google Drive at any time. ProcessSutra does not create backups of your files — once deleted from your Drive, <strong>data is permanently removed</strong> and cannot be recovered. Organization administrators may request complete removal of all organization data. Publicly available information and data required by legal obligations are excluded from confidentiality requirements.</p>
                 </div>
               </div>
 
+              {/* 8. Service Availability */}
+              <div className="flex items-start gap-2">
+                <Server className="h-4 w-4 mt-0.5 text-amber-600 shrink-0" />
+                <div>
+                  <p className="font-semibold text-gray-900">8. Service Availability</p>
+                  <p>ProcessSutra is provided <strong>"as is"</strong> without warranties of any kind. We do not guarantee uninterrupted or error-free service. The platform may undergo scheduled maintenance and updates. ProcessSutra reserves the right to modify, suspend, or discontinue the service at any time with reasonable notice.</p>
+                </div>
+              </div>
+
+              {/* 9. Limitation of Liability */}
+              <div className="flex items-start gap-2">
+                <Scale className="h-4 w-4 mt-0.5 text-amber-600 shrink-0" />
+                <div>
+                  <p className="font-semibold text-gray-900">9. Limitation of Liability</p>
+                  <p><strong>ProcessSutra assumes no liability</strong> for any data loss, unauthorized access to your Google Drive, or any damages arising from the use of this platform. All data management responsibilities rest with the user and their organization. ProcessSutra's total financial liability shall not exceed the fees paid by the Client in the preceding 12 months. Automated communications (task assignments, reminders, etc.) are initiated by your organization's workflow configuration — ProcessSutra is not responsible for their content.</p>
+                </div>
+              </div>
+
+              {/* 10. Acceptance of Terms */}
               <div className="flex items-start gap-2">
                 <FileText className="h-4 w-4 mt-0.5 text-blue-600 shrink-0" />
                 <div>
-                  <p className="font-semibold text-gray-900">8. Communication & Notifications</p>
-                  <p>Emails and notifications sent via ProcessSutra (task assignments, reminders, etc.) are automated communications initiated by your organization's workflow configuration. ProcessSutra is not responsible for the content of these communications.</p>
+                  <p className="font-semibold text-gray-900">10. Acceptance of Terms</p>
+                  <p>This agreement is effective from the date of acceptance and remains in force for the duration of your use of ProcessSutra. Confidentiality obligations survive termination. Either party may terminate by providing written notice. ProcessSutra reserves the right to <strong>update these terms</strong> with reasonable notice — continued use after changes constitutes acceptance. This agreement is governed by applicable law, and disputes shall be resolved through negotiation before formal proceedings. By checking the box below, you digitally accept all terms of this agreement.</p>
                 </div>
               </div>
+
             </div>
-          </ScrollArea>
+          </div>
 
           <div className="space-y-4 pt-2">
             <div className="flex items-start space-x-3 p-3 border rounded-lg bg-blue-50">
