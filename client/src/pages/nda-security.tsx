@@ -494,12 +494,12 @@ SECTION 19: CONTACT INFORMATION
 
 19.1 Security Contact
 For security-related inquiries, vulnerability reports, or data breach notifications:
-Email: security@muxrotechnologies.com
+Email: security@muxro.com
 Response Time: Within 24 hours for critical issues
 
 19.2 Support Contact
 For general support, account inquiries, or data deletion requests:
-Email: support@muxrotechnologies.com
+Email: support@muxro.com
 Availability: Business hours (Monday–Friday)
 
 ================================================================================
@@ -526,7 +526,7 @@ CONFIDENTIAL AND PROPRIETARY INFORMATION
 © ${new Date().getFullYear()} Muxro Technologies. All Rights Reserved.
 
 This Agreement protects all Client data and ensures complete confidentiality.
-For questions: security@muxrotechnologies.com
+For questions: security@muxro.com
 `;
 
     // Create blob and download
@@ -688,9 +688,9 @@ For questions: security@muxrotechnologies.com
                         <CheckCircle className="w-4 h-4 text-green-600" />
                         <span>Governing law & dispute resolution</span>
                       </div>
-                      <Button onClick={handleDownloadNDA} className="w-full">
-                        <Download className="w-4 h-4 mr-2" />
-                        Download NDA
+                      <Button onClick={() => setActiveTab("nda")} className="w-full" variant="secondary">
+                        <Eye className="w-4 h-4 mr-2" />
+                        View Agreement
                       </Button>
                     </CardContent>
                   </Card>
@@ -706,16 +706,8 @@ For questions: security@muxrotechnologies.com
                     <CardContent className="space-y-4">
                       <p className="text-sm text-muted-foreground">
                         Comprehensive security implementation details covering authentication, input validation,
-                        infrastructure hardening, monitoring, and compliance. Last audited March 2026.
+                        infrastructure hardening, monitoring, and compliance.
                       </p>
-                      <div className="flex items-center gap-2 text-sm">
-                        <CheckCircle className="w-4 h-4 text-green-600" />
-                        <span>25 security fixes applied</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <CheckCircle className="w-4 h-4 text-green-600" />
-                        <span>0 critical/high issues remaining</span>
-                      </div>
                       <div className="flex items-center gap-2 text-sm">
                         <CheckCircle className="w-4 h-4 text-green-600" />
                         <span>Zod validation + field whitelisting</span>
@@ -1306,63 +1298,6 @@ For questions: security@muxrotechnologies.com
               </Card>
             </div>
 
-            {/* Audit Summary */}
-            <Card className="border-blue-200 dark:border-blue-800">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileCheck className="w-5 h-5 text-blue-600" />
-                  March 2026 Security Audit Summary
-                </CardTitle>
-                <CardDescription>All critical and high-severity findings have been resolved</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid md:grid-cols-3 gap-4 mb-4">
-                  <div className="text-center p-3 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200 dark:border-green-800">
-                    <p className="text-2xl font-bold text-green-700 dark:text-green-400">25</p>
-                    <p className="text-xs text-green-600">Security Fixes Applied</p>
-                  </div>
-                  <div className="text-center p-3 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200 dark:border-green-800">
-                    <p className="text-2xl font-bold text-green-700 dark:text-green-400">0</p>
-                    <p className="text-xs text-green-600">Critical Issues Remaining</p>
-                  </div>
-                  <div className="text-center p-3 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200 dark:border-green-800">
-                    <p className="text-2xl font-bold text-green-700 dark:text-green-400">0</p>
-                    <p className="text-xs text-green-600">High-Severity Issues Remaining</p>
-                  </div>
-                </div>
-                <div className="text-sm space-y-2">
-                  <p className="text-muted-foreground">Key areas addressed in the audit:</p>
-                  <ul className="grid md:grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                    <li className="flex items-center gap-2"><CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" /> Privilege escalation prevention</li>
-                    <li className="flex items-center gap-2"><CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" /> Injection attack mitigation</li>
-                    <li className="flex items-center gap-2"><CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" /> CSRF token strengthening</li>
-                    <li className="flex items-center gap-2"><CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" /> Header security hardening</li>
-                    <li className="flex items-center gap-2"><CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" /> Database transaction safety</li>
-                    <li className="flex items-center gap-2"><CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" /> Secret management overhaul</li>
-                    <li className="flex items-center gap-2"><CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" /> Infrastructure port isolation</li>
-                    <li className="flex items-center gap-2"><CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" /> Error information leak prevention</li>
-                  </ul>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/40">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-green-800 dark:text-green-400">
-                  <ShieldCheck className="w-5 h-5" />
-                  Security Rating
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-2xl font-bold text-green-800 dark:text-green-300">🟢 LOW RISK / ENTERPRISE-GRADE</p>
-                    <p className="text-sm text-green-700 dark:text-green-400 mt-1">Last Security Audit: March 5, 2026 — 25 fixes applied, 0 critical/high issues remaining</p>
-                    <p className="text-xs text-green-600 dark:text-green-500 mt-2">All security documentation is available for review on this page</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           </TabsContent>
 
           {/* Compliance Tab */}
@@ -1482,11 +1417,11 @@ For questions: security@muxrotechnologies.com
                   <div className="grid md:grid-cols-2 gap-4 text-sm">
                     <div>
                       <p className="text-muted-foreground">Security Inquiries:</p>
-                      <p className="font-medium">security@muxrotechnologies.com</p>
+                      <p className="font-medium">security@muxro.com</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">General Support:</p>
-                      <p className="font-medium">support@muxrotechnologies.com</p>
+                      <p className="font-medium">support@muxro.com</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Emergency Contact:</p>
