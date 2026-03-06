@@ -904,3 +904,59 @@ export type PaymentTransaction = typeof paymentTransactions.$inferSelect;
 export type InsertPaymentTransaction = z.infer<typeof insertPaymentTransactionSchema>;
 export type UsageLog = typeof usageLogs.$inferSelect;
 export type InsertUsageLog = z.infer<typeof insertUsageLogSchema>;
+
+// ============================================
+// PUBLIC FLOW TEMPLATES
+// ============================================
+
+export const publicFlowTemplates = pgTable(
+  "public_flow_templates",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    name: varchar("name").notNull(),
+    description: text("description"),
+    category: varchar("category").default("General"),
+    tags: jsonb("tags").$type<string[]>().default([]),
+    // Flow rules snapshot (stripped of user details)
+    flowRules: jsonb("flow_rules").$type<{
+      currentTask: string;
+      status: string;
+      nextTask: string;
+      tat: number;
+      tatType: string;
+      doer: string; // role name only, no email
+      formId?: string;
+      transferable?: boolean;
+      mergeCondition?: string;
+    }[]>().notNull(),
+    // Connected form templates snapshot (from MongoDB)
+    formTemplates: jsonb("form_templates").$type<{
+      formId: string;
+      title: string;
+      description?: string;
+      fields: any[];
+    }[]>().default([]),
+    // Publishing metadata (NO user-identifying info)
+    publishedByOrg: varchar("published_by_org"), // org name only, no ID
+    useCount: integer("use_count").default(0),
+    isActive: boolean("is_active").default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_public_flow_templates_category").on(table.category),
+    index("idx_public_flow_templates_active").on(table.isActive).where(sql`${table.isActive} = true`),
+    index("idx_public_flow_templates_use_count").on(table.useCount.desc()),
+    index("idx_public_flow_templates_created").on(table.createdAt.desc()),
+  ]
+);
+
+export const insertPublicFlowTemplateSchema = createInsertSchema(publicFlowTemplates).omit({
+  id: true,
+  useCount: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type PublicFlowTemplate = typeof publicFlowTemplates.$inferSelect;
+export type InsertPublicFlowTemplate = z.infer<typeof insertPublicFlowTemplateSchema>;

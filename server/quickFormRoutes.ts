@@ -156,7 +156,7 @@ router.delete("/:id", async (req: any, res) => {
     if (!template) return res.status(404).json({ message: "Form not found" });
 
     // Check for existing responses
-    const { total } = await getQuickFormResponses({ orgId, formId: template.formId, pageSize: 0 });
+    const { total } = await getQuickFormResponses({ orgId, formId: template.formId, page: 1, pageSize: 1 });
     if (total > 0 && deleteResponses !== "true") {
       return res.status(400).json({
         message: `Cannot delete form. It has ${total} response(s).`,

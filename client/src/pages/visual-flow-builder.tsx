@@ -51,6 +51,7 @@ import {
   MoreVertical,
   Copy,
   GitBranch,
+  Globe,
 } from "lucide-react";
 
 /* ═══════════════════ TYPES ═══════════════════ */
@@ -159,6 +160,8 @@ export default function VisualFlowBuilder() {
   const [editingRule, setEditingRule] = useState<FlowRule | null>(null);
   const [inlineFormCreate, setInlineFormCreate] = useState<"add" | "edit" | null>(null);
   const [newFlowName, setNewFlowName] = useState("");
+  const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
+  const [publishForm, setPublishForm] = useState({ name: "", description: "", category: "General", tags: "" });
 
   /* ── Context menu ── */
   const [contextMenu, setContextMenu] = useState<{
@@ -316,6 +319,20 @@ export default function VisualFlowBuilder() {
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to create form", variant: "destructive" });
+    },
+  });
+
+  const publishTemplateMutation = useMutation({
+    mutationFn: async (data: { system: string; name: string; description: string; category: string; tags: string[] }) => {
+      const res = await apiRequest("POST", "/api/public-flow-templates/publish", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Published!", description: "Flow published as a public template" });
+      setIsPublishDialogOpen(false);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to publish template", variant: "destructive" });
     },
   });
 
@@ -1170,6 +1187,15 @@ export default function VisualFlowBuilder() {
           <Button size="sm" variant="ghost" onClick={handleResetZoom} title="Reset View"><Maximize2 className="w-3.5 h-3.5" /></Button>
           <div className="h-6 w-px bg-gray-200" />
           <Button size="sm" variant="ghost" onClick={handleExportPNG} title="Export PNG"><Download className="w-3.5 h-3.5" /></Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => { setPublishForm({ name: selectedSystem, description: "", category: "General", tags: "" }); setIsPublishDialogOpen(true); }}
+            title="Publish as Public Template"
+            className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+          >
+            <Globe className="w-3.5 h-3.5" />
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => setShowKeyboardHelp(true)} title="Shortcuts"><Keyboard className="w-3.5 h-3.5" /></Button>
           <Button
             size="sm"
@@ -2214,6 +2240,89 @@ export default function VisualFlowBuilder() {
           </div>
           <DialogFooter>
             <Button size="sm" onClick={() => setShowKeyboardHelp(false)}>Got it</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══ PUBLISH AS TEMPLATE DIALOG ═══ */}
+      <Dialog open={isPublishDialogOpen} onOpenChange={setIsPublishDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Globe className="w-5 h-5 text-emerald-600" /> Publish as Public Template
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-xs text-amber-700">
+                This will publish your flow structure and connected forms as a public template. 
+                <strong> Your email, organization ID, and user data will NOT be shared.</strong> Only the flow structure, role names, and form fields are published.
+              </p>
+            </div>
+            <div>
+              <Label className="text-xs">Template Name *</Label>
+              <Input
+                value={publishForm.name}
+                onChange={(e) => setPublishForm(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="e.g., CRM Onboarding Flow"
+                className="h-9 mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Description</Label>
+              <Textarea
+                value={publishForm.description}
+                onChange={(e) => setPublishForm(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Describe what this flow does..."
+                className="mt-1"
+                rows={3}
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Category</Label>
+              <Select value={publishForm.category} onValueChange={(v) => setPublishForm(prev => ({ ...prev, category: v }))}>
+                <SelectTrigger className="h-9 mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {["General", "Sales", "HR", "Operations", "Finance", "Customer Support", "IT", "Marketing", "Legal", "Manufacturing"].map(c => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Tags (comma-separated)</Label>
+              <Input
+                value={publishForm.tags}
+                onChange={(e) => setPublishForm(prev => ({ ...prev, tags: e.target.value }))}
+                placeholder="e.g., onboarding, crm, automation"
+                className="h-9 mt-1"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setIsPublishDialogOpen(false)}>Cancel</Button>
+            <Button
+              size="sm"
+              disabled={!publishForm.name.trim() || publishTemplateMutation.isPending}
+              onClick={() => {
+                publishTemplateMutation.mutate({
+                  system: selectedSystem,
+                  name: publishForm.name.trim(),
+                  description: publishForm.description.trim(),
+                  category: publishForm.category,
+                  tags: publishForm.tags.split(",").map(t => t.trim()).filter(Boolean),
+                });
+              }}
+              className="bg-gradient-to-r from-emerald-600 to-green-600 text-white"
+            >
+              {publishTemplateMutation.isPending ? (
+                <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> Publishing...</>
+              ) : (
+                <><Globe className="w-3.5 h-3.5 mr-1" /> Publish</>
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

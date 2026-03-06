@@ -27,6 +27,7 @@ import OrganizationControl from "@/pages/organization-control";
 
 import NDASecurityPage from "@/pages/nda-security";
 import VisualFlowBuilder from "@/pages/visual-flow-builder";
+import FlowTemplates from "@/pages/flow-templates";
 import DataManagement from "@/pages/data-management";
 import QuickFormBuilder from "@/pages/quick-form-builder";
 import QuickFormFill from "@/pages/quick-form-fill";
@@ -149,6 +150,12 @@ function Router() {
           <Route path="/visual-flow-builder">
             <ProtectedRoute requireAdmin>
               <VisualFlowBuilder />
+            </ProtectedRoute>
+          </Route>
+
+          <Route path="/flow-templates">
+            <ProtectedRoute requireAdmin>
+              <FlowTemplates />
             </ProtectedRoute>
           </Route>
 

@@ -189,6 +189,8 @@ export default function QuickFormBuilder() {
     },
   });
 
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
   const deleteMutation = useMutation({
     mutationFn: async ({ id, force }: { id: string; force?: boolean }) => {
       const url = force ? `/api/quick-forms/${id}?deleteResponses=true` : `/api/quick-forms/${id}`;
@@ -197,22 +199,36 @@ export default function QuickFormBuilder() {
     },
     onSuccess: (data) => {
       toast({ title: "Success", description: data?.message || "Deleted" });
+      setPendingDeleteId(null);
       queryClient.invalidateQueries({ queryKey: ["/api/quick-forms"] });
     },
     onError: async (error: any) => {
       let errorData: any = {};
       try {
-        if (error instanceof Response) errorData = await error.json();
-        else if (error.response) errorData = await error.response.json();
-        else errorData = error;
-      } catch { errorData = { message: error.message }; }
+        // throwIfResNotOk throws Error with message like "400: {json...}"
+        // Extract the JSON body from the error message
+        const msg = error?.message || "";
+        const jsonStart = msg.indexOf("{");
+        if (jsonStart !== -1) {
+          errorData = JSON.parse(msg.slice(jsonStart));
+        } else {
+          errorData = { message: msg };
+        }
+      } catch {
+        errorData = { message: error?.message || "Delete failed" };
+      }
 
-      if (errorData.responseCount > 0) {
+      if (errorData.responseCount > 0 && pendingDeleteId) {
         const confirmed = window.confirm(
           `This form has ${errorData.responseCount} response(s).\n\nDelete the form AND all responses?\nThis cannot be undone.`
         );
-        if (confirmed) deleteMutation.mutate({ id: (error as any).__id, force: true });
+        if (confirmed) {
+          deleteMutation.mutate({ id: pendingDeleteId, force: true });
+        } else {
+          setPendingDeleteId(null);
+        }
       } else {
+        setPendingDeleteId(null);
         toast({ title: "Error", description: errorData.message || "Delete failed", variant: "destructive" });
       }
     },
@@ -348,8 +364,7 @@ export default function QuickFormBuilder() {
 
   const handleDelete = (tpl: QuickFormTemplate) => {
     if (!window.confirm(`Delete form "${tpl.title}"?`)) return;
-    const err = (deleteMutation as any);
-    err.__id = tpl._id; // stash id for retry
+    setPendingDeleteId(tpl._id);
     deleteMutation.mutate({ id: tpl._id });
   };
 

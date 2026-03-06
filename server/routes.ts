@@ -18,8 +18,10 @@ import {
   insertPasswordChangeHistorySchema,
   users,
   tasks,
+  publicFlowTemplates,
+  flowRules as flowRulesTable,
 } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, desc, sql as dsql, ilike, or } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { randomBytes } from "crypto";
 import { calculateTAT, TATConfig } from "./tatCalculator.js";
@@ -4179,6 +4181,238 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching activity timeline:", error);
       res.status(500).json({ message: "Failed to fetch activity timeline" });
+    }
+  });
+
+  // ============================================
+  // PUBLIC FLOW TEMPLATES API
+  // ============================================
+
+  // Browse public templates (authenticated users only)
+  app.get("/api/public-flow-templates", isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const { search, category } = req.query;
+      const conditions = [eq(publicFlowTemplates.isActive, true)];
+
+      if (category && category !== "all") {
+        conditions.push(eq(publicFlowTemplates.category, category as string));
+      }
+
+      let query = db.select().from(publicFlowTemplates)
+        .where(conditions.length === 1 ? conditions[0] : dsql`${conditions[0]} AND ${conditions[1]}`)
+        .orderBy(desc(publicFlowTemplates.useCount));
+
+      const templates = await query;
+
+      // Filter by search client-side for simplicity (templates list is bounded)
+      let result = templates;
+      if (search) {
+        const s = (search as string).toLowerCase();
+        result = templates.filter(t =>
+          t.name.toLowerCase().includes(s) ||
+          (t.description || "").toLowerCase().includes(s) ||
+          (t.category || "").toLowerCase().includes(s) ||
+          (t.tags as string[] || []).some(tag => tag.toLowerCase().includes(s))
+        );
+      }
+
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching public flow templates:", error);
+      res.status(500).json({ message: "Failed to fetch public flow templates" });
+    }
+  });
+
+  // Get single public template
+  app.get("/api/public-flow-templates/:id", isAuthenticated, addUserToRequest, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const [template] = await db.select().from(publicFlowTemplates)
+        .where(eq(publicFlowTemplates.id, id));
+      if (!template) return res.status(404).json({ message: "Template not found" });
+      res.json(template);
+    } catch (error) {
+      console.error("Error fetching template:", error);
+      res.status(500).json({ message: "Failed to fetch template" });
+    }
+  });
+
+  // Publish a flow as public template (admin only)
+  app.post("/api/public-flow-templates/publish", flowRuleLimiter, isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+    try {
+      const user = req.currentUser;
+      const { system, name, description, category, tags } = req.body;
+
+      if (!system || !name) {
+        return res.status(400).json({ message: "System and name are required" });
+      }
+
+      // Validate name length
+      if (name.length > 200 || (description && description.length > 2000)) {
+        return res.status(400).json({ message: "Name or description too long" });
+      }
+
+      // Get flow rules for this system
+      const rules = await storage.getFlowRulesByOrganization(user.organizationId, system);
+      if (!rules.length) {
+        return res.status(400).json({ message: "No flow rules found for this system" });
+      }
+
+      // Strip sensitive user data — keep only structural info
+      const sanitizedRules = rules.map(r => ({
+        currentTask: r.currentTask || "",
+        status: r.status || "",
+        nextTask: r.nextTask,
+        tat: r.tat,
+        tatType: r.tatType,
+        doer: r.doer, // role name only
+        formId: r.formId || undefined,
+        transferable: r.transferable || false,
+        mergeCondition: r.mergeCondition || "all",
+      }));
+
+      // Collect connected form templates (strip org info)
+      const formIds = [...new Set(rules.map(r => r.formId).filter(Boolean))] as string[];
+      const formTemplates: any[] = [];
+
+      if (formIds.length > 0) {
+        const formsCol = await getQuickFormTemplatesCollection();
+        const forms = await formsCol.find({
+          orgId: user.organizationId,
+          formId: { $in: formIds }
+        }).toArray();
+
+        for (const form of forms) {
+          formTemplates.push({
+            formId: form.formId,
+            title: form.title,
+            description: form.description || "",
+            fields: form.fields, // field structure only, no data
+          });
+        }
+      }
+
+      // Get org name for attribution (no ID)
+      const org = await storage.getOrganization(user.organizationId);
+
+      const [template] = await db.insert(publicFlowTemplates).values({
+        name,
+        description: description || "",
+        category: category || "General",
+        tags: tags || [],
+        flowRules: sanitizedRules,
+        formTemplates,
+        publishedByOrg: org?.name || "Anonymous",
+        isActive: true,
+      }).returning();
+
+      console.log(`[AUDIT] Flow template published by ${user.email} at ${new Date().toISOString()}`);
+      console.log(`[AUDIT] Template: "${name}" from system "${system}", ${sanitizedRules.length} rules, ${formTemplates.length} forms`);
+
+      res.status(201).json(template);
+    } catch (error) {
+      console.error("Error publishing flow template:", error);
+      res.status(500).json({ message: "Failed to publish flow template" });
+    }
+  });
+
+  // Import a public template into user's organization (admin only)
+  app.post("/api/public-flow-templates/:id/import", flowRuleLimiter, isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const user = req.currentUser;
+      const { systemName } = req.body; // optional override for flow name
+
+      // Get the template
+      const [template] = await db.select().from(publicFlowTemplates)
+        .where(eq(publicFlowTemplates.id, id));
+      if (!template) return res.status(404).json({ message: "Template not found" });
+
+      const flowName = systemName || template.name;
+      const rules = template.flowRules as any[];
+
+      // Import form templates into org's MongoDB collection
+      const formTemplates = (template.formTemplates || []) as any[];
+      const formIdMap: Record<string, string> = {}; // old formId -> new formId
+
+      if (formTemplates.length > 0) {
+        const { createQuickFormTemplate } = await import('./mongo/quickFormClient.js');
+        for (const form of formTemplates) {
+          const newFormId = `qf_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          formIdMap[form.formId] = newFormId;
+          await createQuickFormTemplate({
+            orgId: user.organizationId,
+            formId: newFormId,
+            title: form.title,
+            description: form.description || "",
+            fields: form.fields,
+            createdBy: user.email,
+          });
+        }
+      }
+
+      // Import flow rules with the user's org context
+      const createdRules = [];
+      for (const rule of rules) {
+        const mappedFormId = rule.formId ? (formIdMap[rule.formId] || rule.formId) : undefined;
+        const newRule = await storage.createFlowRule({
+          organizationId: user.organizationId,
+          system: flowName,
+          currentTask: rule.currentTask || "",
+          status: rule.status || "",
+          nextTask: rule.nextTask,
+          tat: rule.tat,
+          tatType: rule.tatType || "daytat",
+          doer: rule.doer,
+          email: user.email, // assign to importing admin
+          formId: mappedFormId,
+          transferable: rule.transferable || false,
+          mergeCondition: rule.mergeCondition || "all",
+        });
+        createdRules.push(newRule);
+      }
+
+      // Increment use count
+      await db.update(publicFlowTemplates)
+        .set({ useCount: dsql`${publicFlowTemplates.useCount} + 1`, updatedAt: new Date() })
+        .where(eq(publicFlowTemplates.id, id));
+
+      console.log(`[AUDIT] Flow template "${template.name}" imported by ${user.email} as "${flowName}"`);
+
+      res.status(201).json({
+        message: `Successfully imported ${createdRules.length} rules and ${Object.keys(formIdMap).length} forms`,
+        systemName: flowName,
+        rulesCreated: createdRules.length,
+        formsImported: Object.keys(formIdMap).length,
+      });
+    } catch (error) {
+      console.error("Error importing flow template:", error);
+      res.status(500).json({ message: "Failed to import flow template" });
+    }
+  });
+
+  // Unpublish/delete a template (only by the publishing org's admin)
+  app.delete("/api/public-flow-templates/:id", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const user = req.currentUser;
+      const org = await storage.getOrganization(user.organizationId);
+
+      const [template] = await db.select().from(publicFlowTemplates)
+        .where(eq(publicFlowTemplates.id, id));
+      if (!template) return res.status(404).json({ message: "Template not found" });
+
+      // Only the publishing org can delete (or super admin)
+      if (template.publishedByOrg !== org?.name && !user.isSuperAdmin) {
+        return res.status(403).json({ message: "You can only unpublish templates published by your organization" });
+      }
+
+      await db.delete(publicFlowTemplates).where(eq(publicFlowTemplates.id, id));
+      console.log(`[AUDIT] Flow template "${template.name}" deleted by ${user.email}`);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting flow template:", error);
+      res.status(500).json({ message: "Failed to delete flow template" });
     }
   });
 

@@ -19,6 +19,7 @@ import {
   Shield,
   PieChart,
   Bot,
+  Globe,
 } from "lucide-react";
 
 // All navigation items in the correct order
@@ -53,6 +54,14 @@ const allNavigationItems = [
     name: "Form Builder",
     href: "/quick-form-builder",
     icon: FileText,
+    badge: null,
+    adminOnly: true,
+    section: "builders",
+  },
+  {
+    name: "Flow Templates",
+    href: "/flow-templates",
+    icon: Globe,
     badge: null,
     adminOnly: true,
     section: "builders",
