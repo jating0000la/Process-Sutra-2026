@@ -34,6 +34,14 @@ export const pool = new Pool({
   statement_timeout: 30000,      // kill queries running > 30s
 });
 
+// Handle pool-level errors (e.g., PostgreSQL restarts, admin-terminated connections)
+// Without this handler, 'terminating connection due to administrator command' crashes the process
+pool.on('error', (err) => {
+  console.error('⚠️ Unexpected PostgreSQL pool error:', err.message);
+  dbConnected = false;
+  // The pool will automatically create new connections on the next query
+});
+
 // Test the connection
 let dbConnected = false;
 
