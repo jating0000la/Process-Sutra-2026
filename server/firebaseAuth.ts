@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { storage } from "./storage";
 import * as dotenv from 'dotenv';
 import { verifyIdToken, getAuthorizationUrl, getTokensFromCode, getUserInfo } from './services/googleOAuth';
+import { autoAssignFreeTrial } from './billingRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -138,7 +139,7 @@ export function getSession() {
   });
   
   return session({
-    name: 'connect.sid', // Use default session name
+    name: '__ps_sid', // SECURITY: Custom session name to prevent fingerprinting
     secret: process.env.SESSION_SECRET,
     store: sessionStore,
     resave: false,
@@ -244,7 +245,12 @@ async function upsertUser(userData: any) {
         lastLoginAt: new Date(),
       };
       
-      return await storage.createUser(userPayload);
+      const newUser = await storage.createUser(userPayload);
+
+      // Auto-assign free trial so flows, forms, and webhooks work immediately
+      await autoAssignFreeTrial(organization.id);
+
+      return newUser;
     } else {
       // For existing organizations, create user as regular user (not admin)
       // This allows migration from Firebase or new team members to join automatically
@@ -477,8 +483,8 @@ export async function setupAuth(app: Express) {
       const { idToken, accessToken, email, displayName, photoURL } = req.body;
 
       // Development bypass when Google OAuth is not available
-      // SECURITY WARNING: This bypass should NEVER be enabled in production
-      if (process.env.NODE_ENV === 'development' && !googleAuthConfigured) {
+      // SECURITY: This bypass is BLOCKED in production regardless of NODE_ENV
+      if (process.env.NODE_ENV === 'development' && !googleAuthConfigured && !process.env.DATABASE_URL?.includes('processsutra.com')) {
         console.warn('⚠️ SECURITY WARNING: Using development authentication bypass');
         console.warn('⚠️ This should NEVER be enabled in production environments');
         
@@ -506,6 +512,11 @@ export async function setupAuth(app: Express) {
             status: 'active',
             lastLoginAt: new Date(),
           });
+
+          // Auto-assign free trial for new dev organizations
+          if (orgUserCount === 0) {
+            await autoAssignFreeTrial(organization.id);
+          }
         }
 
         // Regenerate session to prevent session fixation attacks
@@ -754,8 +765,8 @@ export async function setupAuth(app: Express) {
     });
   }
 
-  // Development login bypass (only in development)
-  if (process.env.NODE_ENV === 'development') {
+  // Development login bypass (only in development, blocked for production DB)
+  if (process.env.NODE_ENV === 'development' && !process.env.DATABASE_URL?.includes('processsutra.com')) {
     console.warn('⚠️ SECURITY WARNING: Development login bypass is enabled');
     
     app.post('/api/auth/dev-login', async (req, res) => {

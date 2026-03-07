@@ -110,6 +110,9 @@ function serveStatic(app: express.Express) {
 
 const app = express();
 
+// SECURITY: Trust first proxy (Caddy) for correct client IP in rate limiters
+app.set('trust proxy', 1);
+
 // Security: Helmet middleware for security headers
 app.use(helmet({
   contentSecurityPolicy: false, // Handled by Caddy - disabling here to avoid blocking YouTube embeds and other third-party content
@@ -136,7 +139,9 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 
 app.use(cors({
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
+    // Allow requests with no origin header (server-to-server: PayU callbacks,
+    // health monitors, integration APIs, cron jobs). These are non-browser
+    // requests that don't send Origin headers. Auth is enforced per-route.
     if (!origin) return callback(null, true);
     
     if (allowedOrigins.includes(origin)) {
@@ -198,9 +203,14 @@ app.use((req, res, next) => {
 
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
-      const message = err.message || "Internal Server Error";
+      // SECURITY: Never leak internal error details in production
+      const message = status >= 500
+        ? "Internal Server Error"
+        : (err.message || "Request failed");
 
-      console.error('Express error:', err);
+      if (status >= 500) {
+        console.error('Express error:', err);
+      }
       res.status(status).json({ message });
     });
 

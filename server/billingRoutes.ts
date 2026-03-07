@@ -4,6 +4,7 @@
  */
 
 import type { Express, Request, Response } from "express";
+import rateLimit from "express-rate-limit";
 import { db } from "./db.js";
 import { storage } from "./storage.js";
 import {
@@ -143,7 +144,10 @@ function generatePayUHash(params: {
   // PayU hash formula: sha512(key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||||salt)
   const hashString = `${key}|${params.txnid}|${params.amount}|${params.productinfo}|${params.firstname}|${params.email}|||||||||||${salt}`;
   const hash = crypto.createHash("sha512").update(hashString).digest("hex");
-  console.log(`[PayU Hash] txnid=${params.txnid} amount=${params.amount} productinfo="${params.productinfo}" firstname="${params.firstname}" email="${params.email}" hashInput(masked)=${key.substring(0,3)}***|${params.txnid}|${params.amount}|${params.productinfo}|${params.firstname}|${params.email}|||||||||||*** hash=${hash.substring(0,16)}...`);
+  // SECURITY: Do not log hash inputs or partial hashes in production
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[PayU Hash] txnid=${params.txnid} amount=${params.amount}`);
+  }
   return hash;
 }
 
@@ -169,7 +173,10 @@ function verifyPayUHash(params: {
   const hashString = additionalCharges
     ? `${additionalCharges}|${salt}|${basePart}`
     : `${salt}|${basePart}`;
-  console.log(`[Billing] Verify hash input: ${hashString.substring(0, 80)}...`);
+  // SECURITY: Do not log hash inputs in production
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[Billing] Verify hash for txn: ${params.txnid}`);
+  }
   return crypto.createHash("sha512").update(hashString).digest("hex");
 }
 
@@ -628,6 +635,49 @@ export function registerBillingRoutes(
 ) {
   const { isAuthenticated, requireAdmin, addUserToRequest } = middleware;
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // Rate limiters for billing routes
+  // ═══════════════════════════════════════════════════════════════════════
+  const billingPublicLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    message: { message: "Too many requests. Please try again later." },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  const paymentCallbackLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    message: { message: "Too many payment callbacks. Please try again later." },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  const billingAuthLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    message: { message: "Too many billing requests. Please slow down." },
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => {
+      const user = (req as any).currentUser;
+      return user?.email || req.ip || "anonymous";
+    },
+  });
+
+  const billingAdminLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 15,
+    message: { message: "Too many billing admin requests. Please slow down." },
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => {
+      const user = (req as any).currentUser;
+      return user?.email || req.ip || "anonymous";
+    },
+  });
+
   // ─── Seed default plans if they don't exist ─────────────────────────────
   (async () => {
     try {
@@ -646,7 +696,7 @@ export function registerBillingRoutes(
   // ═══════════════════════════════════════════════════════════════════════
   //  GET /api/billing/plans - Get all available plans (public)
   // ═══════════════════════════════════════════════════════════════════════
-  app.get("/api/billing/plans", async (_req: Request, res: Response) => {
+  app.get("/api/billing/plans", billingPublicLimiter, async (_req: Request, res: Response) => {
     try {
       const plans = await db
         .select()
@@ -665,6 +715,7 @@ export function registerBillingRoutes(
   // ═══════════════════════════════════════════════════════════════════════
   app.get(
     "/api/billing/subscription",
+    billingAuthLimiter,
     isAuthenticated,
     addUserToRequest,
     async (req: any, res: Response) => {
@@ -806,6 +857,7 @@ export function registerBillingRoutes(
   // ═══════════════════════════════════════════════════════════════════════
   app.get(
     "/api/billing/subscription-history",
+    billingAuthLimiter,
     isAuthenticated,
     addUserToRequest,
     async (req: any, res: Response) => {
@@ -858,6 +910,7 @@ export function registerBillingRoutes(
   // ═══════════════════════════════════════════════════════════════════════
   app.post(
     "/api/billing/subscribe",
+    billingAdminLimiter,
     isAuthenticated,
     addUserToRequest,
     requireAdmin,
@@ -1007,6 +1060,7 @@ export function registerBillingRoutes(
   // ═══════════════════════════════════════════════════════════════════════
   app.post(
     "/api/billing/initiate-payment",
+    billingAdminLimiter,
     isAuthenticated,
     addUserToRequest,
     requireAdmin,
@@ -1184,7 +1238,7 @@ export function registerBillingRoutes(
   // ═══════════════════════════════════════════════════════════════════════
   //  POST /api/billing/payment-callback - PayU callback (success/failure)
   // ═══════════════════════════════════════════════════════════════════════
-  app.post("/api/billing/payment-callback", async (req: Request, res: Response) => {
+  app.post("/api/billing/payment-callback", paymentCallbackLimiter, async (req: Request, res: Response) => {
     try {
       const {
         mihpayid,
@@ -1300,7 +1354,7 @@ export function registerBillingRoutes(
   });
 
   // Also handle GET callback (some PayU integrations redirect via GET)
-  app.get("/api/billing/payment-callback", async (req: Request, res: Response) => {
+  app.get("/api/billing/payment-callback", paymentCallbackLimiter, async (req: Request, res: Response) => {
     console.log(`[Billing] PayU GET callback received - query:`, req.query);
     // PayU typically uses POST, but if GET, redirect to billing with whatever info we have
     return res.redirect("/billing?payment=pending&reason=verify_required");
@@ -1311,6 +1365,7 @@ export function registerBillingRoutes(
   // ═══════════════════════════════════════════════════════════════════════
   app.post(
     "/api/billing/verify-payment",
+    billingAuthLimiter,
     isAuthenticated,
     addUserToRequest,
     async (req: any, res: Response) => {
@@ -1403,6 +1458,7 @@ export function registerBillingRoutes(
   // ═══════════════════════════════════════════════════════════════════════
   app.post(
     "/api/billing/process-pending",
+    billingAuthLimiter,
     isAuthenticated,
     addUserToRequest,
     async (req: any, res: Response) => {
@@ -1482,6 +1538,7 @@ export function registerBillingRoutes(
   // ═══════════════════════════════════════════════════════════════════════
   app.get(
     "/api/billing/payment-history",
+    billingAuthLimiter,
     isAuthenticated,
     addUserToRequest,
     async (req: any, res: Response) => {
@@ -1511,6 +1568,7 @@ export function registerBillingRoutes(
   // ═══════════════════════════════════════════════════════════════════════
   app.get(
     "/api/billing/usage",
+    billingAuthLimiter,
     isAuthenticated,
     addUserToRequest,
     async (req: any, res: Response) => {
@@ -1566,14 +1624,14 @@ export function registerBillingRoutes(
   );
 
   // ═══════════════════════════════════════════════════════════════════════
-  //  POST /api/billing/track-usage - Track a billable action (internal use)
-  //  Requires admin role to prevent abuse by regular users
+  //  POST /api/billing/track-usage - Track a billable action
+  //  Any authenticated user can trigger this (flows/forms are not admin-only)
   // ═══════════════════════════════════════════════════════════════════════
   app.post(
     "/api/billing/track-usage",
+    billingAuthLimiter,
     isAuthenticated,
     addUserToRequest,
-    requireAdmin,
     async (req: any, res: Response) => {
       try {
         const user = req.currentUser;
@@ -1600,6 +1658,7 @@ export function registerBillingRoutes(
   // ═══════════════════════════════════════════════════════════════════════
   app.get(
     "/api/billing/check-limit",
+    billingAuthLimiter,
     isAuthenticated,
     addUserToRequest,
     async (req: any, res: Response) => {
@@ -1629,6 +1688,7 @@ export function registerBillingRoutes(
   // ═══════════════════════════════════════════════════════════════════════
   app.post(
     "/api/billing/cancel-upgrade",
+    billingAdminLimiter,
     isAuthenticated,
     addUserToRequest,
     requireAdmin,
@@ -1767,6 +1827,7 @@ export function registerBillingRoutes(
   // ═══════════════════════════════════════════════════════════════════════
   app.get(
     "/api/billing/invoices",
+    billingAuthLimiter,
     isAuthenticated,
     addUserToRequest,
     async (req: any, res: Response) => {
@@ -1796,6 +1857,7 @@ export function registerBillingRoutes(
   // ═══════════════════════════════════════════════════════════════════════
   app.post(
     "/api/billing/process-transitions",
+    paymentCallbackLimiter,
     async (_req: Request, res: Response) => {
       // SECURITY: Require an internal API key or authenticated super admin session
       const authHeader = _req.headers["x-internal-api-key"];
@@ -1929,9 +1991,33 @@ export async function trackUsage(
 
     let withinLimit = true;
 
-    // Check and increment usage
+    // Check limits BEFORE incrementing to avoid inflating counters on denial
     if (actionType === "flow_execution") {
       withinLimit = (subscription.usedFlows || 0) < plan.maxFlows;
+    } else if (actionType === "form_submission") {
+      withinLimit = (subscription.usedFormSubmissions || 0) < plan.maxFormSubmissions;
+    } else if (actionType === "user_added") {
+      withinLimit = (subscription.usedUsers || 0) < plan.maxUsers;
+    }
+
+    // If over limit on free trial, block WITHOUT incrementing
+    if (!withinLimit && plan.name === "free_trial") {
+      await db.insert(usageLogs).values({
+        organizationId,
+        subscriptionId: subscription.id,
+        actionType,
+        actionId,
+        isWithinLimit: false,
+      });
+      return {
+        allowed: false,
+        withinLimit: false,
+        message: `You have reached the free usage limit. Upgrade your plan to continue using ProcessSutra workflows.`,
+      };
+    }
+
+    // Increment usage counter (only after confirming we won't deny)
+    if (actionType === "flow_execution") {
       await db
         .update(organizationSubscriptions)
         .set({
@@ -1940,7 +2026,6 @@ export async function trackUsage(
         })
         .where(eq(organizationSubscriptions.id, subscription.id));
     } else if (actionType === "form_submission") {
-      withinLimit = (subscription.usedFormSubmissions || 0) < plan.maxFormSubmissions;
       await db
         .update(organizationSubscriptions)
         .set({
@@ -1949,7 +2034,6 @@ export async function trackUsage(
         })
         .where(eq(organizationSubscriptions.id, subscription.id));
     } else if (actionType === "user_added") {
-      withinLimit = (subscription.usedUsers || 0) < plan.maxUsers;
       await db
         .update(organizationSubscriptions)
         .set({
@@ -1967,15 +2051,6 @@ export async function trackUsage(
       actionId,
       isWithinLimit: withinLimit,
     });
-
-    // If over limit on free trial, block
-    if (!withinLimit && plan.name === "free_trial") {
-      return {
-        allowed: false,
-        withinLimit: false,
-        message: `You have reached the free usage limit. Upgrade your plan to continue using ProcessSutra workflows.`,
-      };
-    }
 
     // For paid plans, allow but track extra usage
     if (!withinLimit) {
@@ -2096,5 +2171,61 @@ export async function checkLimit(
   } catch (error) {
     console.error("[Billing] Error checking limit:", error);
     return { allowed: false, withinLimit: false, used: 0, limit: 0, planName: null, message: "Billing system error. Please try again or contact support." };
+  }
+}
+
+/**
+ * Auto-assign a free trial subscription to a newly created organization.
+ * Called during first-time user registration so flows/forms/webhooks work immediately.
+ */
+export async function autoAssignFreeTrial(organizationId: string): Promise<void> {
+  try {
+    // Check if org already has any subscription
+    const [existing] = await db
+      .select()
+      .from(organizationSubscriptions)
+      .where(eq(organizationSubscriptions.organizationId, organizationId))
+      .limit(1);
+
+    if (existing) {
+      console.log(`[Billing] Organization ${organizationId} already has a subscription, skipping auto-trial`);
+      return;
+    }
+
+    // Find the free_trial plan
+    const [freePlan] = await db
+      .select()
+      .from(subscriptionPlans)
+      .where(and(eq(subscriptionPlans.name, "free_trial"), eq(subscriptionPlans.isActive, true)));
+
+    if (!freePlan) {
+      console.warn("[Billing] Free trial plan not found in database, cannot auto-assign");
+      return;
+    }
+
+    const now = new Date();
+    const trialEnd = new Date(now);
+    trialEnd.setDate(trialEnd.getDate() + (freePlan.trialDurationDays || 14));
+
+    await db.insert(organizationSubscriptions).values({
+      organizationId,
+      planId: freePlan.id,
+      status: "active",
+      billingCycleStart: now,
+      billingCycleEnd: trialEnd,
+      trialEndsAt: trialEnd,
+      usedUsers: 1, // The admin user being created
+    });
+
+    // Update org planType
+    await db
+      .update(organizations)
+      .set({ planType: "free_trial", updatedAt: new Date() })
+      .where(eq(organizations.id, organizationId));
+
+    console.log(`[Billing] ✅ Auto-assigned free trial to organization ${organizationId} (expires ${trialEnd.toISOString()})`);
+  } catch (error) {
+    // Don't throw — registration should not fail if billing auto-assign fails
+    console.error("[Billing] Error auto-assigning free trial:", error);
   }
 }

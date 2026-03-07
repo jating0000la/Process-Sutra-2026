@@ -129,6 +129,86 @@ const bulkFlowRuleLimiter = rateLimit({
   },
 });
 
+// ═══════════════════════════════════════════════════════════════════════
+// STRICT rate limiter for external integration APIs (API-key authenticated)
+// These endpoints are public-facing and can be hit by external software.
+// Very low limit: 10 requests per minute per API key to prevent abuse.
+// ═══════════════════════════════════════════════════════════════════════
+const integrationApiLimiter = rateLimit({
+  windowMs: 60 * 1000,           // 1 minute window
+  max: 10,                       // 10 requests per minute per API key
+  message: { message: "Too many API requests. Maximum 10 flow starts per minute. Please slow down." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: false,
+  skipFailedRequests: false,
+  keyGenerator: (req) => {
+    // Key by API key header to isolate per-integration
+    return req.header('x-api-key') || req.ip || 'unknown';
+  },
+});
+
+// Rate limiter for flow start/stop/resume (authenticated users)
+const flowOperationLimiter = rateLimit({
+  windowMs: 60 * 1000,           // 1 minute
+  max: 20,                       // 20 flow operations per minute
+  message: "Too many flow operations. Please wait before starting more flows.",
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const user = (req as any).currentUser;
+    return user?.email || (req as any).sessionID || 'anonymous';
+  },
+});
+
+// Rate limiter for task operations (complete, status update, transfer)
+const taskOperationLimiter = rateLimit({
+  windowMs: 60 * 1000,           // 1 minute
+  max: 30,                       // 30 task ops per minute per user
+  message: "Too many task operations. Please wait before trying again.",
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const user = (req as any).currentUser;
+    return user?.email || (req as any).sessionID || 'anonymous';
+  },
+});
+
+// Rate limiter for webhook management (CRUD + test)
+const webhookManagementLimiter = rateLimit({
+  windowMs: 60 * 1000,           // 1 minute
+  max: 15,                       // 15 webhook ops per minute
+  message: "Too many webhook operations. Please wait.",
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const user = (req as any).currentUser;
+    return user?.email || (req as any).sessionID || 'anonymous';
+  },
+});
+
+// Rate limiter for user management (create, update, delete)
+const userManagementLimiter = rateLimit({
+  windowMs: 60 * 1000,           // 1 minute
+  max: 15,                       // 15 user ops per minute
+  message: "Too many user management operations. Please wait.",
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const user = (req as any).currentUser;
+    return user?.email || (req as any).sessionID || 'anonymous';
+  },
+});
+
+// Strict rate limiter for public/unauthenticated endpoints (health, ping)
+const publicEndpointLimiter = rateLimit({
+  windowMs: 60 * 1000,           // 1 minute
+  max: 30,                       // 30 per minute per IP
+  message: "Too many requests.",
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 export async function registerRoutes(app: Express): Promise<Server> {
   console.log('[routes] registerRoutes invoked - NODE_ENV=', process.env.NODE_ENV);
   
@@ -157,12 +237,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
 
-  // Health check endpoints
-  app.get('/health', healthCheck);
-  app.get('/api/health', healthCheck);
+  // Health check endpoints (rate-limited to prevent abuse)
+  app.get('/health', publicEndpointLimiter, healthCheck);
+  app.get('/api/health', publicEndpointLimiter, healthCheck);
 
   // Database health check (separate endpoint)
-  app.get('/api/health/db', async (_req, res) => {
+  app.get('/api/health/db', publicEndpointLimiter, async (_req, res) => {
     try {
       // Import isDatabaseConnected function
       const { isDatabaseConnected } = await import('./db.js');
@@ -541,7 +621,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/tasks", isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.post("/api/tasks", taskOperationLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const user = req.currentUser;
       // SECURITY: Enforce organization context and require admin
@@ -587,7 +667,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Task workflow operations
-  app.post("/api/tasks/:id/complete", isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.post("/api/tasks/:id/complete", taskOperationLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const { id } = req.params;
       const { status: completionStatus } = req.body;
@@ -773,7 +853,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/tasks/:id/status", isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.patch("/api/tasks/:id/status", taskOperationLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const { id } = req.params;
       const { status, completionStatus } = req.body;
@@ -943,7 +1023,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Task transfer route
-  app.post("/api/tasks/:id/transfer", isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.post("/api/tasks/:id/transfer", taskOperationLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const { id } = req.params;
       const { toEmail, reason } = req.body;
@@ -983,7 +1063,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/flows/start", isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.post("/api/flows/start", flowOperationLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const { system, orderNumber, description, initialFormData } = req.body;
       const user = req.currentUser;
@@ -1139,7 +1219,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Stop/Cancel Flow - Admin only
-  app.post("/api/flows/:flowId/stop", isAuthenticated, addUserToRequest, requireAdmin, async (req: any, res) => {
+  app.post("/api/flows/:flowId/stop", flowOperationLimiter, isAuthenticated, addUserToRequest, requireAdmin, async (req: any, res) => {
     try {
       const { flowId } = req.params;
       const { reason } = req.body;
@@ -1242,11 +1322,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Resume Flow - Admin only
-  app.post("/api/flows/:flowId/resume", isAuthenticated, addUserToRequest, requireAdmin, async (req: any, res) => {
+  app.post("/api/flows/:flowId/resume", flowOperationLimiter, isAuthenticated, addUserToRequest, requireAdmin, async (req: any, res) => {
     try {
       const { flowId } = req.params;
       const { reason } = req.body;
       const user = req.currentUser;
+
+      // Check billing limits before resuming flow
+      const limitCheck = await checkLimit(user.organizationId, "flow_execution");
+      if (!limitCheck.allowed) {
+        return res.status(403).json({
+          message: limitCheck.message || "Your subscription has expired. Please renew to resume flows.",
+          limitExceeded: true,
+          planName: limitCheck.planName,
+          used: limitCheck.used,
+          limit: limitCheck.limit,
+        });
+      }
 
       // Get all tasks for this flow
       const allTasks = await storage.getTasksByOrganization(user.organizationId);
@@ -1370,10 +1462,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     }
 
-    // 2) Fallback: If apiKey matches an organization ID directly (legacy support)
-    if (!organization) {
-      organization = await storage.getOrganizationById?.(apiKey);
-    }
+    // 2) SECURITY: Organization ID as API key removed — only proper API keys accepted
+    // Legacy org-ID fallback was a security risk (predictable IDs = auth bypass)
 
     // 3) Fallback: Try reverse-lookup from FLOW_API_KEYS/FLOW_API_KEY env variables
     if (!organization) {
@@ -1402,10 +1492,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   }
 
-  app.post("/api/integrations/start-flow", integrationAuth, async (req: any, res) => {
+  app.post("/api/integrations/start-flow", integrationApiLimiter, integrationAuth, async (req: any, res) => {
     try {
       const { system, orderNumber, description, initialFormData, notifyAssignee = true } = req.body || {};
       const { organizationId, actorEmail } = req.integration;
+
+      // Check billing limits for external API flow starts
+      const limitCheck = await checkLimit(organizationId, "flow_execution");
+      if (!limitCheck.allowed) {
+        return res.status(403).json({
+          message: limitCheck.message || "Billing limit reached. Upgrade your plan.",
+          limitExceeded: true,
+          planName: limitCheck.planName,
+          used: limitCheck.used,
+          limit: limitCheck.limit,
+        });
+      }
 
       if (!system) return res.status(400).json({ message: "system is required" });
       if (!orderNumber) return res.status(400).json({ message: "orderNumber is required" });
@@ -1482,6 +1584,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         initiatedAt: flowStartTime.toISOString(),
         message: "Flow started successfully",
       });
+
+      // Track billing usage (non-blocking, after response)
+      trackUsage(organizationId, "flow_execution", flowId).catch(err =>
+        console.error('[Billing] Error tracking integration flow usage:', err)
+      );
     } catch (error) {
       console.error("Integration start-flow error:", error);
       res.status(500).json({ message: "Failed to start flow" });
@@ -1489,13 +1596,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // External API: Start Flow (simplified for external software)
-  app.post("/api/start-flow", integrationAuth, async (req: any, res) => {
+  app.post("/api/start-flow", integrationApiLimiter, integrationAuth, async (req: any, res) => {
     try {
       const { system, orderNumber, description, initialFormData } = req.body;
       const { organizationId, actorEmail } = req.integration;
 
       if (!system || !orderNumber || !description) {
         return res.status(400).json({ message: "system, orderNumber, and description are required" });
+      }
+
+      // Check billing limits for external API flow starts
+      const limitCheck = await checkLimit(organizationId, "flow_execution");
+      if (!limitCheck.allowed) {
+        return res.status(403).json({
+          message: limitCheck.message || "Billing limit reached. Upgrade your plan.",
+          limitExceeded: true,
+          planName: limitCheck.planName,
+          used: limitCheck.used,
+          limit: limitCheck.limit,
+        });
       }
 
       const flowRules = await storage.getFlowRulesByOrganization(organizationId, system);
@@ -1551,6 +1670,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       res.status(201).json({ flowId, taskId: task.id, message: "Flow started successfully" });
+
+      // Track billing usage (non-blocking, after response)
+      trackUsage(organizationId, "flow_execution", flowId).catch(err =>
+        console.error('[Billing] Error tracking external flow usage:', err)
+      );
     } catch (error) {
       console.error("External start-flow error:", error);
       res.status(500).json({ message: "Failed to start flow" });
@@ -1691,7 +1815,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Old Form Templates & Responses API removed — replaced by Quick Form (MongoDB) routes at /api/quick-forms
 
   // Webhook CRUD (admin)
-  app.get('/api/webhooks', isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.get('/api/webhooks', webhookManagementLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const user = req.currentUser;
       if (user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
@@ -1707,7 +1831,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/webhooks', isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.post('/api/webhooks', webhookManagementLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const user = req.currentUser;
       if (user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
@@ -1736,7 +1860,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put('/api/webhooks/:id', isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.put('/api/webhooks/:id', webhookManagementLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const user = req.currentUser;
       if (user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
@@ -1764,7 +1888,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/webhooks/:id', isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.delete('/api/webhooks/:id', webhookManagementLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const user = req.currentUser;
       if (user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
@@ -1783,7 +1907,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Test webhook delivery (admin)
-  app.post('/api/webhooks/test', isAuthenticated, addUserToRequest, async (req: any, res) => {
+  app.post('/api/webhooks/test', webhookManagementLimiter, isAuthenticated, addUserToRequest, async (req: any, res) => {
     try {
       const user = req.currentUser;
       if (user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
@@ -1907,7 +2031,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Simple ping to confirm block executed
   console.log('[webhooks] registering webhook routes');
-  app.get('/api/webhooks/ping', (_req, res) => {
+  app.get('/api/webhooks/ping', publicEndpointLimiter, (_req, res) => {
     res.json({ ok: true, ts: Date.now() });
   });
 
@@ -3026,7 +3150,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/users", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+  app.post("/api/users", userManagementLimiter, isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
       const currentUser = req.currentUser;
 
@@ -3078,7 +3202,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/users/:id", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+  app.put("/api/users/:id", userManagementLimiter, isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
       const currentUser = req.currentUser;
       const targetUser = await storage.getUser(req.params.id);
@@ -3189,7 +3313,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/users/:id", isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
+  app.delete("/api/users/:id", userManagementLimiter, isAuthenticated, requireAdmin, addUserToRequest, async (req: any, res) => {
     try {
       const currentUser = req.currentUser;
       const targetUserId = req.params.id;
