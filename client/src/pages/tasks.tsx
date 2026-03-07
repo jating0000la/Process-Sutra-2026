@@ -1030,7 +1030,6 @@ export default function Tasks() {
   });
 
   const flowBilling = useBillingLimit("flow_execution");
-  });
 
   const handleCompleteClick = (task: any) => {
     // Check if task has a form that needs to be submitted
