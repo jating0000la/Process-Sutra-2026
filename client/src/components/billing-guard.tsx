@@ -33,8 +33,8 @@ export function useBillingLimit(actionType: "flow_execution" | "form_submission"
 
   return {
     isLoading,
-    allowed: data?.allowed ?? true,
-    withinLimit: data?.withinLimit ?? true,
+    allowed: isLoading ? false : (data?.allowed ?? false),
+    withinLimit: isLoading ? false : (data?.withinLimit ?? false),
     used: data?.used ?? 0,
     limit: data?.limit ?? 0,
     planName: data?.planName,

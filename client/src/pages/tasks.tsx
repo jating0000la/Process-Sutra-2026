@@ -25,6 +25,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { useBillingLimit, UpgradeBanner } from "@/components/billing-guard";
 
 const startFlowSchema = z.object({
   system: z.string().min(1, "System is required"),
@@ -1007,12 +1008,28 @@ export default function Tasks() {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
     },
     onError: (error) => {
+      // Parse billing limit errors from the backend
+      let errorMsg = "Failed to start flow";
+      try {
+        const match = error.message?.match(/^\d+:\s*(.*)/);
+        if (match) {
+          const parsed = JSON.parse(match[1]);
+          if (parsed.limitExceeded) {
+            errorMsg = parsed.message || "Billing limit reached. Please upgrade your plan.";
+          } else if (parsed.message) {
+            errorMsg = parsed.message;
+          }
+        }
+      } catch {}
       toast({
         title: "Error",
-        description: "Failed to start flow",
+        description: errorMsg,
         variant: "destructive",
       });
     },
+  });
+
+  const flowBilling = useBillingLimit("flow_execution");
   });
 
   const handleCompleteClick = (task: any) => {
@@ -1291,6 +1308,7 @@ export default function Tasks() {
                   <DialogHeader>
                     <DialogTitle>Start New Flow</DialogTitle>
                   </DialogHeader>
+                  <UpgradeBanner actionType="flow_execution" className="mb-2" />
                   <Form {...startFlowForm}>
                     <form onSubmit={startFlowForm.handleSubmit(onSubmitStartFlow)} className="space-y-4">
                       <FormField
@@ -1366,8 +1384,8 @@ export default function Tasks() {
                         <Button type="button" variant="outline" onClick={() => setIsStartFlowDialogOpen(false)}>
                           Cancel
                         </Button>
-                        <Button type="submit" disabled={startFlowMutation.isPending}>
-                          {startFlowMutation.isPending ? "Starting..." : "Start Flow"}
+                        <Button type="submit" disabled={startFlowMutation.isPending || !flowBilling.allowed}>
+                          {startFlowMutation.isPending ? "Starting..." : !flowBilling.allowed ? "Upgrade to Start Flow" : "Start Flow"}
                         </Button>
                       </div>
                     </form>
